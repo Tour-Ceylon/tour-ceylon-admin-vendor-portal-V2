@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { apiFetch } from "./api/apiClient";
 import {
   Search,
   Plus,
@@ -30,9 +31,29 @@ interface Listing {
   status: Status;
   lastUpdated: string;
   color: string;
+  coverUrl?: string;
 }
 
-const LISTINGS: Listing[] = [
+interface StayPropertyResponse {
+  id: string;
+  name: string;
+  propertyType: string;
+  address?: string | null;
+  city?: string | null;
+  district?: string | null;
+  status: string;
+  media?: Array<{ url?: string; role?: string }>;
+  roomTypes?: unknown[];
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+interface StayPropertyListResponse {
+  properties: StayPropertyResponse[];
+  total: number;
+}
+
+const MOCK_LISTINGS: Listing[] = [
   { id: "lst_001", title: "Jetwing Yala Resort", location: "Yala, Southern Province", category: "Stay", destination: "Yala, Sri Lanka", media: 24, variants: 8, status: "Approved", lastUpdated: "May 18, 2026", color: "#2563eb" },
   { id: "lst_002", title: "Cinnamon Wild Yala", location: "Yala, Southern Province", category: "Stay", destination: "Yala, Sri Lanka", media: 21, variants: 6, status: "Approved", lastUpdated: "May 17, 2026", color: "#2563eb" },
   { id: "lst_003", title: "Shangri-La Colombo", location: "Colombo, Western Province", category: "Stay", destination: "Colombo, Sri Lanka", media: 32, variants: 12, status: "Approved", lastUpdated: "May 16, 2026", color: "#2563eb" },
@@ -78,7 +99,52 @@ const THUMBNAIL_GRADIENTS: Record<Exclude<Category, "All">, string> = {
   Transfer: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)",
 };
 
-function ListingThumbnail({ category, color }: { category: Exclude<Category, "All">; color: string }) {
+function mapStayStatus(status: string): Status {
+  const normalized = status.toLowerCase();
+  if (normalized === "submitted" || normalized === "pending" || normalized === "pending_review") return "Pending Review";
+  if (normalized === "approved" || normalized === "published") return "Approved";
+  if (normalized === "rejected") return "Rejected";
+  if (normalized === "archived") return "Archived";
+  return "Draft";
+}
+
+function formatListingDate(value?: string) {
+  if (!value) return "Just now";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Just now";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function stayToListing(property: StayPropertyResponse): Listing {
+  const cover = property.media?.find((item) => item.role === "cover" && item.url)?.url || property.media?.find((item) => item.url)?.url;
+  const location = [property.city || property.address, property.district].filter(Boolean).join(", ") || "Location not set";
+  return {
+    id: property.id,
+    title: property.name,
+    location,
+    category: "Stay",
+    destination: property.city || property.address || "Stay property",
+    media: property.media?.length ?? 0,
+    variants: property.roomTypes?.length ?? 0,
+    status: mapStayStatus(property.status),
+    lastUpdated: formatListingDate(property.updatedAt || property.createdAt),
+    color: "#2563eb",
+    coverUrl: cover,
+  };
+}
+
+function ListingThumbnail({ category, color, imageUrl }: { category: Exclude<Category, "All">; color: string; imageUrl?: string }) {
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        className="w-10 h-10 rounded-lg shrink-0 object-cover"
+        style={{ border: `1px solid ${color}30` }}
+      />
+    );
+  }
+
   return (
     <div
       className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
@@ -94,8 +160,43 @@ export function ListingsPage() {
   const [activeCategory, setActiveCategory] = useState<Category>("All");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [stayListings, setStayListings] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const filtered = LISTINGS.filter((l) => {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadListings() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const response = await apiFetch<StayPropertyListResponse>("/vendor/stays/");
+        if (!cancelled) {
+          setStayListings(response.properties.map(stayToListing));
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setLoadError(error?.message || "Unable to load saved listings.");
+          setStayListings([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadListings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const listings = [
+    ...stayListings,
+    ...MOCK_LISTINGS.filter((listing) => listing.category !== "Stay"),
+  ];
+
+  const filtered = listings.filter((l) => {
     const matchCat = activeCategory === "All" || l.category === activeCategory;
     const matchSearch =
       !search ||
@@ -105,10 +206,10 @@ export function ListingsPage() {
   });
 
   const stats = {
-    total: LISTINGS.length,
-    approved: LISTINGS.filter((l) => l.status === "Approved").length,
-    pending: LISTINGS.filter((l) => l.status === "Pending Review").length,
-    draft: LISTINGS.filter((l) => l.status === "Draft").length,
+    total: listings.length,
+    approved: listings.filter((l) => l.status === "Approved").length,
+    pending: listings.filter((l) => l.status === "Pending Review").length,
+    draft: listings.filter((l) => l.status === "Draft").length,
   };
 
   const toggleSelect = (id: string) => {
@@ -250,6 +351,15 @@ export function ListingsPage() {
         </button>
       </div>
 
+      {loadError && (
+        <div
+          className="rounded-lg px-3 py-2 text-[12px]"
+          style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", color: "#f87171" }}
+        >
+          {loadError}
+        </div>
+      )}
+
       {/* Table */}
       <div
         className="rounded-xl overflow-hidden"
@@ -301,7 +411,15 @@ export function ListingsPage() {
 
         {/* Rows */}
         <div>
-          {filtered.map((listing, i) => {
+          {loading ? (
+            <div className="px-5 py-10 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+              Loading saved listings...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-5 py-10 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+              No listings found.
+            </div>
+          ) : filtered.map((listing, i) => {
             const catStyle = CATEGORY_COLORS[listing.category];
             const statStyle = STATUS_COLORS[listing.status];
             const isSelected = selected.has(listing.id);
@@ -341,7 +459,7 @@ export function ListingsPage() {
 
                 {/* Listing */}
                 <div className="flex items-center gap-3 min-w-0">
-                  <ListingThumbnail category={listing.category} color={listing.color} />
+                  <ListingThumbnail category={listing.category} color={listing.color} imageUrl={listing.coverUrl} />
                   <div className="min-w-0">
                     <p
                       className="text-[13px] truncate"
@@ -473,7 +591,7 @@ export function ListingsPage() {
         >
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Showing <span style={{ color: "var(--text-secondary)" }}>{filtered.length}</span> of{" "}
-            <span style={{ color: "var(--text-secondary)" }}>{LISTINGS.length}</span> listings
+            <span style={{ color: "var(--text-secondary)" }}>{listings.length}</span> listings
           </p>
           <div className="flex items-center gap-2">
             {[1, 2, 3].map((p) => (

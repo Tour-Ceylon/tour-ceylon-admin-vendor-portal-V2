@@ -45,18 +45,21 @@ export const useListingDraftStore = create<DraftState>()(
       categoryData: {},
       setDraft: (d: Partial<DraftState>) => set((s) => ({ ...s, ...d })),
       clearDraft: () =>
-        set(() => ({
-          category: null,
-          subcategory: null,
-          title: "",
-          active: true,
-          description: "",
-          destination: "",
-          lat: "",
-          lng: "",
-          variants: [],
-          categoryData: {},
-        })),
+        {
+          localStorage.removeItem("listing-create-draft");
+          set(() => ({
+            category: null,
+            subcategory: null,
+            title: "",
+            active: true,
+            description: "",
+            destination: "",
+            lat: "",
+            lng: "",
+            variants: [],
+            categoryData: {},
+          }));
+        },
     }),
     { name: "listing-create-draft" },
   ),

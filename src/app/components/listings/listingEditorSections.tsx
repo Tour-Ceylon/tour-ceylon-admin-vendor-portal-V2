@@ -25,6 +25,12 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
 const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
+const DEFAULT_HOUSE_RULES = {
+    Smoking: false,
+    Children: false,
+    "Parties / events": false,
+    Pets: false,
+};
 
 type DiscountType = "percentage" | "flat";
 
@@ -231,22 +237,22 @@ export function DestinationTab({
 }
 
 export function MediaTab() {
-    const [breakfastIncluded, setBreakfastIncluded] = useState(false);
-    const [propertyLocation, setPropertyLocation] = useState("");
-    const [propertyName, setPropertyName] = useState("");
-    const [parking, setParking] = useState(true);
-    const [langs, setLangs] = useState<string[]>([]);
-    const [houseRules, setHouseRules] = useState<Record<string, boolean>>({
-        Smoking: false,
-        Children: false,
-        "Parties / events": false,
-        Pets: false,
-        "CheckIn/Checkout": false,
-    });
-    const [checkInTime, setCheckInTime] = useState("");
-    const [checkOutTime, setCheckOutTime] = useState("");
     const setDraft = useListingDraftStore((s) => s.setDraft);
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
+    const draftPropertyDetails = draftCategoryData.propertyDetails ?? {};
+    const [breakfastIncluded, setBreakfastIncluded] = useState(Boolean(draftPropertyDetails.breakfastIncluded ?? false));
+    const [propertyLocation, setPropertyLocation] = useState(String(draftPropertyDetails.propertyLocation ?? ""));
+    const [propertyName, setPropertyName] = useState(String(draftPropertyDetails.propertyName ?? ""));
+    const [parking, setParking] = useState(Boolean(draftPropertyDetails.parking ?? true));
+    const [langs, setLangs] = useState<string[]>(() => draftPropertyDetails.languages ?? []);
+    const [houseRules, setHouseRules] = useState<Record<string, boolean>>(() => {
+        const savedRules = draftPropertyDetails.houseRules ?? {};
+        return Object.fromEntries(
+            Object.keys(DEFAULT_HOUSE_RULES).map((key) => [key, Boolean(savedRules[key] ?? DEFAULT_HOUSE_RULES[key as keyof typeof DEFAULT_HOUSE_RULES])]),
+        );
+    });
+    const [checkInTime, setCheckInTime] = useState(String(draftPropertyDetails.checkInTime ?? ""));
+    const [checkOutTime, setCheckOutTime] = useState(String(draftPropertyDetails.checkOutTime ?? ""));
 
     const [hpProperty, setHpProperty] = useState<boolean>(draftCategoryData.hostProfile?.property ?? false);
     const [hpHost, setHpHost] = useState<boolean>(draftCategoryData.hostProfile?.host ?? false);
@@ -255,16 +261,31 @@ export function MediaTab() {
     const [hpNone, setHpNone] = useState<boolean>(draftCategoryData.hostProfile?.none ?? false);
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), hostProfile: { property: hpProperty, host: hpHost, neighborhood: hpNeighborhood, aboutNeighborhood: hpAbout, none: hpNone } } });
+        setDraft({
+            categoryData: {
+                ...(draftCategoryData || {}),
+                propertyDetails: {
+                    propertyLocation,
+                    propertyName,
+                    breakfastIncluded,
+                    parking,
+                    languages: langs,
+                    houseRules,
+                    checkInTime,
+                    checkOutTime,
+                },
+                hostProfile: { property: hpProperty, host: hpHost, neighborhood: hpNeighborhood, aboutNeighborhood: hpAbout, none: hpNone },
+            },
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hpProperty, hpHost, hpNeighborhood, hpAbout, hpNone]);
+    }, [propertyLocation, propertyName, breakfastIncluded, parking, langs, houseRules, checkInTime, checkOutTime, hpProperty, hpHost, hpNeighborhood, hpAbout, hpNone]);
 
     return (
         <div>
             <SectionCard title="Property Details">
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
-                        <FieldLabel>Where is the property</FieldLabel>
+                        <FieldLabel required>Where is the property</FieldLabel>
                         <FormInput value={propertyLocation} onChange={setPropertyLocation} placeholder="City, area" />
                     </div>
                     <div>
@@ -274,7 +295,7 @@ export function MediaTab() {
                         </div>
                     </div>
                     <div>
-                        <FieldLabel>Property Name</FieldLabel>
+                        <FieldLabel required>Property Name</FieldLabel>
                         <FormInput value={propertyName} onChange={setPropertyName} placeholder="Name" />
                     </div>
                     <div>
@@ -309,11 +330,11 @@ export function MediaTab() {
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <FieldLabel>Check-in Time</FieldLabel>
+                        <FieldLabel required>Check-in Time</FieldLabel>
                         <FormInput value={checkInTime} onChange={setCheckInTime} type="time" />
                     </div>
                     <div>
-                        <FieldLabel>Check-out Time</FieldLabel>
+                        <FieldLabel required>Check-out Time</FieldLabel>
                         <FormInput value={checkOutTime} onChange={setCheckOutTime} type="time" />
                     </div>
                 </div>
@@ -1185,6 +1206,9 @@ export function RoomsSection() {
     const [rooms, setRooms] = useState<RoomType[]>(() =>
         ((draftCategoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
             ...room,
+            smoking: typeof room.smoking === "boolean" ? room.smoking : false,
+            guestAccess: typeof room.guestAccess === "boolean" ? room.guestAccess : false,
+            hasBeds: typeof room.hasBeds === "boolean" ? room.hasBeds : false,
             discounts: normalizeRoomDiscounts(room.discounts),
         })),
     );
@@ -1197,19 +1221,19 @@ export function RoomsSection() {
     const addRoom = () => {
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
-            type: "Standard",
+            type: "",
             count: "1",
-            beds: "1",
+            beds: "0",
             hasBeds: false,
             cribs: "0",
-            maxGuests: "2",
+            maxGuests: "",
             size: "",
             smoking: false,
-            bathroomType: "Private",
+            bathroomType: "",
             bathroomItems: [],
             guestAccess: false,
             pricePerNight: "",
-            currency: "USD",
+            currency: "LKR",
             discounts: [],
         };
         setRooms((r) => [...r, newRoom]);

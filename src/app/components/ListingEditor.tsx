@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useListingDraftStore } from "../stores/listingDraftStore";
 import { useParams, useNavigate } from "react-router";
 import type { Category } from "../stores/listingDraftStore";
+import { apiFetch } from "./api/apiClient";
 import {
   CATEGORY_ORDER,
   LISTING_FLOW_SCHEMA,
@@ -27,6 +28,7 @@ import {
   Upload,
   GripVertical,
   Building2,
+  Layers,
   Compass,
   Anchor,
   Car,
@@ -60,9 +62,41 @@ import {
 type ListingMode = "create" | "edit";
 type TabId = "basic" | "destination" | "media" | "pricing" | "category" | "policies";
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+type StayEditTabId = "property" | "rooms" | "rates" | "images" | "summary";
 
 interface ListingEditorProps {
   mode: ListingMode;
+}
+
+interface StayPropertyResponse {
+  id: string;
+  name: string;
+  propertyType: string;
+  description?: string | null;
+  address?: string | null;
+  city?: string | null;
+  district?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  status: string;
+  contact?: Record<string, any>;
+  policies?: Record<string, any>;
+  media?: Array<Record<string, any>>;
+  amenities?: Array<{ name: string }>;
+  roomTypes?: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    size?: string | null;
+    maxGuests?: string | null;
+    basePrice?: number | string | null;
+    currency: string;
+    bedConfiguration?: Record<string, any>;
+    bathroom?: Record<string, any>;
+    discounts?: any[];
+    roomUnits?: unknown[];
+  }>;
+  metadata?: Record<string, any>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +108,27 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
   { id: "category", label: "Category Details", icon: Tag },
   { id: "policies", label: "Policies", icon: Shield },
 ];
+
+const STAY_EDIT_TABS: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
+  { id: "basic", label: "Basic Info", icon: Info },
+  { id: "destination", label: "Location", icon: MapPin },
+  { id: "media", label: "Property Details", icon: Building2 },
+  { id: "category", label: "Rooms", icon: Layers },
+  { id: "pricing", label: "Rate Plans", icon: DollarSign },
+  { id: "policies", label: "Images", icon: ImageIcon },
+];
+
+const STAY_EDIT_SECTIONS: { id: StayEditTabId; label: string; icon: React.ComponentType<any> }[] = [
+  { id: "property", label: "Property Details", icon: Building2 },
+  { id: "rooms", label: "Rooms", icon: Layers },
+  { id: "rates", label: "Rate Plans", icon: DollarSign },
+  { id: "images", label: "Images", icon: ImageIcon },
+  { id: "summary", label: "Listing Summary", icon: Info },
+];
+
+function getEditorTabs(category: Category | null) {
+  return category === "Stay" ? STAY_EDIT_TABS : TABS;
+}
 
 const ICON_BY_KEY: Record<CategoryIconKey, React.ComponentType<any>> = {
   stay: Building2,
@@ -90,6 +145,8 @@ const CATEGORIES = CATEGORY_ORDER.map((id) => {
     icon: ICON_BY_KEY[definition.iconKey],
   };
 });
+
+const IMPLEMENTED_STAY_SUBTYPES = new Set(["hotel", "bed-breakfast"]);
 
 function getFlow(category: Category) {
   return LISTING_FLOW_SCHEMA[category];
@@ -143,8 +200,10 @@ function getCreateSteps(category: Category | null) {
 type RatePlanSectionId = "standard" | "group" | "family" | "nonRefundable";
 
 type RatePlanGroupRow = {
-  occupancy: string;
-  guestsPay: string;
+  groups: string;
+  guestsPerGroup: string;
+  amount: string;
+  currency: string;
 };
 
 type RatePlanDraft = {
@@ -166,8 +225,8 @@ const DEFAULT_RATE_PLAN_DRAFT: RatePlanDraft = {
     "Guests who cancel within 24 hours will have their cancellation fee waived",
   ],
   groupRates: [
-    { occupancy: "1 x 2", guestsPay: "USD 14.00" },
-    { occupancy: "2 x 2", guestsPay: "USD 14.00" },
+    { groups: "1", guestsPerGroup: "2", amount: "14.00", currency: "USD" },
+    { groups: "2", guestsPerGroup: "2", amount: "14.00", currency: "USD" },
   ],
   childPolicy: "Children stay free when sharing the existing bedding with an adult.",
   childAgeGroup: "0 - 5 years",
@@ -187,6 +246,214 @@ const DEFAULT_DATA = {
   lat: "6.3728",
   lng: "81.5156",
 };
+
+const RATE_PLAN_CURRENCIES = ["LKR", "USD", "EUR", "GBP", "AUD", "SGD"];
+
+function normalizeGroupRateRow(row: any, index: number): RatePlanGroupRow {
+  if (row?.groups !== undefined || row?.guestsPerGroup !== undefined || row?.amount !== undefined) {
+    return {
+      groups: String(row.groups ?? "1"),
+      guestsPerGroup: String(row.guestsPerGroup ?? "2"),
+      amount: String(row.amount ?? ""),
+      currency: String(row.currency ?? "USD"),
+    };
+  }
+
+  const [groupsPart, perGroupPart] = String(row?.occupancy ?? `${index + 1} x 2`)
+    .split("x")
+    .map((part) => part.trim());
+  const payMatch = String(row?.guestsPay ?? "USD 0.00").match(/^([A-Z]{3})\s+(.+)$/);
+
+  return {
+    groups: groupsPart || String(index + 1),
+    guestsPerGroup: perGroupPart || "2",
+    currency: payMatch?.[1] ?? "USD",
+    amount: payMatch?.[2] ?? "",
+  };
+}
+
+function isImplementedStaySubtype(category: Category | null, optionId?: string | null) {
+  return category !== "Stay" || (!!optionId && IMPLEMENTED_STAY_SUBTYPES.has(optionId));
+}
+
+function normalizeRatePlanDraft(value?: RatePlanDraft): RatePlanDraft {
+  const source = value ?? DEFAULT_RATE_PLAN_DRAFT;
+  return {
+    ...DEFAULT_RATE_PLAN_DRAFT,
+    ...source,
+    groupRates: (source.groupRates?.length ? source.groupRates : DEFAULT_RATE_PLAN_DRAFT.groupRates).map(normalizeGroupRateRow),
+  };
+}
+
+function formatGroupRate(row: RatePlanGroupRow) {
+  const amount = Number(row.amount);
+  const displayAmount = Number.isFinite(amount) ? amount.toFixed(2) : row.amount || "0.00";
+  return `${row.currency} ${displayAmount}`;
+}
+
+function isUuid(value: string | null) {
+  return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function stayPropertyToRoomType(roomType: NonNullable<StayPropertyResponse["roomTypes"]>[number]): RoomType {
+  const bedConfiguration = roomType.bedConfiguration ?? {};
+  const bathroom = roomType.bathroom ?? {};
+  return {
+    id: roomType.id,
+    type: roomType.name,
+    count: String(roomType.roomUnits?.length || 1),
+    beds: String(bedConfiguration.beds ?? 0),
+    hasBeds: Boolean(bedConfiguration.hasBeds),
+    cribs: String(bedConfiguration.cribs ?? 0),
+    maxGuests: String(roomType.maxGuests ?? ""),
+    size: String(roomType.size ?? ""),
+    smoking: false,
+    bathroomType: String(bathroom.type ?? "Private"),
+    bathroomItems: Array.isArray(bathroom.items) ? bathroom.items : [],
+    guestAccess: false,
+    pricePerNight: String(roomType.basePrice ?? ""),
+    currency: roomType.currency || "LKR",
+    discounts: Array.isArray(roomType.discounts) ? roomType.discounts : [],
+    bedBreakdown: bedConfiguration.breakdown ?? {},
+  };
+}
+
+function hydrateStayDraft(property: StayPropertyResponse) {
+  const cover = property.media?.find((item) => item.role === "cover" && item.url)?.url ?? "";
+  const gallery = property.media?.filter((item) => item.role !== "cover" && item.url).map((item) => item.url as string) ?? [];
+  const policies = property.policies ?? {};
+  return {
+    category: "Stay" as Category,
+    subcategory: property.propertyType,
+    title: property.name,
+    active: property.status === "approved" || property.status === "published",
+    description: property.description ?? "",
+    destination: property.city || property.address || "",
+    lat: property.latitude != null ? String(property.latitude) : "",
+    lng: property.longitude != null ? String(property.longitude) : "",
+    categoryData: {
+      propertyDetails: {
+        propertyName: property.name,
+        propertyLocation: property.address || property.city || "",
+        breakfastIncluded: Boolean(policies.breakfastIncluded),
+        parking: Boolean(policies.parking),
+        languages: property.contact?.languages ?? [],
+        houseRules: policies.houseRules ?? {},
+        checkInTime: policies.checkInTime ?? "",
+        checkOutTime: policies.checkOutTime ?? "",
+      },
+      amenities: property.amenities?.map((amenity) => amenity.name) ?? [],
+      roomTypes: property.roomTypes?.map(stayPropertyToRoomType) ?? [],
+      ratePlans: normalizeRatePlanDraft(policies.ratePlans as RatePlanDraft | undefined),
+      images: { cover, gallery },
+      hostProfile: property.metadata?.hostProfile ?? {},
+    },
+  };
+}
+
+function toOptionalNumber(value: string) {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toBoolean(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function buildStayApplicationPayload({
+  title,
+  description,
+  destination,
+  lat,
+  lng,
+  subcategory,
+  categoryData,
+}: {
+  title: string;
+  description: string;
+  destination: string;
+  lat: string;
+  lng: string;
+  subcategory: string | null;
+  categoryData: Record<string, any>;
+}) {
+  const propertyDetails = categoryData.propertyDetails ?? {};
+  const images = categoryData.images ?? {};
+  const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
+    name: room.type,
+    description: "",
+    count: Number(room.count) || 1,
+    unitPrefix: room.type
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 4)
+      .toUpperCase() || "RM",
+    size: room.size || undefined,
+    sizeUnit: room.size ? "sqm" : undefined,
+    maxGuests: Number(room.maxGuests) || undefined,
+    basePrice: Number(room.pricePerNight) || undefined,
+    currency: room.currency || "LKR",
+    smoking: toBoolean(room.smoking),
+    guestAccess: toBoolean(room.guestAccess),
+    bedConfiguration: {
+      hasBeds: room.hasBeds ?? false,
+      beds: Number(room.beds) || 0,
+      cribs: Number(room.cribs) || 0,
+      breakdown: room.bedBreakdown ?? {},
+    },
+    bathroom: {
+      type: room.bathroomType,
+      items: room.bathroomItems ?? [],
+    },
+    discounts: room.discounts ?? [],
+    metadata: {
+      localDraftId: room.id,
+    },
+  }));
+
+  const propertyName = propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
+  const propertyLocation = propertyDetails.propertyLocation || destination;
+
+  return {
+    name: propertyName,
+    propertyType: subcategory || "hotel",
+    description,
+    address: propertyLocation,
+    city: propertyLocation,
+    latitude: toOptionalNumber(lat),
+    longitude: toOptionalNumber(lng),
+    status: "submitted",
+    contact: {
+      languages: propertyDetails.languages ?? [],
+    },
+    policies: {
+      checkInTime: propertyDetails.checkInTime || null,
+      checkOutTime: propertyDetails.checkOutTime || null,
+      houseRules: propertyDetails.houseRules ?? {},
+      ratePlans: categoryData.ratePlans ?? {},
+      breakfastIncluded: propertyDetails.breakfastIncluded ?? false,
+      parking: propertyDetails.parking ?? false,
+    },
+    media: [
+      ...(images.cover ? [{ url: images.cover, role: "cover" }] : []),
+      ...((images.gallery ?? []) as string[]).map((url, index) => ({ url, role: "gallery", sortOrder: index + 1 })),
+    ],
+    amenities: ((categoryData.amenities ?? []) as string[]).map((name) => ({
+      name,
+      value: true,
+      category: "property",
+      valueType: "boolean",
+    })),
+    roomTypes: rooms,
+    metadata: {
+      source: "vendor_portal_v2",
+      hostProfile: categoryData.hostProfile ?? {},
+      selectedSubtype: subcategory,
+    },
+  };
+}
 
 function CreateListingWizard({
   category,
@@ -226,6 +493,7 @@ function CreateListingWizard({
   const navigate = useNavigate();
   const [step, setStep] = useState<WizardStep>(1);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const flow = category ? getFlow(category) : null;
   const steps = getCreateSteps(category);
   const subcategory = useListingDraftStore((state) => state.subcategory ?? null);
@@ -253,6 +521,8 @@ function CreateListingWizard({
       if (flow?.step2Layout === "tree-selector") {
         if (!subcategory) {
           errors.push("Select a subtype before continuing.");
+        } else if (!isImplementedStaySubtype(category, subcategory)) {
+          errors.push("This stay subtype is not available yet. Please choose Hotel or Bed and Breakfast.");
         }
       } else {
         if (!title.trim()) errors.push("Title is required.");
@@ -263,6 +533,21 @@ function CreateListingWizard({
 
     if (currentStep === 3) {
       if (flow?.step3MultiSelect) {
+        if (category === "Stay") {
+          const propertyDetails = draftCategoryData.propertyDetails ?? {};
+          if (!String(propertyDetails.propertyName ?? "").trim()) {
+            errors.push("Property name is required.");
+          }
+          if (!String(propertyDetails.propertyLocation ?? "").trim()) {
+            errors.push("Property location is required.");
+          }
+          if (!String(propertyDetails.checkInTime ?? "").trim()) {
+            errors.push("Check-in time is required.");
+          }
+          if (!String(propertyDetails.checkOutTime ?? "").trim()) {
+            errors.push("Check-out time is required.");
+          }
+        }
         return errors;
       }
 
@@ -344,16 +629,48 @@ function CreateListingWizard({
     setStep((current) => (current < 6 ? ((current + 1) as WizardStep) : current));
   };
 
-  const handleFinish = () => {
-    const errors = validateStep(step);
+  const handleFinish = async () => {
+    const errors = ([1, 2, 3, 4, 5, 6] as WizardStep[]).flatMap((item) => validateStep(item));
     if (errors.length) {
-      setStepErrors(errors);
+      setStepErrors(Array.from(new Set(errors)));
       return;
     }
 
-    useListingDraftStore.getState().clearDraft();
-    navigate("/listings");
+    if (category !== "Stay") {
+      useListingDraftStore.getState().clearDraft();
+      navigate("/listings");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStepErrors([]);
+    try {
+      await apiFetch("/vendor/stays/", {
+        method: "POST",
+        body: JSON.stringify(
+          buildStayApplicationPayload({
+            title,
+            description,
+            destination,
+            lat,
+            lng,
+            subcategory,
+            categoryData: useListingDraftStore.getState().categoryData ?? {},
+          }),
+        ),
+      });
+      useListingDraftStore.getState().clearDraft();
+      navigate("/hotel/dashboard");
+    } catch (error: any) {
+      setStepErrors([error?.message || "Unable to submit the stay application. Please try again."]);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const isNextDisabled =
+    isSubmitting ||
+    (step === 2 && category === "Stay" && !isImplementedStaySubtype(category, subcategory));
 
   const renderStep = () => {
     if (step === 1) {
@@ -363,13 +680,23 @@ function CreateListingWizard({
     if (step === 2) {
       if (flow?.step2Layout === "tree-selector" && flow.treeSelection) {
         return (
-          <CreateWizardTreeSelectionStep
-            title={flow.treeSelection.title}
-            helperText={flow.treeSelection.helperText}
-            branches={flow.treeSelection.branches}
-            selectedId={subcategory}
-            onSelect={(value) => setDraft({ subcategory: value })}
-          />
+          <div className="space-y-3">
+            <CreateWizardTreeSelectionStep
+              title={flow.treeSelection.title}
+              helperText={flow.treeSelection.helperText}
+              branches={flow.treeSelection.branches}
+              selectedId={subcategory}
+              onSelect={(value) => setDraft({ subcategory: value })}
+            />
+            {category === "Stay" && subcategory && !isImplementedStaySubtype(category, subcategory) && (
+              <div
+                className="rounded-lg px-3 py-2 text-[12px]"
+                style={{ background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.25)", color: "#d97706" }}
+              >
+                This Stay subtype is not available yet. For now, continue with Hotel or Bed and Breakfast.
+              </div>
+            )}
+          </div>
         );
       }
 
@@ -516,13 +843,16 @@ function CreateListingWizard({
         </button>
         <button
           onClick={step === 6 ? handleFinish : handleNext}
+          disabled={isNextDisabled}
           className="px-4 py-2 rounded-lg text-[12px] transition-all"
           style={{
             background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
             color: "white",
+            opacity: isNextDisabled ? 0.55 : 1,
+            cursor: isNextDisabled ? "not-allowed" : "pointer",
           }}
         >
-          {step === 6 ? "Finish" : "Next"}
+          {step === 6 ? (isSubmitting ? "Submitting..." : "Submit Stay") : "Next"}
         </button>
       </div>
     </div>
@@ -534,7 +864,7 @@ function RatePlansStep() {
   const setDraft = useListingDraftStore((state) => state.setDraft);
   const [editingSection, setEditingSection] = useState<RatePlanSectionId | null>(null);
   const [ratePlans, setRatePlans] = useState<RatePlanDraft>(
-    () => (draftCategoryData.ratePlans as RatePlanDraft | undefined) ?? DEFAULT_RATE_PLAN_DRAFT,
+    () => normalizeRatePlanDraft(draftCategoryData.ratePlans as RatePlanDraft | undefined),
   );
 
   useEffect(() => {
@@ -561,7 +891,10 @@ function RatePlansStep() {
   const addGroupRate = () => {
     setRatePlans((current) => ({
       ...current,
-      groupRates: [...current.groupRates, { occupancy: "3 x 2", guestsPay: "USD 12.00" }],
+      groupRates: [
+        ...current.groupRates,
+        { groups: String(current.groupRates.length + 1), guestsPerGroup: "2", amount: "", currency: current.groupRates[0]?.currency ?? "USD" },
+      ],
     }));
   };
 
@@ -682,19 +1015,13 @@ function RatePlansStep() {
               <div className="space-y-3">
                 {editingSection === "group" ? (
                   <>
-                    {ratePlans.groupRates.map((row, index) => {
-                      // parse occupancy like "1 x 2" into parts
-                      const [groupsPart, perPart] = (row.occupancy || "").split("x").map((s) => s.trim());
-                      const groupsInit = groupsPart || "1";
-                      const perInit = perPart || "2";
-
-                      return (
-                        <div key={`${row.occupancy}-${index}`} className="grid grid-cols-[80px,1fr,auto] gap-3 items-end">
+                    {ratePlans.groupRates.map((row, index) => (
+                        <div key={`group-rate-${index}`} className="grid grid-cols-[80px_120px_100px_1fr_auto] gap-3 items-end">
                           <div>
                             <FieldLabel>Groups</FieldLabel>
                             <FormInput
-                              value={groupsInit}
-                              onChange={(value) => updateGroupRate(index, { occupancy: `${value} x ${perInit}` })}
+                              value={row.groups}
+                              onChange={(value) => updateGroupRate(index, { groups: value })}
                               placeholder="#"
                               type="number"
                             />
@@ -702,15 +1029,28 @@ function RatePlansStep() {
                           <div>
                             <FieldLabel>Guests per group</FieldLabel>
                             <FormInput
-                              value={perInit}
-                              onChange={(value) => updateGroupRate(index, { occupancy: `${groupsInit} x ${value}` })}
+                              value={row.guestsPerGroup}
+                              onChange={(value) => updateGroupRate(index, { guestsPerGroup: value })}
                               placeholder="#"
                               type="number"
                             />
                           </div>
                           <div>
-                            <FieldLabel>Guests pay</FieldLabel>
-                            <FormInput value={row.guestsPay} onChange={(value) => updateGroupRate(index, { guestsPay: value })} />
+                            <FieldLabel>Currency</FieldLabel>
+                            <SelectField
+                              value={row.currency}
+                              onChange={(value) => updateGroupRate(index, { currency: value })}
+                              options={RATE_PLAN_CURRENCIES}
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Amount</FieldLabel>
+                            <FormInput
+                              value={row.amount}
+                              onChange={(value) => updateGroupRate(index, { amount: value })}
+                              placeholder="0.00"
+                              type="number"
+                            />
                           </div>
                           <button
                             onClick={() => removeGroupRate(index)}
@@ -720,8 +1060,7 @@ function RatePlansStep() {
                             <Trash2 size={12} />
                           </button>
                         </div>
-                      );
-                    })}
+                    ))}
                     <button
                       onClick={addGroupRate}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
@@ -737,10 +1076,10 @@ function RatePlansStep() {
                       <span>Occupancy</span>
                       <span>Guests pay</span>
                     </div>
-                    {ratePlans.groupRates.map((row) => (
-                      <div key={row.occupancy} className="grid grid-cols-2 px-3 py-2 text-[12px]" style={{ borderTop: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
-                        <span>{row.occupancy}</span>
-                        <span className="text-right">{row.guestsPay}</span>
+                    {ratePlans.groupRates.map((row, index) => (
+                      <div key={`group-rate-summary-${index}`} className="grid grid-cols-2 px-3 py-2 text-[12px]" style={{ borderTop: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                        <span>{row.groups} x {row.guestsPerGroup}</span>
+                        <span className="text-right">{formatGroupRate(row)}</span>
                       </div>
                     ))}
                   </div>
@@ -1058,18 +1397,88 @@ function StatusPanel({
 
 // ── Main Editor ──────────────────────────────────────────────────────────────
 
+function StayEditPanel({
+  title,
+  setTitle,
+  active,
+  setActive,
+  description,
+  setDescription,
+}: {
+  title: string;
+  setTitle: (value: string) => void;
+  active: boolean;
+  setActive: (value: boolean) => void;
+  description: string;
+  setDescription: (value: string) => void;
+}) {
+  const [activeSection, setActiveSection] = useState<StayEditTabId>("property");
+
+  const renderSection = () => {
+    if (activeSection === "property") return <MediaTab />;
+    if (activeSection === "rooms") return <RoomsSection />;
+    if (activeSection === "rates") return <RatePlansStep />;
+    if (activeSection === "images") return <ImagesSection />;
+    return (
+      <BasicInfoTab
+        title={title}
+        setTitle={setTitle}
+        active={active}
+        setActive={setActive}
+        description={description}
+        setDescription={setDescription}
+      />
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div
+        className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0"
+        style={{ borderBottom: "1px solid var(--border-light)" }}
+      >
+        {STAY_EDIT_SECTIONS.map(({ id, label, icon: Icon }) => {
+          const isActive = activeSection === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setActiveSection(id)}
+              className="flex items-center gap-2 px-4 py-2.5 text-[12px] rounded-t-lg transition-all"
+              style={
+                isActive
+                  ? {
+                    color: "var(--accent-navy-light)",
+                    background: "var(--active-overlay)",
+                    borderBottom: "2px solid var(--accent-navy)",
+                  }
+                  : { color: "var(--text-tertiary)" }
+              }
+            >
+              <Icon size={13} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {renderSection()}
+      </div>
+    </div>
+  );
+}
+
 export function ListingEditor({ mode }: ListingEditorProps) {
   const navigate = useNavigate();
   const params = useParams();
   const listingId = params.id || null;
-  const [category, setCategory] = useState<Category | null>(() => (mode === "create" ? null : "Safari"));
+  const [category, setCategory] = useState<Category | null>(() => (mode === "create" ? null : "Stay"));
   const [activeTab, setActiveTab] = useState<TabId>("basic");
-  const [title, setTitle] = useState(() => (mode === "create" ? "" : DEFAULT_DATA.title));
-  const [active, setActive] = useState(() => (mode === "create" ? true : DEFAULT_DATA.active));
-  const [description, setDescription] = useState(() => (mode === "create" ? "" : DEFAULT_DATA.description));
-  const [destination, setDestination] = useState(() => (mode === "create" ? "" : DEFAULT_DATA.destination));
-  const [lat, setLat] = useState(() => (mode === "create" ? "" : DEFAULT_DATA.lat));
-  const [lng, setLng] = useState(() => (mode === "create" ? "" : DEFAULT_DATA.lng));
+  const [title, setTitle] = useState("");
+  const [active, setActive] = useState(true);
+  const [description, setDescription] = useState("");
+  const [destination, setDestination] = useState("");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
   const [variants, setVariants] = useState<PricingVariant[]>(() => (
     mode === "create"
       ? [
@@ -1085,14 +1494,91 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           isDefault: true,
         },
       ]
-      : [
-        { id: "var_1", name: "Standard Safari", unit: "Per Person", minCapacity: "2", maxCapacity: "6", price: "85", currency: "USD", priority: 1, isDefault: true },
-        { id: "var_2", name: "Private Safari", unit: "Per Group", minCapacity: "1", maxCapacity: "6", price: "380", currency: "USD", priority: 2, isDefault: false },
-        { id: "var_3", name: "Premium Sunrise", unit: "Per Person", minCapacity: "2", maxCapacity: "4", price: "120", currency: "USD", priority: 3, isDefault: false },
-      ]
+      : []
   ));
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [editLoading, setEditLoading] = useState(mode === "edit");
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== "create") return;
+
+    useListingDraftStore.getState().clearDraft();
+    setCategory(null);
+    setActiveTab("basic");
+    setTitle("");
+    setActive(true);
+    setDescription("");
+    setDestination("");
+    setLat("");
+    setLng("");
+    setVariants([
+      {
+        id: "var_1",
+        name: "Default Package",
+        unit: "Per Person",
+        minCapacity: "1",
+        maxCapacity: "6",
+        price: "",
+        currency: "USD",
+        priority: 1,
+        isDefault: true,
+      },
+    ]);
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "edit" || !listingId) return;
+
+    let cancelled = false;
+
+    async function loadListing() {
+      if (!isUuid(listingId)) {
+        setCategory("Safari");
+        setTitle(DEFAULT_DATA.title);
+        setActive(DEFAULT_DATA.active);
+        setDescription(DEFAULT_DATA.description);
+        setDestination(DEFAULT_DATA.destination);
+        setLat(DEFAULT_DATA.lat);
+        setLng(DEFAULT_DATA.lng);
+        setVariants([
+          { id: "var_1", name: "Standard Safari", unit: "Per Person", minCapacity: "2", maxCapacity: "6", price: "85", currency: "USD", priority: 1, isDefault: true },
+          { id: "var_2", name: "Private Safari", unit: "Per Group", minCapacity: "1", maxCapacity: "6", price: "380", currency: "USD", priority: 2, isDefault: false },
+          { id: "var_3", name: "Premium Sunrise", unit: "Per Person", minCapacity: "2", maxCapacity: "4", price: "120", currency: "USD", priority: 3, isDefault: false },
+        ]);
+        setEditLoading(false);
+        return;
+      }
+
+      setEditLoading(true);
+      setEditError(null);
+      try {
+        const property = await apiFetch<StayPropertyResponse>(`/vendor/stays/${listingId}`);
+        if (cancelled) return;
+        const hydrated = hydrateStayDraft(property);
+        setCategory(hydrated.category);
+        setTitle(hydrated.title);
+        setActive(hydrated.active);
+        setDescription(hydrated.description);
+        setDestination(hydrated.destination);
+        setLat(hydrated.lat);
+        setLng(hydrated.lng);
+        setVariants([]);
+        useListingDraftStore.getState().setDraft(hydrated);
+      } catch (error: any) {
+        if (cancelled) return;
+        setEditError(error?.message || "Unable to load this listing.");
+      } finally {
+        if (!cancelled) setEditLoading(false);
+      }
+    }
+
+    loadListing();
+    return () => {
+      cancelled = true;
+    };
+  }, [listingId, mode]);
 
   // Persisting wrappers
   const setCategoryPersist = (v: Category | null) => {
@@ -1156,6 +1642,76 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   }
 
   const resolvedCategory = category ?? "Safari";
+  const editorTabs = getEditorTabs(resolvedCategory);
+
+  if (mode === "edit" && editLoading) {
+    return (
+      <div className="h-full flex items-center justify-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+        Loading listing...
+      </div>
+    );
+  }
+
+  if (mode === "edit" && editError) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="rounded-xl px-4 py-3 text-[13px]" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+          {editError}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "edit" && resolvedCategory === "Stay") {
+    return (
+      <div className="flex flex-col h-full">
+        <StayEditPanel
+          title={title}
+          setTitle={setTitlePersist}
+          active={active}
+          setActive={setActivePersist}
+          description={description}
+          setDescription={setDescriptionPersist}
+        />
+
+        <div
+          className="flex items-center justify-between px-6 py-3 shrink-0"
+          style={{
+            background: "var(--bg-header)",
+            borderTop: "1px solid var(--border-light)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            Stay listing edit
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/listings")}
+              className="px-4 py-1.5 rounded-lg text-[12px] transition-all"
+              style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
+            >
+              Back to Listings
+            </button>
+            <button
+              onClick={() => navigate("/listings")}
+              className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
+              style={{
+                background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+                color: "white",
+                boxShadow: "0 0 16px var(--border-accent)",
+                border: "1px solid var(--border-accent)",
+                fontWeight: 500,
+              }}
+            >
+              <Check size={12} />
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -1203,7 +1759,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
         className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0"
         style={{ borderBottom: "1px solid var(--border-light)" }}
       >
-        {TABS.map(({ id, label, icon: Icon }) => {
+        {editorTabs.map(({ id, label, icon: Icon }) => {
           const isActive = activeTab === id;
           return (
             <button
@@ -1261,10 +1817,10 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           )}
           {activeTab === "media" && <MediaTab />}
           {activeTab === "pricing" && (
-            <PricingTab variants={variants} setVariants={setVariants} />
+            resolvedCategory === "Stay" ? <RatePlansStep /> : <PricingTab variants={variants} setVariants={setVariants} />
           )}
-          {activeTab === "category" && <CategoryDetailsTab category={resolvedCategory} />}
-          {activeTab === "policies" && <PoliciesTab category={resolvedCategory} />}
+          {activeTab === "category" && (resolvedCategory === "Stay" ? <RoomsSection /> : <CategoryDetailsTab category={resolvedCategory} />)}
+          {activeTab === "policies" && (resolvedCategory === "Stay" ? <ImagesSection /> : <PoliciesTab category={resolvedCategory} />)}
         </div>
 
         {/* Right panel */}
