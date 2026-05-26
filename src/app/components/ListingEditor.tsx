@@ -30,6 +30,7 @@ import {
   Compass,
   Anchor,
   Car,
+  PencilLine,
 } from "lucide-react";
 import {
   CreateWizardMultiSelectStep,
@@ -53,11 +54,12 @@ import {
   ImagesSection,
   PricingTab,
   type PricingVariant,
+  type RoomType,
 } from "./listings/listingEditorSections";
 
 type ListingMode = "create" | "edit";
 type TabId = "basic" | "destination" | "media" | "pricing" | "category" | "policies";
-type WizardStep = 1 | 2 | 3 | 4 | 5;
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface ListingEditorProps {
   mode: ListingMode;
@@ -108,7 +110,8 @@ const CREATE_STEPS: { id: WizardStep; label: string; description: string }[] = [
   { id: 2, label: "Core details", description: "Name, destination, basics" },
   { id: 3, label: "Media & pricing", description: "Images and rate cards" },
   { id: 4, label: "Details & policy", description: "Category fields and rules" },
-  { id: 5, label: "Images", description: "Property cover and gallery" },
+  { id: 5, label: "Rate plans", description: "Review pricing and finish setup" },
+  { id: 6, label: "Images", description: "Property cover and gallery" },
 ];
 
 function getCreateSteps(category: Category | null) {
@@ -136,6 +139,43 @@ function getCreateSteps(category: Category | null) {
     return step;
   });
 }
+
+type RatePlanSectionId = "standard" | "group" | "family" | "nonRefundable";
+
+type RatePlanGroupRow = {
+  occupancy: string;
+  guestsPay: string;
+};
+
+type RatePlanDraft = {
+  standardCancellationPolicy: string;
+  standardNotes: string[];
+  groupRates: RatePlanGroupRow[];
+  childPolicy: string;
+  childAgeGroup: string;
+  childNotes: string[];
+  nonRefundablePolicy: string;
+  nonRefundableNotes: string[];
+};
+
+const DEFAULT_RATE_PLAN_DRAFT: RatePlanDraft = {
+  standardCancellationPolicy:
+    "Free cancellation up to 7 days before arrival. Cancellations made 3 to 7 days before arrival are charged 50%. No refund inside 72 hours or for no-shows.",
+  standardNotes: [
+    "Guests can cancel for free up to 1 day before their arrival",
+    "Guests who cancel within 24 hours will have their cancellation fee waived",
+  ],
+  groupRates: [
+    { occupancy: "1 x 2", guestsPay: "USD 14.00" },
+    { occupancy: "2 x 2", guestsPay: "USD 14.00" },
+  ],
+  childPolicy: "Children stay free when sharing the existing bedding with an adult.",
+  childAgeGroup: "0 - 5 years",
+  childNotes: ["Add a family badge so the rate plan is easier to spot during review"],
+  nonRefundablePolicy:
+    "Guests pay 10% less than the standard rate and the booking cannot be refunded after confirmation.",
+  nonRefundableNotes: ["Guests can't cancel their booking for free at any time"],
+};
 
 // Pre-filled data
 const DEFAULT_DATA = {
@@ -183,7 +223,9 @@ function CreateListingWizard({
   variants: PricingVariant[];
   setVariants: (value: PricingVariant[]) => void;
 }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<WizardStep>(1);
+  const [stepErrors, setStepErrors] = useState<string[]>([]);
   const flow = category ? getFlow(category) : null;
   const steps = getCreateSteps(category);
   const subcategory = useListingDraftStore((state) => state.subcategory ?? null);
@@ -191,6 +233,127 @@ function CreateListingWizard({
   const draftCategoryData = useListingDraftStore((state) => state.categoryData ?? {});
 
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>(() => (draftCategoryData.amenities ?? []));
+
+  const isPositiveNumber = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0;
+  };
+
+  const validateStep = (currentStep: WizardStep): string[] => {
+    const errors: string[] = [];
+
+    if (currentStep === 1) {
+      if (!category) {
+        errors.push("Select a listing type before continuing.");
+      }
+      return errors;
+    }
+
+    if (currentStep === 2) {
+      if (flow?.step2Layout === "tree-selector") {
+        if (!subcategory) {
+          errors.push("Select a subtype before continuing.");
+        }
+      } else {
+        if (!title.trim()) errors.push("Title is required.");
+        if (!destination.trim()) errors.push("Destination is required.");
+      }
+      return errors;
+    }
+
+    if (currentStep === 3) {
+      if (flow?.step3MultiSelect) {
+        return errors;
+      }
+
+      if (!variants.length) {
+        errors.push("Add at least one pricing variant.");
+      }
+      if (variants.some((variant) => !variant.price.trim() || !isPositiveNumber(variant.price))) {
+        errors.push("Enter a valid price greater than 0 for each pricing variant.");
+      }
+      return errors;
+    }
+
+    if (currentStep === 4 && category === "Stay") {
+      const rooms = ((draftCategoryData.roomTypes ?? []) as RoomType[]);
+
+      if (!rooms.length) {
+        errors.push("Add at least one room before continuing.");
+      }
+
+      if (
+        rooms.some((room) => {
+          if (!room.type.trim()) return true;
+          if (!room.count.trim() || Number(room.count) <= 0) return true;
+          if (!room.maxGuests.trim() || Number(room.maxGuests) <= 0) return true;
+          if (!room.pricePerNight.trim() || !isPositiveNumber(room.pricePerNight)) return true;
+
+          let remainingPrice = Number(room.pricePerNight);
+
+          return (room.discounts ?? []).some((discount) => {
+            const value = Number(discount.value);
+            if (!discount.label.trim() || !discount.value.trim() || !Number.isFinite(value) || value <= 0) {
+              return true;
+            }
+
+            if (discount.type === "percentage") {
+              if (value > 100) return true;
+              remainingPrice -= (remainingPrice * value) / 100;
+              return false;
+            }
+
+            if (value > remainingPrice) return true;
+            remainingPrice -= value;
+            return false;
+          });
+        })
+      ) {
+        errors.push("Each room must have type, count, max guests, a valid price per night greater than 0, and valid discount values.");
+      }
+    }
+
+    return errors;
+  };
+
+  const goToStep = (targetStep: WizardStep) => {
+    if (targetStep <= step) {
+      setStep(targetStep);
+      setStepErrors([]);
+      return;
+    }
+
+    const errors = validateStep(step);
+    if (errors.length) {
+      setStepErrors(errors);
+      return;
+    }
+
+    setStepErrors([]);
+    setStep(targetStep);
+  };
+
+  const handleNext = () => {
+    const errors = validateStep(step);
+    if (errors.length) {
+      setStepErrors(errors);
+      return;
+    }
+
+    setStepErrors([]);
+    setStep((current) => (current < 6 ? ((current + 1) as WizardStep) : current));
+  };
+
+  const handleFinish = () => {
+    const errors = validateStep(step);
+    if (errors.length) {
+      setStepErrors(errors);
+      return;
+    }
+
+    useListingDraftStore.getState().clearDraft();
+    navigate("/listings");
+  };
 
   const renderStep = () => {
     if (step === 1) {
@@ -290,6 +453,10 @@ function CreateListingWizard({
     }
 
     if (step === 5) {
+      return <RatePlansStep />;
+    }
+
+    if (step === 6) {
       return <ImagesSection />;
     }
   };
@@ -303,7 +470,7 @@ function CreateListingWizard({
             return (
               <button
                 key={item.id}
-                onClick={() => setStep(item.id)}
+                onClick={() => goToStep(item.id)}
                 className="px-3 py-2 rounded-lg text-left transition-all"
                 style={{
                   background: activeStep ? "var(--active-overlay)" : "var(--input-background)",
@@ -320,10 +487,23 @@ function CreateListingWizard({
       </div>
       <div className="flex-1 overflow-y-auto p-6">
         {renderStep()}
+        {stepErrors.length > 0 && (
+          <div
+            className="mt-4 rounded-lg px-3 py-2 text-[12px]"
+            style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", color: "#ef4444" }}
+          >
+            {stepErrors.map((error) => (
+              <p key={error}>{error}</p>
+            ))}
+          </div>
+        )}
       </div>
       <div className="px-6 py-4 shrink-0 flex items-center justify-between" style={{ borderTop: "1px solid var(--border-light)", background: "var(--bg-header)" }}>
         <button
-          onClick={() => setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current))}
+          onClick={() => {
+            setStepErrors([]);
+            setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current));
+          }}
           disabled={step === 1}
           className="px-4 py-2 rounded-lg text-[12px] transition-all"
           style={{
@@ -335,16 +515,367 @@ function CreateListingWizard({
           Back
         </button>
         <button
-          onClick={() => setStep((current) => (current < 5 ? ((current + 1) as WizardStep) : current))}
+          onClick={step === 6 ? handleFinish : handleNext}
           className="px-4 py-2 rounded-lg text-[12px] transition-all"
           style={{
             background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
             color: "white",
           }}
         >
-          {step === 5 ? "Finish" : "Next"}
+          {step === 6 ? "Finish" : "Next"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function RatePlansStep() {
+  const draftCategoryData = useListingDraftStore((state) => state.categoryData ?? {});
+  const setDraft = useListingDraftStore((state) => state.setDraft);
+  const [editingSection, setEditingSection] = useState<RatePlanSectionId | null>(null);
+  const [ratePlans, setRatePlans] = useState<RatePlanDraft>(
+    () => (draftCategoryData.ratePlans as RatePlanDraft | undefined) ?? DEFAULT_RATE_PLAN_DRAFT,
+  );
+
+  useEffect(() => {
+    setDraft({
+      categoryData: {
+        ...(draftCategoryData || {}),
+        ratePlans,
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratePlans]);
+
+  const updateRatePlans = (updates: Partial<RatePlanDraft>) => {
+    setRatePlans((current) => ({ ...current, ...updates }));
+  };
+
+  const updateGroupRate = (index: number, updates: Partial<RatePlanGroupRow>) => {
+    setRatePlans((current) => ({
+      ...current,
+      groupRates: current.groupRates.map((row, rowIndex) => (rowIndex === index ? { ...row, ...updates } : row)),
+    }));
+  };
+
+  const addGroupRate = () => {
+    setRatePlans((current) => ({
+      ...current,
+      groupRates: [...current.groupRates, { occupancy: "3 x 2", guestsPay: "USD 12.00" }],
+    }));
+  };
+
+  const removeGroupRate = (index: number) => {
+    setRatePlans((current) => ({
+      ...current,
+      groupRates: current.groupRates.filter((_, rowIndex) => rowIndex !== index),
+    }));
+  };
+
+  const toggleNote = (section: "standardNotes" | "childNotes" | "nonRefundableNotes", note: string) => {
+    setRatePlans((current) => {
+      const items = current[section];
+      return {
+        ...current,
+        [section]: items.includes(note) ? items.filter((item) => item !== note) : [...items, note],
+      };
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="Rate plans">
+        <div className="rounded-2xl p-4 mb-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <div>
+              <p className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Finish pricing setup</p>
+              <p className="text-[12px] mt-1" style={{ color: "var(--text-secondary)" }}>
+                Use these plans as the final pricing layer before you publish. You can keep the defaults, or refine each card to match the property.
+              </p>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg text-[11px]" style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}>
+              Final step
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Standard rate plan</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Set the default cancellation policy for the listing.</p>
+                </div>
+                <button
+                  onClick={() => setEditingSection(editingSection === "standard" ? null : "standard")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                  style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}
+                >
+                  <PencilLine size={12} />
+                  {editingSection === "standard" ? "Done" : "Edit"}
+                </button>
+              </div>
+
+              {editingSection === "standard" ? (
+                <div className="space-y-3">
+                  <div>
+                    <FieldLabel>Cancellation policy</FieldLabel>
+                    <FormTextarea
+                      value={ratePlans.standardCancellationPolicy}
+                      onChange={(value) => updateRatePlans({ standardCancellationPolicy: value })}
+                      rows={4}
+                      placeholder="Describe the standard cancellation policy"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      "Guests can cancel for free up to 1 day before their arrival",
+                      "Guests who cancel within 24 hours will have their cancellation fee waived",
+                    ].map((note) => {
+                      const isSelected = ratePlans.standardNotes.includes(note);
+                      return (
+                        <button
+                          key={note}
+                          onClick={() => toggleNote("standardNotes", note)}
+                          className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all"
+                          style={{
+                            background: isSelected ? "var(--active-overlay)" : "transparent",
+                            border: "1px solid var(--border-light)",
+                            color: isSelected ? "var(--accent-navy-light)" : "var(--text-secondary)",
+                          }}
+                        >
+                          <Check size={12} style={{ color: isSelected ? "var(--accent-navy-light)" : "var(--text-tertiary)" }} />
+                          <span className="text-[12px]">{note}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[12px] leading-5" style={{ color: "var(--text-secondary)" }}>{ratePlans.standardCancellationPolicy}</p>
+                  {ratePlans.standardNotes.map((note) => (
+                    <div key={note} className="flex items-start gap-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      <Check size={12} className="mt-0.5" style={{ color: "var(--success)" }} />
+                      <span>{note}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Price per group size</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Set lower prices for smaller groups to improve conversion.</p>
+                </div>
+                <button
+                  onClick={() => setEditingSection(editingSection === "group" ? null : "group")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                  style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}
+                >
+                  <PencilLine size={12} />
+                  {editingSection === "group" ? "Done" : "Edit"}
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {editingSection === "group" ? (
+                  <>
+                    {ratePlans.groupRates.map((row, index) => {
+                      // parse occupancy like "1 x 2" into parts
+                      const [groupsPart, perPart] = (row.occupancy || "").split("x").map((s) => s.trim());
+                      const groupsInit = groupsPart || "1";
+                      const perInit = perPart || "2";
+
+                      return (
+                        <div key={`${row.occupancy}-${index}`} className="grid grid-cols-[80px,1fr,auto] gap-3 items-end">
+                          <div>
+                            <FieldLabel>Groups</FieldLabel>
+                            <FormInput
+                              value={groupsInit}
+                              onChange={(value) => updateGroupRate(index, { occupancy: `${value} x ${perInit}` })}
+                              placeholder="#"
+                              type="number"
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Guests per group</FieldLabel>
+                            <FormInput
+                              value={perInit}
+                              onChange={(value) => updateGroupRate(index, { occupancy: `${groupsInit} x ${value}` })}
+                              placeholder="#"
+                              type="number"
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel>Guests pay</FieldLabel>
+                            <FormInput value={row.guestsPay} onChange={(value) => updateGroupRate(index, { guestsPay: value })} />
+                          </div>
+                          <button
+                            onClick={() => removeGroupRate(index)}
+                            className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
+                            style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={addGroupRate}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                      style={{ background: "var(--active-overlay)", color: "var(--accent-navy-light)", border: "1px solid var(--border-accent)" }}
+                    >
+                      <Plus size={12} />
+                      Add row
+                    </button>
+                  </>
+                ) : (
+                  <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-light)" }}>
+                    <div className="grid grid-cols-2 gap-0 px-3 py-2 text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)", background: "var(--bg-panel)" }}>
+                      <span>Occupancy</span>
+                      <span>Guests pay</span>
+                    </div>
+                    {ratePlans.groupRates.map((row) => (
+                      <div key={row.occupancy} className="grid grid-cols-2 px-3 py-2 text-[12px]" style={{ borderTop: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                        <span>{row.occupancy}</span>
+                        <span className="text-right">{row.guestsPay}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Child prices for families</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Keep the family offer visible and easy to understand.</p>
+                </div>
+                <button
+                  onClick={() => setEditingSection(editingSection === "family" ? null : "family")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                  style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}
+                >
+                  <PencilLine size={12} />
+                  {editingSection === "family" ? "Done" : "Edit"}
+                </button>
+              </div>
+
+              {editingSection === "family" ? (
+                <div className="space-y-3">
+                  <div>
+                    <FieldLabel>Age group</FieldLabel>
+                    <FormInput value={ratePlans.childAgeGroup} onChange={(value) => updateRatePlans({ childAgeGroup: value })} placeholder="e.g. 0 - 5 years" />
+                  </div>
+                  <div>
+                    <FieldLabel>Price and age rule</FieldLabel>
+                    <FormTextarea value={ratePlans.childPolicy} onChange={(value) => updateRatePlans({ childPolicy: value })} rows={3} />
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      "Add a family badge so the rate plan is easier to spot during review",
+                      "Children stay free when sharing the existing bedding with an adult",
+                    ].map((note) => {
+                      const isSelected = ratePlans.childNotes.includes(note);
+                      return (
+                        <button
+                          key={note}
+                          onClick={() => toggleNote("childNotes", note)}
+                          className="w-full flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-all"
+                          style={{
+                            background: isSelected ? "var(--active-overlay)" : "transparent",
+                            border: "1px solid var(--border-light)",
+                            color: isSelected ? "var(--accent-navy-light)" : "var(--text-secondary)",
+                          }}
+                        >
+                          <Check size={12} className="mt-0.5" style={{ color: isSelected ? "var(--accent-navy-light)" : "var(--text-tertiary)" }} />
+                          <span className="text-[12px]">{note}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span style={{ color: "var(--text-secondary)" }}>Age group</span>
+                    <span className="px-2 py-0.5 rounded" style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)" }}>{ratePlans.childAgeGroup}</span>
+                  </div>
+                  <p className="text-[12px] leading-5" style={{ color: "var(--text-secondary)" }}>{ratePlans.childPolicy}</p>
+                  {ratePlans.childNotes.map((note) => (
+                    <div key={note} className="flex items-start gap-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      <Check size={12} className="mt-0.5" style={{ color: "var(--success)" }} />
+                      <span>{note}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Non-refundable rate plan</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>Use this card for discount-led offers and stricter policies.</p>
+                </div>
+                <button
+                  onClick={() => setEditingSection(editingSection === "nonRefundable" ? null : "nonRefundable")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                  style={{ color: "var(--accent-navy-light)", background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}
+                >
+                  <PencilLine size={12} />
+                  {editingSection === "nonRefundable" ? "Done" : "Edit"}
+                </button>
+              </div>
+
+              {editingSection === "nonRefundable" ? (
+                <div className="space-y-3">
+                  <div>
+                    <FieldLabel>Price note</FieldLabel>
+                    <FormTextarea value={ratePlans.nonRefundablePolicy} onChange={(value) => updateRatePlans({ nonRefundablePolicy: value })} rows={3} />
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      "Guests pay 10% less than the standard rate",
+                      "Guests can't cancel their booking for free at any time",
+                    ].map((note) => {
+                      const isSelected = ratePlans.nonRefundableNotes.includes(note);
+                      return (
+                        <button
+                          key={note}
+                          onClick={() => toggleNote("nonRefundableNotes", note)}
+                          className="w-full flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-all"
+                          style={{
+                            background: isSelected ? "var(--active-overlay)" : "transparent",
+                            border: "1px solid var(--border-light)",
+                            color: isSelected ? "var(--accent-navy-light)" : "var(--text-secondary)",
+                          }}
+                        >
+                          <Check size={12} className="mt-0.5" style={{ color: isSelected ? "var(--accent-navy-light)" : "var(--text-tertiary)" }} />
+                          <span className="text-[12px]">{note}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[12px] leading-5" style={{ color: "var(--text-secondary)" }}>{ratePlans.nonRefundablePolicy}</p>
+                  {ratePlans.nonRefundableNotes.map((note) => (
+                    <div key={note} className="flex items-start gap-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      <AlertTriangle size={12} className="mt-0.5" style={{ color: "var(--warning)" }} />
+                      <span>{note}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </SectionCard>
     </div>
   );
 }

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Check, GripVertical, Plus, Trash2, Upload, Minus } from "lucide-react";
+import { useDropzone } from "react-dropzone";
 import type { Category } from "../../stores/listingDraftStore";
 import { useListingDraftStore } from "../../stores/listingDraftStore";
 import {
@@ -25,6 +26,104 @@ function readFileAsDataUrl(file: File): Promise<string> {
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
 const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
 
+type DiscountType = "percentage" | "flat";
+
+export interface RoomDiscount {
+    id: string;
+    label: string;
+    type: DiscountType;
+    value: string;
+}
+
+function parseMoneyValue(value: string): number | null {
+    const cleaned = value.trim().replace(/[$,]/g, "");
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeRoomDiscounts(discounts: unknown): RoomDiscount[] {
+    if (!Array.isArray(discounts)) return [];
+
+    return discounts
+        .map((discount, index) => {
+            if (typeof discount === "string") {
+                const percentMatch = discount.trim().match(/^([0-9]+(?:\.[0-9]+)?)%$/);
+                const flatMatch = discount.trim().match(/^[₹$]?\s*([0-9]+(?:\.[0-9]+)?)$/);
+
+                return {
+                    id: `legacy_discount_${index}`,
+                    label: `Discount ${index + 1}`,
+                    type: percentMatch ? "percentage" : "flat",
+                    value: percentMatch?.[1] ?? flatMatch?.[1] ?? discount.trim(),
+                } satisfies RoomDiscount;
+            }
+
+            if (discount && typeof discount === "object") {
+                const item = discount as Partial<RoomDiscount>;
+                return {
+                    id: item.id ?? `discount_${index}`,
+                    label: item.label ?? `Discount ${index + 1}`,
+                    type: item.type === "percentage" ? "percentage" : "flat",
+                    value: item.value ?? "",
+                } satisfies RoomDiscount;
+            }
+
+            return null;
+        })
+        .filter((discount): discount is RoomDiscount => discount !== null);
+}
+
+function calculateDiscountedPrice(basePrice: string, discounts: RoomDiscount[]) {
+    const startingPrice = parseMoneyValue(basePrice);
+    if (startingPrice === null) {
+        return { basePrice: null, discountTotal: null, finalPrice: null, hasInvalidDiscount: false };
+    }
+
+    let currentPrice = startingPrice;
+    let totalDiscount = 0;
+    let hasInvalidDiscount = false;
+
+    discounts.forEach((discount) => {
+        const amount = parseMoneyValue(discount.value);
+        if (amount === null || amount <= 0) {
+            hasInvalidDiscount = true;
+            return;
+        }
+
+        if (discount.type === "percentage") {
+            if (amount > 100) {
+                hasInvalidDiscount = true;
+                return;
+            }
+
+            const applied = (currentPrice * amount) / 100;
+            totalDiscount += applied;
+            currentPrice = Math.max(0, currentPrice - applied);
+            return;
+        }
+
+        if (amount > currentPrice) {
+            hasInvalidDiscount = true;
+            return;
+        }
+
+        totalDiscount += amount;
+        currentPrice = Math.max(0, currentPrice - amount);
+    });
+
+    return {
+        basePrice: startingPrice,
+        discountTotal: hasInvalidDiscount ? null : totalDiscount,
+        finalPrice: hasInvalidDiscount ? null : currentPrice,
+        hasInvalidDiscount,
+    };
+}
+
+async function filesToDataUrls(files: File[]) {
+    return Promise.all(files.map((file) => readFileAsDataUrl(file)));
+}
+
 export interface PricingVariant {
     id: string;
     name: string;
@@ -42,15 +141,17 @@ export interface RoomType {
     type: string;
     count: string;
     beds: string;
+    hasBeds?: boolean;
     cribs: string;
     maxGuests: string;
     size: string;
     smoking: boolean;
     bathroomType: string;
     bathroomItems: string[];
-    guestAccess: string[];
+    guestAccess: boolean;
     pricePerNight: string;
-    discounts: string[];
+    currency: string;
+    discounts: RoomDiscount[];
     bedBreakdown?: Record<string, number>;
     coverImage?: string;
     gallery?: string[];
@@ -570,14 +671,16 @@ function StayDetails() {
             type: "Standard",
             count: "1",
             beds: "1",
+            hasBeds: false,
             cribs: "0",
             maxGuests: "2",
             size: "",
             smoking: false,
             bathroomType: "Private",
             bathroomItems: [],
-            guestAccess: [],
+            guestAccess: false,
             pricePerNight: "",
+            currency: "USD",
             discounts: [],
             bedBreakdown: {},
             coverImage: "",
@@ -1079,7 +1182,12 @@ export function RoomsSection() {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
-    const [rooms, setRooms] = useState<RoomType[]>(() => (draftCategoryData.roomTypes ?? []) as RoomType[]);
+    const [rooms, setRooms] = useState<RoomType[]>(() =>
+        ((draftCategoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
+            ...room,
+            discounts: normalizeRoomDiscounts(room.discounts),
+        })),
+    );
 
     useEffect(() => {
         setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
@@ -1092,14 +1200,16 @@ export function RoomsSection() {
             type: "Standard",
             count: "1",
             beds: "1",
+            hasBeds: false,
             cribs: "0",
             maxGuests: "2",
             size: "",
             smoking: false,
             bathroomType: "Private",
             bathroomItems: [],
-            guestAccess: [],
+            guestAccess: false,
             pricePerNight: "",
+            currency: "USD",
             discounts: [],
         };
         setRooms((r) => [...r, newRoom]);
@@ -1109,6 +1219,41 @@ export function RoomsSection() {
 
     const updateRoom = (id: string, updates: Partial<RoomType>) =>
         setRooms((r) => r.map((room) => (room.id === id ? { ...room, ...updates } : room)));
+
+    const addDiscount = (roomId: string) => {
+        const currentRoom = rooms.find((room) => room.id === roomId);
+        if (!currentRoom) return;
+
+        updateRoom(roomId, {
+            discounts: [
+                ...currentRoom.discounts,
+                {
+                    id: `discount_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                    label: "New discount",
+                    type: "percentage",
+                    value: "10",
+                },
+            ],
+        });
+    };
+
+    const updateDiscount = (roomId: string, discountId: string, updates: Partial<RoomDiscount>) => {
+        const currentRoom = rooms.find((room) => room.id === roomId);
+        if (!currentRoom) return;
+
+        updateRoom(roomId, {
+            discounts: currentRoom.discounts.map((discount) => (discount.id === discountId ? { ...discount, ...updates } : discount)),
+        });
+    };
+
+    const removeDiscount = (roomId: string, discountId: string) => {
+        const currentRoom = rooms.find((room) => room.id === roomId);
+        if (!currentRoom) return;
+
+        updateRoom(roomId, {
+            discounts: currentRoom.discounts.filter((discount) => discount.id !== discountId),
+        });
+    };
 
     return (
         <div className="space-y-4">
@@ -1125,168 +1270,227 @@ export function RoomsSection() {
                     {rooms.length === 0 ? (
                         <div style={{ color: "var(--text-secondary)" }}>No rooms added yet.</div>
                     ) : (
-                        rooms.map((room) => (
-                            <div key={room.id} className="p-3 rounded-lg" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
-                                <div className="grid grid-cols-2 gap-4 mb-2">
-                                    <div>
-                                        <FieldLabel>Type</FieldLabel>
-                                        <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={["BedRoom", "Living Room", "Other Room"]} />
-                                    </div>
-                                    <div>
-                                        <FieldLabel>Count</FieldLabel>
-                                        <FormInput value={room.count} onChange={(v) => updateRoom(room.id, { count: v })} type="number" />
-                                    </div>
-                                    {/* <div>
-                                        <FieldLabel>Beds</FieldLabel>
-                                        <FormInput value={room.beds} onChange={(v) => updateRoom(room.id, { beds: v })} />
-                                    </div> */}
-                                </div>
-                                <div className="mb-3">
-                                    <FieldLabel>Beds</FieldLabel>
-                                    <div className="space-y-2">
-                                        {[
-                                            { key: "Twin", label: "Twin bed(s)", desc: "35–51 inches wide" },
-                                            { key: "Full", label: "Full bed(s)", desc: "52–59 inches wide" },
-                                            { key: "Queen", label: "Queen bed(s)", desc: "60–70 inches wide" },
-                                            { key: "King", label: "King bed(s)", desc: "71–81 inches wide" },
-                                            { key: "Bunk", label: "Bunk bed", desc: "Varying sizes" },
-                                            { key: "Sofa", label: "Sofa bed", desc: "Varying sizes" },
-                                            { key: "Futon", label: "Futon bed(s)", desc: "Varying sizes" },
-                                        ].map(({ key, label, desc }) => {
-                                            const count = room.bedBreakdown?.[key] ?? 0;
-                                            return (
-                                                <div key={key} className="flex items-center justify-between">
-                                                    <div>
-                                                        <div style={{ fontWeight: 600 }}>{label}</div>
-                                                        <div className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{desc}</div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: Math.max(0, count - 1) } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
-                                                            <Minus size={14} />
-                                                        </button>
-                                                        <div style={{ minWidth: 28, textAlign: "center" }}>{count}</div>
-                                                        <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: count + 1 } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
-                                                            <Plus size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <FieldLabel>Cover Image</FieldLabel>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                id={`room-cover-${room.id}`}
-                                                type="file"
-                                                accept="image/*"
-                                                style={{ display: "none" }}
-                                                onChange={async (e) => {
-                                                    const f = e.target.files?.[0];
-                                                    if (!f) return;
-                                                    const data = await readFileAsDataUrl(f);
-                                                    updateRoom(room.id, { coverImage: data });
-                                                    e.currentTarget.value = "";
-                                                }}
+                        rooms.map((room) => {
+                            const hasBedOptions = room.hasBeds ?? (Object.values(room.bedBreakdown ?? {}).some((count) => count > 0) || (room.beds !== "" && room.beds !== "0"));
+                            const discountSummary = calculateDiscountedPrice(room.pricePerNight, room.discounts);
+
+                            return (
+                                <div key={room.id} className="p-3 rounded-lg" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
+                                    <div className="grid grid-cols-2 gap-4 mb-2">
+                                        <div>
+                                            <FieldLabel required>Type</FieldLabel>
+                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={["BedRoom", "Living Room", "Other Room"]} />
+                                        </div>
+                                        <div>
+                                            <FieldLabel required>Count</FieldLabel>
+                                            <FormInput value={room.count} onChange={(v) => updateRoom(room.id, { count: v })} type="number" />
+                                        </div>
+                                        <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+                                            <div>
+                                                <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Beds</p>
+                                                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Enable this if the room has beds to configure.</p>
+                                            </div>
+                                            <Toggle
+                                                value={hasBedOptions}
+                                                onChange={(enabled) => updateRoom(room.id, { hasBeds: enabled, beds: enabled ? (room.beds || "1") : "0", bedBreakdown: enabled ? (room.bedBreakdown ?? {}) : {} })}
                                             />
-                                            <label htmlFor={`room-cover-${room.id}`} className="px-3 py-2 rounded-lg text-[13px] flex items-center gap-2" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-light)", color: "var(--text-secondary)" }}>
-                                                <Upload size={14} />
-                                                Upload cover
-                                            </label>
-                                            {room.coverImage ? (
-                                                <div className="relative ml-3" style={{ display: "inline-block" }}>
-                                                    <img src={room.coverImage} alt="cover" style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-light)" }} />
-                                                    <button onClick={() => updateRoom(room.id, { coverImage: "" })} className="absolute top-0 right-0 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
-                                                        <Trash2 size={14} color="white" />
-                                                    </button>
-                                                </div>
-                                            ) : null}
                                         </div>
                                     </div>
-                                    <div>
-                                        <FieldLabel>Gallery Images</FieldLabel>
+
+                                    {hasBedOptions ? (
+                                        <div className="mb-3">
+                                            <FieldLabel>Beds</FieldLabel>
+                                            <div className="space-y-2">
+                                                {[
+                                                    { key: "Twin", label: "Twin bed(s)", desc: "35–51 inches wide" },
+                                                    { key: "Full", label: "Full bed(s)", desc: "52–59 inches wide" },
+                                                    { key: "Queen", label: "Queen bed(s)", desc: "60–70 inches wide" },
+                                                    { key: "King", label: "King bed(s)", desc: "71–81 inches wide" },
+                                                    { key: "Bunk", label: "Bunk bed", desc: "Varying sizes" },
+                                                    { key: "Sofa", label: "Sofa bed", desc: "Varying sizes" },
+                                                    { key: "Futon", label: "Futon bed(s)", desc: "Varying sizes" },
+                                                ].map(({ key, label, desc }) => {
+                                                    const count = room.bedBreakdown?.[key] ?? 0;
+                                                    return (
+                                                        <div key={key} className="flex items-center justify-between">
+                                                            <div>
+                                                                <div style={{ fontWeight: 600 }}>{label}</div>
+                                                                <div className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{desc}</div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: Math.max(0, count - 1) } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
+                                                                    <Minus size={14} />
+                                                                </button>
+                                                                <div style={{ minWidth: 28, textAlign: "center" }}>{count}</div>
+                                                                <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: count + 1 } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
+                                                                    <Plus size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    <div className="grid grid-cols-3 gap-4 mb-2">
                                         <div>
-                                            <input
-                                                id={`room-gallery-${room.id}`}
-                                                type="file"
-                                                accept="image/*"
-                                                multiple
-                                                style={{ display: "none" }}
-                                                onChange={async (e) => {
-                                                    const files = Array.from(e.target.files || []);
-                                                    if (files.length === 0) return;
-                                                    const dataUrls = await Promise.all(files.map((f) => readFileAsDataUrl(f)));
-                                                    updateRoom(room.id, { gallery: [...(room.gallery || []), ...dataUrls] });
-                                                    e.currentTarget.value = "";
-                                                }}
-                                            />
-                                            <label htmlFor={`room-gallery-${room.id}`} className="px-3 py-2 rounded-lg text-[13px] flex items-center gap-2" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-light)", color: "var(--text-secondary)" }}>
-                                                <Upload size={14} />
-                                                Add photos
-                                            </label>
-                                            <div className="flex gap-2 flex-wrap mt-2">
-                                                {(room.gallery || []).map((src, i) => (
-                                                    <div key={i} className="relative" style={{ width: 80, height: 60 }}>
-                                                        <img src={src} alt={`g${i}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-light)" }} />
-                                                        <button onClick={() => updateRoom(room.id, { gallery: (room.gallery || []).filter((_, idx) => idx !== i) })} className="absolute top-0 right-0 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
-                                                            <Trash2 size={12} color="white" />
-                                                        </button>
-                                                    </div>
-                                                ))}
+                                            <FieldLabel required>Max Guests</FieldLabel>
+                                            <FormInput value={room.maxGuests} onChange={(v) => updateRoom(room.id, { maxGuests: v })} type="number" />
+                                        </div>
+                                        <div>
+                                            <FieldLabel>Size (sqm)</FieldLabel>
+                                            <FormInput value={room.size} onChange={(v) => updateRoom(room.id, { size: v })} />
+                                        </div>
+                                        <div>
+                                            <FieldLabel>Smoking allowed</FieldLabel>
+                                            <Toggle value={room.smoking} onChange={(v) => updateRoom(room.id, { smoking: v })} />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 mb-2">
+                                        <div>
+                                            <FieldLabel>Bathroom Type</FieldLabel>
+                                            <SelectField value={room.bathroomType} onChange={(v) => updateRoom(room.id, { bathroomType: v })} options={["Private", "Shared", "Ensuite"]} />
+                                        </div>
+                                        <div>
+                                            <FieldLabel>Bathroom Items</FieldLabel>
+                                            <TagInput tags={room.bathroomItems} onChange={(tags) => updateRoom(room.id, { bathroomItems: tags })} placeholder="Type and press Enter..." />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 mb-2">
+                                        <div>
+                                            <FieldLabel>Guest Access</FieldLabel>
+                                            <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+                                                <div>
+                                                    <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Guest access</p>
+                                                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Turn this on if guests can access this room.</p>
+                                                </div>
+                                                <Toggle value={room.guestAccess} onChange={(v) => updateRoom(room.id, { guestAccess: v })} />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <FieldLabel required>Price per night</FieldLabel>
+                                            <div className="grid grid-cols-[1fr_110px] gap-2">
+                                                <input
+                                                    value={room.pricePerNight}
+                                                    onChange={(e) => updateRoom(room.id, { pricePerNight: e.target.value })}
+                                                    type="number"
+                                                    min={1}
+                                                    step="0.01"
+                                                    placeholder="0.00"
+                                                    className="w-full px-3 py-2 rounded-lg text-[13px] outline-none transition-all"
+                                                    style={{
+                                                        background: "var(--input-background)",
+                                                        border: "1px solid var(--border-light)",
+                                                        color: "var(--text-primary)",
+                                                    }}
+                                                />
+                                                <SelectField value={room.currency} onChange={(v) => updateRoom(room.id, { currency: v })} options={CURRENCIES} />
                                             </div>
                                         </div>
                                     </div>
+                                    <div className="grid grid-cols-1 gap-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <FieldLabel>Discounts</FieldLabel>
+                                            <button
+                                                onClick={() => addDiscount(room.id)}
+                                                className="px-3 py-1.5 rounded-lg text-[12px] transition-all"
+                                                style={{ background: "var(--active-overlay)", color: "var(--accent-navy-light)", border: "1px solid var(--border-accent)" }}
+                                            >
+                                                Add Discount
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                            Percentage discounts must be between 0 and 100. Flat discounts cannot exceed the remaining room price.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {room.discounts.length === 0 ? (
+                                            <div className="rounded-lg px-3 py-2 text-[12px]" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-light)", color: "var(--text-tertiary)" }}>
+                                                No discounts added yet.
+                                            </div>
+                                        ) : (
+                                            room.discounts.map((discount) => (
+                                                <div key={discount.id} className="grid grid-cols-[1.3fr_140px_110px_auto] gap-2 items-end rounded-lg p-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+                                                    <div>
+                                                        <FieldLabel>Discount name</FieldLabel>
+                                                        <FormInput
+                                                            value={discount.label}
+                                                            onChange={(v) => updateDiscount(room.id, discount.id, { label: v })}
+                                                            placeholder="e.g. Weekly stay"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <FieldLabel>Type</FieldLabel>
+                                                        <SelectField
+                                                            value={discount.type}
+                                                            onChange={(v) => updateDiscount(room.id, discount.id, { type: v as DiscountType })}
+                                                            options={["percentage", "flat"]}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <FieldLabel>Value</FieldLabel>
+                                                        <FormInput
+                                                            value={discount.value}
+                                                            onChange={(v) => updateDiscount(room.id, discount.id, { value: v })}
+                                                            type="number"
+                                                            placeholder={discount.type === "percentage" ? "10" : "25"}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeDiscount(room.id, discount.id)}
+                                                        className="h-9 px-3 rounded-lg text-[12px] transition-all"
+                                                        style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                    <div
+                                        className="mt-3 rounded-lg px-3 py-2"
+                                        style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>
+                                                    Discounted price preview
+                                                </p>
+                                                <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                                                    Base {room.currency} {discountSummary.basePrice !== null ? discountSummary.basePrice.toFixed(2) : "0.00"}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                                    Estimated final rate
+                                                </p>
+                                                <p className="text-[16px]" style={{ color: "var(--accent-navy-light)", fontWeight: 700 }}>
+                                                    {discountSummary.finalPrice !== null ? `${room.currency} ${discountSummary.finalPrice.toFixed(2)}` : "--"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {discountSummary.basePrice !== null ? (
+                                            <div className="mt-2 flex items-center justify-between text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                                <span>Discount total: {discountSummary.discountTotal !== null ? `${room.currency} ${discountSummary.discountTotal.toFixed(2)}` : "--"}</span>
+                                                <span>Before discount: {room.currency} {discountSummary.basePrice.toFixed(2)}</span>
+                                            </div>
+                                        ) : null}
+                                        {discountSummary.hasInvalidDiscount ? (
+                                            <p className="mt-1 text-[11px]" style={{ color: "#d97706" }}>
+                                                One or more discount values are invalid.
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div className="flex justify-end mt-3">
+                                        <button onClick={() => removeRoom(room.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                                            <Trash2 size={14} />
+                                            Remove
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-3 gap-4 mb-2">
-                                    <div>
-                                        <FieldLabel>Max Guests</FieldLabel>
-                                        <FormInput value={room.maxGuests} onChange={(v) => updateRoom(room.id, { maxGuests: v })} type="number" />
-                                    </div>
-                                    <div>
-                                        <FieldLabel>Size (sqm)</FieldLabel>
-                                        <FormInput value={room.size} onChange={(v) => updateRoom(room.id, { size: v })} />
-                                    </div>
-                                    <div>
-                                        <FieldLabel>Smoking allowed</FieldLabel>
-                                        <Toggle value={room.smoking} onChange={(v) => updateRoom(room.id, { smoking: v })} />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mb-2">
-                                    <div>
-                                        <FieldLabel>Bathroom Type</FieldLabel>
-                                        <SelectField value={room.bathroomType} onChange={(v) => updateRoom(room.id, { bathroomType: v })} options={["Private", "Shared", "Ensuite"]} />
-                                    </div>
-                                    <div>
-                                        <FieldLabel>Bathroom Items</FieldLabel>
-                                        <TagInput tags={room.bathroomItems} onChange={(tags) => updateRoom(room.id, { bathroomItems: tags })} placeholder="Add item..." />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mb-2">
-                                    <div>
-                                        <FieldLabel>Guest Access</FieldLabel>
-                                        <TagInput tags={room.guestAccess} onChange={(tags) => updateRoom(room.id, { guestAccess: tags })} placeholder="Add access item..." />
-                                    </div>
-                                    <div>
-                                        <FieldLabel>Price per night</FieldLabel>
-                                        <FormInput value={room.pricePerNight} onChange={(v) => updateRoom(room.id, { pricePerNight: v })} type="number" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 gap-4">
-                                    <div>
-                                        <FieldLabel>Discounts</FieldLabel>
-                                        <TagInput tags={room.discounts} onChange={(tags) => updateRoom(room.id, { discounts: tags })} placeholder="Add discount rule..." />
-                                    </div>
-                                </div>
-                                <div className="flex justify-end mt-3">
-                                    <button onClick={() => removeRoom(room.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
-                                        <Trash2 size={14} />
-                                        Remove
-                                    </button>
-                                </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </SectionCard>
@@ -1301,6 +1505,37 @@ export function ImagesSection() {
     const [cover, setCover] = useState<string>(() => draftCategoryData.images?.cover ?? "");
     const [gallery, setGallery] = useState<string[]>(() => draftCategoryData.images?.gallery ?? []);
 
+    const handleCoverDrop = useCallback(async (acceptedFiles: File[]) => {
+        const [file] = acceptedFiles;
+        if (!file) return;
+
+        const dataUrl = await readFileAsDataUrl(file);
+        setCover(dataUrl);
+    }, []);
+
+    const handleGalleryDrop = useCallback(async (acceptedFiles: File[]) => {
+        if (!acceptedFiles.length) return;
+
+        const dataUrls = await filesToDataUrls(acceptedFiles);
+        setGallery((currentGallery) => [...currentGallery, ...dataUrls]);
+    }, []);
+
+    const coverDropzone = useDropzone({
+        onDrop: handleCoverDrop,
+        accept: { "image/*": [] },
+        multiple: false,
+        noClick: true,
+        noKeyboard: true,
+    });
+
+    const galleryDropzone = useDropzone({
+        onDrop: handleGalleryDrop,
+        accept: { "image/*": [] },
+        multiple: true,
+        noClick: true,
+        noKeyboard: true,
+    });
+
     useEffect(() => {
         setDraft({ categoryData: { ...(draftCategoryData || {}), images: { cover, gallery } } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1312,28 +1547,44 @@ export function ImagesSection() {
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <FieldLabel>Cover Image</FieldLabel>
-                        <div className="flex items-center gap-2">
-                            <input
-                                id="property-cover"
-                                type="file"
-                                accept="image/*"
-                                style={{ display: "none" }}
-                                onChange={async (e) => {
-                                    const f = e.target.files?.[0];
-                                    if (!f) return;
-                                    const data = await readFileAsDataUrl(f);
-                                    setCover(data);
-                                    e.currentTarget.value = "";
+                        <div className="space-y-3">
+                            <div
+                                {...coverDropzone.getRootProps()}
+                                className="rounded-xl p-4 transition-all"
+                                style={{
+                                    background: coverDropzone.isDragActive ? "var(--active-overlay)" : "var(--bg-card)",
+                                    border: `1px dashed ${coverDropzone.isDragActive ? "var(--border-accent)" : "var(--border-light)"}`,
                                 }}
-                            />
-                            <label htmlFor="property-cover" className="px-3 py-2 rounded-lg text-[13px] flex items-center gap-2" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-light)", color: "var(--text-secondary)" }}>
-                                <Upload size={14} />
-                                Upload cover
-                            </label>
+                            >
+                                <input {...coverDropzone.getInputProps()} />
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-panel)", color: "var(--accent-navy-light)" }}>
+                                            <Upload size={16} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                                                {coverDropzone.isDragActive ? "Drop cover image here" : "Drag & drop a cover image"}
+                                            </p>
+                                            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                                                PNG, JPG, or WEBP. Recommended for the listing hero image.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={coverDropzone.open}
+                                        className="px-3 py-2 rounded-lg text-[12px] transition-all"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                                    >
+                                        Browse files
+                                    </button>
+                                </div>
+                            </div>
                             {cover ? (
-                                <div className="relative ml-3" style={{ display: "inline-block" }}>
-                                    <img src={cover} alt="cover" style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-light)" }} />
-                                    <button onClick={() => setCover("")} className="absolute top-0 right-0 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                <div className="relative inline-block">
+                                    <img src={cover} alt="cover" style={{ width: 220, height: 132, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border-light)" }} />
+                                    <button onClick={() => setCover("")} className="absolute top-2 right-2 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                         <Trash2 size={14} color="white" />
                                     </button>
                                 </div>
@@ -1343,29 +1594,44 @@ export function ImagesSection() {
                     <div>
                         <FieldLabel>Gallery Images</FieldLabel>
                         <div>
-                            <input
-                                id="property-gallery"
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                style={{ display: "none" }}
-                                onChange={async (e) => {
-                                    const files = Array.from(e.target.files || []);
-                                    if (files.length === 0) return;
-                                    const dataUrls = await Promise.all(files.map((f) => readFileAsDataUrl(f)));
-                                    setGallery((g) => [...g, ...dataUrls]);
-                                    e.currentTarget.value = "";
+                            <div
+                                {...galleryDropzone.getRootProps()}
+                                className="rounded-xl p-4 transition-all"
+                                style={{
+                                    background: galleryDropzone.isDragActive ? "var(--active-overlay)" : "var(--bg-card)",
+                                    border: `1px dashed ${galleryDropzone.isDragActive ? "var(--border-accent)" : "var(--border-light)"}`,
                                 }}
-                            />
-                            <label htmlFor="property-gallery" className="px-3 py-2 rounded-lg text-[13px] flex items-center gap-2" style={{ background: "var(--bg-card)", border: "1px dashed var(--border-light)", color: "var(--text-secondary)" }}>
-                                <Upload size={14} />
-                                Add photos
-                            </label>
-                            <div className="flex gap-2 flex-wrap mt-2">
+                            >
+                                <input {...galleryDropzone.getInputProps()} />
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-panel)", color: "var(--accent-navy-light)" }}>
+                                            <Upload size={16} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                                                {galleryDropzone.isDragActive ? "Drop gallery images here" : "Drag & drop gallery images"}
+                                            </p>
+                                            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                                                Add multiple images to showcase the property from different angles.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={galleryDropzone.open}
+                                        className="px-3 py-2 rounded-lg text-[12px] transition-all"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                                    >
+                                        Add photos
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 flex-wrap mt-3">
                                 {gallery.map((src, i) => (
-                                    <div key={i} className="relative" style={{ width: 100, height: 72 }}>
-                                        <img src={src} alt={`g${i}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-light)" }} />
-                                        <button onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                    <div key={`${src.slice(0, 24)}_${i}`} className="relative" style={{ width: 112, height: 80 }}>
+                                        <img src={src} alt={`gallery-${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "1px solid var(--border-light)" }} />
+                                        <button onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                             <Trash2 size={12} color="white" />
                                         </button>
                                     </div>
