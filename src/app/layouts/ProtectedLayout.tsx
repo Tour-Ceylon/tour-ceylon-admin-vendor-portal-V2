@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Sidebar } from "../components/Sidebar";
 import { Header } from "../components/Header";
 import { Compass, AlertTriangle, ShieldAlert, LogOut, Lock } from "lucide-react";
+import { canAccessRoute } from "../utils/permissions";
 
 export function ProtectedLayout() {
   const { isAuthenticated, user, effectiveUser, loading, error, logout } = useAuth();
@@ -132,32 +133,61 @@ export function ProtectedLayout() {
     );
   }
 
-  // 5. Vendor Route Authorization Guard
-  // Prevent vendors from navigating to admin-only pages
-  const isAdminPath =
-    location.pathname.startsWith("/users") ||
-    location.pathname.startsWith("/vendor-approvals") ||
-    location.pathname.startsWith("/vendors") ||
-    location.pathname.startsWith("/admins") ||
-    location.pathname.startsWith("/finance") ||
-    location.pathname.startsWith("/payments") ||
-    location.pathname.startsWith("/payouts") ||
-    location.pathname.startsWith("/refunds") ||
-    location.pathname.startsWith("/commission") ||
-    location.pathname.startsWith("/transport") ||
-    location.pathname.startsWith("/support") ||
-    location.pathname.startsWith("/activity") ||
-    location.pathname.startsWith("/audit-logs") ||
-    location.pathname.startsWith("/analytics") ||
-    location.pathname.startsWith("/workflows") ||
-    location.pathname.startsWith("/api-integration") ||
-    location.pathname.startsWith("/system-architecture") ||
-    location.pathname.startsWith("/qa-checklist") ||
-    location.pathname.startsWith("/settings/");
-
-  if (effectiveUser?.role === "vendor" && isAdminPath) {
-    console.warn(`Vendor unauthorized for admin path: ${location.pathname}`);
-    return <Navigate to="/dashboard" replace />;
+  // 5. Route Authorization Guard
+  // Check if user can access the current route
+  if (!canAccessRoute(effectiveUser, location.pathname)) {
+    console.warn(`User unauthorized for path: ${location.pathname}`);
+    
+    // Show access denied page for unauthorized routes
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ background: "var(--bg-main)" }}
+      >
+        <div
+          className="w-full max-w-md rounded-xl p-6 text-center"
+          style={{
+            background: "var(--bg-panel)",
+            border: "1px solid var(--border-light)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+            <Lock className="text-amber-500" size={24} />
+          </div>
+          <h2 className="text-[18px] mb-2" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            Access Restricted
+          </h2>
+          <p className="text-[13px] mb-6" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            You don't have permission to access this page. Contact your administrator if you believe this is an error.
+          </p>
+          <button
+            onClick={() => window.history.back()}
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[13px] transition-all mb-3"
+            style={{
+              background: "var(--input-background)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border-light)",
+              fontWeight: 500,
+            }}
+          >
+            Go Back
+          </button>
+          <button
+            onClick={() => window.location.href = "/dashboard"}
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[13px] transition-all"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+              color: "white",
+              border: "1px solid var(--border-accent)",
+              fontWeight: 500,
+            }}
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

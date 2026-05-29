@@ -130,6 +130,8 @@
   --destructive-foreground: #ffffff;
   --border: rgba(255, 255, 255, 0.1);
   --input: rgba(255, 255, 255, 0.05);
+  --input-background: #0b1628;
+  --switch-background: rgba(255, 255, 255, 0.1);
   --ring: #3b82f6;
   --font-weight-medium: 500;
   --font-weight-normal: 400;

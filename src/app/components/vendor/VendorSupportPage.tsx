@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { HelpCircle, MessageSquare, FileText, CheckCircle, Clock, Plus, Search } from "lucide-react";
 
 type TicketStatus = "open" | "in-progress" | "resolved";
@@ -15,6 +16,31 @@ interface SupportTicket {
 }
 
 export function VendorSupportPage() {
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const handleNewTicket = () => {
+    setToast({ message: "New ticket form opened", type: "success" });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleViewTicket = (ticketId: string) => {
+    setToast({ message: `Opening ticket ${ticketId}`, type: "success" });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleHelpTopicClick = (topic: string) => {
+    setToast({ message: `Opening ${topic} help articles`, type: "success" });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      setToast({ message: `Searching for: ${searchQuery}`, type: "success" });
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
   const tickets: SupportTicket[] = [
     {
       id: "TKT-2026-0124",
@@ -90,7 +116,8 @@ export function VendorSupportPage() {
           </p>
         </div>
         <button
-          className="px-4 py-2 rounded-lg text-[12px] flex items-center gap-2"
+          onClick={handleNewTicket}
+          className="px-4 py-2 rounded-lg text-[12px] flex items-center gap-2 transition-all hover:opacity-80"
           style={{
             background: "var(--active-overlay)",
             color: "var(--accent-navy-light)",
@@ -147,7 +174,8 @@ export function VendorSupportPage() {
           {helpTopics.map((topic) => (
             <div
               key={topic.title}
-              className="rounded-xl p-4 cursor-pointer transition-all"
+              onClick={() => handleHelpTopicClick(topic.title)}
+              className="rounded-xl p-4 cursor-pointer transition-all hover:opacity-90"
               style={{
                 background: "var(--bg-panel)",
                 border: "1px solid var(--border-light)",
@@ -192,16 +220,25 @@ export function VendorSupportPage() {
             Search Knowledge Base
           </h2>
         </div>
-        <input
-          type="text"
-          placeholder="Search for help articles, guides, and FAQs..."
-          className="w-full px-4 py-3 rounded-lg text-[13px]"
-          style={{
-            background: "var(--input-background)",
-            border: "1px solid var(--border-light)",
-            color: "var(--text-primary)",
-          }}
-        />
+        <form onSubmit={handleSearch}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search for help articles, guides, and FAQs..."
+            className="w-full px-4 py-3 rounded-lg text-[13px]"
+            style={{
+              background: "var(--input-background)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-primary)",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch(e);
+              }
+            }}
+          />
+        </form>
       </div>
 
       {/* Support Tickets */}
@@ -318,7 +355,11 @@ export function VendorSupportPage() {
                   </td>
                   <td className="px-5 py-4 text-right">
                     <button
-                      className="px-3 py-1.5 rounded-lg text-[11px] transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewTicket(ticket.id);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-[11px] transition-all hover:opacity-80"
                       style={{
                         background: "var(--active-overlay)",
                         color: "var(--accent-navy-light)",
@@ -335,6 +376,30 @@ export function VendorSupportPage() {
           </table>
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2"
+          style={{
+            background: toast.type === "success" ? "var(--accent-navy)" : "#ef4444",
+            color: "white",
+          }}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle size={16} />
+          ) : (
+            <HelpCircle size={16} />
+          )}
+          <span className="text-[13px] font-medium">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-2 p-1 rounded-lg transition-all hover:bg-white/20"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
