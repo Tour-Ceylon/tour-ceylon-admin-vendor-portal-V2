@@ -54,7 +54,6 @@ import {
   CheckSquare,
 } from "lucide-react";
 import { useAuth, Category } from "../contexts/AuthContext";
-import { shouldShowInNavigation, isAdmin, isApprovedVendor, isStayOnlyVendor, getAccessibleCategories } from "../utils/permissions";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<Category, React.ComponentType<any>> = {
@@ -217,18 +216,17 @@ export function Sidebar() {
 
   const activeSection = getActiveSection();
 
-  // Use permission helpers instead of hardcoded checks
-  const userIsAdmin = isAdmin(effectiveUser);
-  const userIsVendor = isApprovedVendor(effectiveUser);
-  const userIsStayOnlyVendor = isStayOnlyVendor(effectiveUser);
-  const accessibleCategories = getAccessibleCategories(effectiveUser);
+  const isAdmin = effectiveUser?.role === "admin";
+  const isVendor = effectiveUser?.role === "vendor";
+  const approvedCategories = effectiveUser?.approvedCategories || [];
+  const isStayVendor = isVendor && approvedCategories.length === 1 && approvedCategories.includes("Stay");
 
   // Build dynamic navigation based on role
   const buildNav = () => {
     const nav = [];
 
     // Hotel-specific navigation for Stay-only vendors
-    if (userIsStayOnlyVendor) {
+    if (isStayVendor) {
       nav.push({
         group: "Hotel Operations",
         items: [
@@ -271,7 +269,7 @@ export function Sidebar() {
     });
 
     // Admin-only sections - Operational structure
-    if (userIsAdmin) {
+    if (isAdmin) {
       nav.push({
         group: "Operations",
         items: [
@@ -386,23 +384,44 @@ export function Sidebar() {
       });
     }
 
-    // Listings section (admin-only, vendors have it in Manage section)
-    if (userIsAdmin) {
+    // Listings section (role-aware)
+    const listingsItems = [];
+
+    if (isAdmin) {
+      listingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
+      listingsItems.push({ id: "stays", label: "Stays", icon: Building2 });
+      listingsItems.push({ id: "tours", label: "Tours", icon: Compass });
+      listingsItems.push({ id: "safaris", label: "Safaris", icon: Globe });
+      listingsItems.push({ id: "experiences", label: "Experiences", icon: Anchor });
+      listingsItems.push({ id: "transfers", label: "Transfers", icon: Car });
+    } else if (isVendor) {
+      // Vendors only see their approved categories
+      if (approvedCategories.includes("Stay")) {
+        listingsItems.push({ id: "stays", label: "Stay Listings", icon: Building2 });
+      }
+      if (approvedCategories.includes("Tour")) {
+        listingsItems.push({ id: "tours", label: "Tour Listings", icon: Compass });
+      }
+      if (approvedCategories.includes("Safari")) {
+        listingsItems.push({ id: "safaris", label: "Safari Listings", icon: Globe });
+      }
+      if (approvedCategories.includes("Experience")) {
+        listingsItems.push({ id: "experiences", label: "Experience Listings", icon: Anchor });
+      }
+      if (approvedCategories.includes("Transfer")) {
+        listingsItems.push({ id: "transfers", label: "Transfer Listings", icon: Car });
+      }
+    }
+
+    if (listingsItems.length > 0) {
       nav.push({
-        group: "Listings",
-        items: [
-          { id: "listings", label: "All Listings", icon: Layers },
-          { id: "stays", label: "Stays", icon: Building2 },
-          { id: "tours", label: "Tours", icon: Compass },
-          { id: "safaris", label: "Safaris", icon: Globe },
-          { id: "experiences", label: "Experiences", icon: Anchor },
-          { id: "transfers", label: "Transfers", icon: Car },
-        ],
+        group: isAdmin ? "Listings" : "My Listings",
+        items: listingsItems,
       });
     }
 
     // Admin-only: Packages and Add-ons
-    if (userIsAdmin) {
+    if (isAdmin) {
       nav.push({
         group: "Products",
         items: [
@@ -412,81 +431,68 @@ export function Sidebar() {
       });
     }
 
-    // Vendor-only: Simplified Business Center
-    if (userIsVendor && !userIsStayOnlyVendor) {
-      // Manage section
-      const manageItems = [
-        { id: "listings", label: "Listings", icon: Layers },
-        { id: "vendor-bookings", label: "Bookings", icon: CalendarCheck },
-        { id: "vendor-availability", label: "Availability", icon: CalendarRange },
-        { id: "pricing", label: "Pricing", icon: DollarSign },
-        { id: "media", label: "Media Library", icon: Image },
-      ];
-
-      // Add category-specific listing shortcuts only if vendor has permission
-      const categoryShortcuts = [];
-      if (accessibleCategories.includes("Stay")) {
-        categoryShortcuts.push({ id: "stays", label: "Stay Listings", icon: Building2 });
-      }
-      if (accessibleCategories.includes("Tour")) {
-        categoryShortcuts.push({ id: "tours", label: "Tour Listings", icon: Compass });
-      }
-      if (accessibleCategories.includes("Safari")) {
-        categoryShortcuts.push({ id: "safaris", label: "Safari Listings", icon: Globe });
-      }
-      if (accessibleCategories.includes("Experience")) {
-        categoryShortcuts.push({ id: "experiences", label: "Experience Listings", icon: Anchor });
-      }
-      if (accessibleCategories.includes("Transfer")) {
-        categoryShortcuts.push({ id: "transfers", label: "Transfer Listings", icon: Car });
-      }
-
-      nav.push({
-        group: "Manage",
-        items: manageItems,
-      });
-
-      // Only show category shortcuts if vendor has multiple categories
-      if (categoryShortcuts.length > 1) {
-        nav.push({
-          group: "Quick Access",
-          items: categoryShortcuts,
-        });
-      }
-
+    // Vendor-only: Business Center
+    if (isVendor && !isStayVendor) {
       nav.push({
         group: "Business",
         items: [
-          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
+          { id: "vendor-bookings", label: "Booking Center", icon: CalendarCheck },
           { id: "vendor-performance", label: "Performance", icon: BarChart2 },
+          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
+        ],
+      });
+
+      nav.push({
+        group: "Customer Relations",
+        items: [
           { id: "vendor-reviews", label: "Reviews", icon: ThumbsUp },
+          { id: "vendor-availability", label: "Availability", icon: CalendarRange },
+        ],
+      });
+
+      nav.push({
+        group: "Resources",
+        items: [
+          { id: "media", label: "Media Library", icon: Image },
+          { id: "pricing", label: "Pricing", icon: DollarSign },
+        ],
+      });
+
+      nav.push({
+        group: "Insights",
+        items: [
           { id: "vendor-insights", label: "Business Insights", icon: Target },
-        ],
-      });
-
-      nav.push({
-        group: "Account",
-        items: [
-          { id: "profile", label: "Profile", icon: UserCircle },
-          { id: "vendor-notifications", label: "Notifications", icon: Bell },
-          { id: "vendor-support", label: "Support", icon: HeadphonesIcon },
-          { id: "help", label: "Help & Docs", icon: HelpCircle },
+          { id: "vendor-team", label: "Team", icon: UsersRound },
         ],
       });
     }
 
-    // Settings (admin-only, vendors have Account section)
-    if (userIsAdmin) {
-      nav.push({
-        group: "Settings",
-        items: [
-          { id: "settings", label: "Settings", icon: Settings },
-          { id: "media-library", label: "Media Library", icon: Image },
-          { id: "notifications", label: "Notifications", icon: Bell },
-          { id: "help", label: "Help & Docs", icon: HelpCircle },
-        ],
-      });
+    // Settings (all users)
+    const settingsItems = [];
+
+    if (isAdmin) {
+      settingsItems.push({ id: "settings", label: "Settings", icon: Settings });
+      settingsItems.push({ id: "media-library", label: "Media Library", icon: Image });
     }
+
+    if (isVendor) {
+      settingsItems.push({ id: "profile", label: "Profile", icon: UserCircle });
+      if (!isStayVendor) {
+        settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
+        settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
+      }
+    }
+
+    if (!isVendor || isStayVendor) {
+      settingsItems.push({ id: "notifications", label: "Notifications", icon: Bell });
+    }
+
+    settingsItems.push({ id: "help", label: "Help & Docs", icon: HelpCircle });
+
+    nav.push({
+      group: "Settings",
+      items: settingsItems,
+    });
 
     return nav;
   };
@@ -502,7 +508,7 @@ export function Sidebar() {
   };
 
   // Hotel vendor badge in logo area
-  const logoSub = userIsStayOnlyVendor ? "Hotel Portal" : "Admin";
+  const logoSub = isStayVendor ? "Hotel Portal" : "Admin";
 
   return (
     <aside

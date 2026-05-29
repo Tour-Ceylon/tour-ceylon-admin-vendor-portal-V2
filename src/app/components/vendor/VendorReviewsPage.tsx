@@ -1,263 +1,102 @@
-import { useState, useMemo } from "react";
-import { Star, MessageSquare, ThumbsUp, Flag, Calendar, Filter, Search, TrendingUp, Award, Edit, Trash2, X, Check, Send, ChevronDown } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { vendorMockData, VendorReview } from "../../services/vendorMockData";
+import { useState } from "react";
+import { Star, MessageSquare, ThumbsUp, Flag, Calendar, Filter, Search, TrendingUp, Award } from "lucide-react";
 
 type ReviewRating = 1 | 2 | 3 | 4 | 5;
-type FilterType = "all" | "needs_response" | "responded" | "low_rating" | "five_star";
-type SortType = "newest" | "oldest" | "highest_rating" | "lowest_rating";
 
-interface Review extends VendorReview {
+interface Review {
+  id: string;
+  customer: string;
+  listing: string;
+  rating: ReviewRating;
+  date: string;
+  comment: string;
   response?: string;
   helpful: number;
   verified: boolean;
-  reported?: boolean;
-  reportReason?: string;
-}
-
-interface ReportData {
-  reason: "inappropriate" | "fake" | "unrelated" | "abusive";
-  description: string;
 }
 
 export function VendorReviewsPage() {
-  const { effectiveUser } = useAuth();
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [sortBy, setSortBy] = useState<SortType>("newest");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [respondingTo, setRespondingTo] = useState<string | null>(null);
-  const [editingResponse, setEditingResponse] = useState<string | null>(null);
-  const [responseText, setResponseText] = useState("");
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [reportingReview, setReportingReview] = useState<string | null>(null);
-  const [reportData, setReportData] = useState<ReportData>({ reason: "inappropriate", description: "" });
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deletingResponse, setDeletingResponse] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [filter, setFilter] = useState<"all" | "responded" | "pending">("all");
 
-  // Get vendor-specific reviews from mock service
-  const vendorId = effectiveUser?.id;
-  const vendorReviews = vendorMockData.getRecentReviews(vendorId);
-  
-  // Convert to local Review format with additional properties
-  const [reviewsData, setReviewsData] = useState<Review[]>(
-    vendorReviews.map(review => ({
-      ...review,
-      response: review.responded ? "Thank you for your feedback!" : undefined,
-      helpful: Math.floor(Math.random() * 10) + 1,
+  const stats = [
+    { label: "Average Rating", value: "4.8", subtext: "Based on 127 reviews", icon: Star, color: "#eab308" },
+    { label: "5-Star Reviews", value: "89", subtext: "70% of total", icon: Award, color: "#22c55e" },
+    { label: "Response Rate", value: "94%", subtext: "123 of 127 responded", icon: MessageSquare, color: "#3b82f6" },
+    { label: "Rating Trend", value: "+0.2", subtext: "vs last month", icon: TrendingUp, color: "#10b981" },
+  ];
+
+  const ratingBreakdown = [
+    { stars: 5, count: 89, percentage: 70 },
+    { stars: 4, count: 24, percentage: 19 },
+    { stars: 3, count: 10, percentage: 8 },
+    { stars: 2, count: 3, percentage: 2 },
+    { stars: 1, count: 1, percentage: 1 },
+  ];
+
+  const reviews: Review[] = [
+    {
+      id: "1",
+      customer: "Sarah Johnson",
+      listing: "Yala National Park Safari",
+      rating: 5,
+      date: "May 18, 2026",
+      comment: "Amazing experience! Our guide was knowledgeable and we saw so many animals including leopards. Highly recommend this safari!",
+      response: "Thank you so much for your kind words! We're thrilled you had such a great experience.",
+      helpful: 12,
       verified: true,
-      reported: false,
-    }))
-  );
+    },
+    {
+      id: "2",
+      customer: "Mike Chen",
+      listing: "Galle Fort Heritage Walk",
+      rating: 4,
+      date: "May 17, 2026",
+      comment: "Great tour with lots of historical insights. Would have loved a bit more time at certain locations.",
+      response: "Thanks for the feedback! We'll consider extending time at key spots.",
+      helpful: 8,
+      verified: true,
+    },
+    {
+      id: "3",
+      customer: "Emma Wilson",
+      listing: "Yala National Park Safari",
+      rating: 5,
+      date: "May 16, 2026",
+      comment: "Best safari of our trip! Saw elephants, leopards, and beautiful birds. Our guide was fantastic.",
+      helpful: 15,
+      verified: true,
+    },
+    {
+      id: "4",
+      customer: "David Lee",
+      listing: "Minneriya Wildlife Safari",
+      rating: 5,
+      date: "May 15, 2026",
+      comment: "Incredible elephant gathering! The timing was perfect and we got amazing photos.",
+      response: "We're so glad you caught the gathering! Thank you for choosing us.",
+      helpful: 9,
+      verified: true,
+    },
+    {
+      id: "5",
+      customer: "Lisa Martinez",
+      listing: "Galle Fort Heritage Walk",
+      rating: 3,
+      date: "May 14, 2026",
+      comment: "Good tour but felt a bit rushed. Guide was nice though.",
+      helpful: 4,
+      verified: true,
+    },
+  ];
 
-  // Calculate dynamic stats from review data
-  const calculatedStats = useMemo(() => {
-    const totalReviews = reviewsData.length;
-    const totalRating = reviewsData.reduce((sum, review) => sum + review.rating, 0);
-    const averageRating = totalReviews > 0 ? (totalRating / totalReviews).toFixed(1) : "0.0";
-    const fiveStarCount = reviewsData.filter(r => r.rating === 5).length;
-    const respondedCount = reviewsData.filter(r => r.response).length;
-    const responseRate = totalReviews > 0 ? Math.round((respondedCount / totalReviews) * 100) : 0;
-
-    return [
-      { label: "Average Rating", value: averageRating, subtext: `Based on ${totalReviews} reviews`, icon: Star, color: "#eab308" },
-      { label: "5-Star Reviews", value: fiveStarCount.toString(), subtext: `${Math.round((fiveStarCount / totalReviews) * 100)}% of total`, icon: Award, color: "#22c55e" },
-      { label: "Response Rate", value: `${responseRate}%`, subtext: `${respondedCount} of ${totalReviews} responded`, icon: MessageSquare, color: "#3b82f6" },
-      { label: "Rating Trend", value: "+0.2", subtext: "vs last month", icon: TrendingUp, color: "#10b981" },
-    ];
-  }, [reviewsData]);
-
-  // Calculate dynamic rating breakdown
-  const calculatedRatingBreakdown = useMemo(() => {
-    const totalReviews = reviewsData.length;
-    const breakdown = [5, 4, 3, 2, 1].map(stars => {
-      const count = reviewsData.filter(r => r.rating === stars).length;
-      const percentage = totalReviews > 0 ? Math.round((count / totalReviews) * 100) : 0;
-      return { stars, count, percentage };
-    });
-    return breakdown;
-  }, [reviewsData]);
-
-  // Filter and sort reviews
-  const filteredAndSortedReviews = useMemo(() => {
-    let filtered = reviewsData.filter((review) => {
-      // Apply filters
-      if (filter === "needs_response") return !review.response;
-      if (filter === "responded") return !!review.response;
-      if (filter === "low_rating") return review.rating <= 2;
-      if (filter === "five_star") return review.rating === 5;
-
-      // Apply search
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          review.customer.toLowerCase().includes(query) ||
-          review.listing.toLowerCase().includes(query) ||
-          review.comment.toLowerCase().includes(query)
-        );
-      }
-
-      return true;
-    });
-
-    // Apply sorting
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "newest":
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case "oldest":
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        case "highest_rating":
-          return b.rating - a.rating;
-        case "lowest_rating":
-          return a.rating - b.rating;
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [reviewsData, filter, searchQuery, sortBy]);
-
-  const showToast = (message: string, type: "success" | "error") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const handleRespond = (reviewId: string) => {
-    setRespondingTo(reviewId);
-    setResponseText("");
-  };
-
-  const handleSaveResponse = (reviewId: string) => {
-    if (!responseText.trim()) {
-      showToast("Response cannot be empty", "error");
-      return;
-    }
-
-    setReviewsData(prev => prev.map(review => 
-      review.id === reviewId 
-        ? { ...review, response: responseText.trim() }
-        : review
-    ));
-
-    setRespondingTo(null);
-    setResponseText("");
-    showToast("Response saved successfully", "success");
-  };
-
-  const handleEditResponse = (reviewId: string, currentResponse: string) => {
-    setEditingResponse(reviewId);
-    setResponseText(currentResponse);
-  };
-
-  const handleUpdateResponse = (reviewId: string) => {
-    if (!responseText.trim()) {
-      showToast("Response cannot be empty", "error");
-      return;
-    }
-
-    setReviewsData(prev => prev.map(review => 
-      review.id === reviewId 
-        ? { ...review, response: responseText.trim() }
-        : review
-    ));
-
-    setEditingResponse(null);
-    setResponseText("");
-    showToast("Response updated successfully", "success");
-  };
-
-  const handleDeleteResponse = (reviewId: string) => {
-    setDeletingResponse(reviewId);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDeleteResponse = () => {
-    if (deletingResponse) {
-      setReviewsData(prev => prev.map(review => 
-        review.id === deletingResponse 
-          ? { ...review, response: undefined }
-          : review
-      ));
-      showToast("Response deleted successfully", "success");
-    }
-    setShowDeleteConfirm(false);
-    setDeletingResponse(null);
-  };
-
-  const handleReportReview = (reviewId: string) => {
-    setReportingReview(reviewId);
-    setShowReportModal(true);
-    setReportData({ reason: "inappropriate", description: "" });
-  };
-
-  const handleSubmitReport = () => {
-    if (!reportData.description.trim()) {
-      showToast("Please provide a description", "error");
-      return;
-    }
-
-    if (reportingReview) {
-      setReviewsData(prev => prev.map(review => 
-        review.id === reportingReview 
-          ? { ...review, reported: true, reportReason: reportData.reason }
-          : review
-      ));
-      showToast("Review reported successfully", "success");
-    }
-
-    setShowReportModal(false);
-    setReportingReview(null);
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  };
-
-  const getFilterLabel = (filterType: FilterType) => {
-    switch (filterType) {
-      case "all": return "All Reviews";
-      case "needs_response": return "Needs Response";
-      case "responded": return "Responded";
-      case "low_rating": return "Low Rating";
-      case "five_star": return "5-Star Reviews";
-      default: return "All Reviews";
-    }
-  };
-
-  const getSortLabel = (sortType: SortType) => {
-    switch (sortType) {
-      case "newest": return "Newest First";
-      case "oldest": return "Oldest First";
-      case "highest_rating": return "Highest Rating";
-      case "lowest_rating": return "Lowest Rating";
-      default: return "Newest First";
-    }
-  };
+  const filteredReviews = reviews.filter((review) => {
+    if (filter === "responded") return !!review.response;
+    if (filter === "pending") return !review.response;
+    return true;
+  });
 
   return (
     <div className="p-6 space-y-6">
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          className="fixed top-4 right-4 px-4 py-3 rounded-lg text-[13px] z-50 flex items-center gap-2"
-          style={{
-            background: toast.type === "success" ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-            border: `1px solid ${toast.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
-            color: toast.type === "success" ? "#22c55e" : "#ef4444",
-          }}
-        >
-          {toast.type === "success" ? <Check size={16} /> : <X size={16} />}
-          {toast.message}
-        </div>
-      )}
-
       {/* Header */}
       <div>
         <h1 className="text-[20px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
@@ -270,7 +109,7 @@ export function VendorReviewsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        {calculatedStats.map((stat) => (
+        {stats.map((stat) => (
           <div
             key={stat.label}
             className="rounded-xl p-4"
@@ -316,7 +155,7 @@ export function VendorReviewsPage() {
           </h2>
         </div>
         <div className="p-5 space-y-3">
-          {calculatedRatingBreakdown.map((item) => (
+          {ratingBreakdown.map((item) => (
             <div key={item.stars} className="flex items-center gap-4">
               <div className="flex items-center gap-1.5 w-16">
                 <span className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
@@ -346,531 +185,167 @@ export function VendorReviewsPage() {
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
-            <input
-              type="text"
-              placeholder="Search reviews..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 rounded-lg text-[13px] w-64"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              }}
-            />
-          </div>
-
-          {/* Filter Tabs */}
-          <div className="flex gap-2">
-            {(["all", "needs_response", "responded", "low_rating", "five_star"] as FilterType[]).map((filterType) => (
-              <button
-                key={filterType}
-                onClick={() => setFilter(filterType)}
-                className="px-4 py-2 rounded-lg text-[12px] transition-all"
-                style={
-                  filter === filterType
-                    ? {
-                        background: "var(--active-overlay)",
-                        color: "var(--accent-navy-light)",
-                        border: "1px solid var(--border-accent)",
-                        fontWeight: 500,
-                      }
-                    : {
-                        background: "var(--input-background)",
-                        color: "var(--text-secondary)",
-                        border: "1px solid var(--border-light)",
-                      }
-                }
-              >
-                {getFilterLabel(filterType)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Sort Dropdown */}
-        <div className="relative">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortType)}
-            className="px-4 py-2 rounded-lg text-[12px] appearance-none cursor-pointer pr-8"
-            style={{
-              background: "var(--input-background)",
-              border: "1px solid var(--border-light)",
-              color: "var(--text-primary)",
-            }}
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="highest_rating">Highest Rating</option>
-            <option value="lowest_rating">Lowest Rating</option>
-          </select>
-          <ChevronDown size={14} className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-tertiary)" }} />
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <div className="flex gap-2">
+          {["all", "pending", "responded"].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilter(status as typeof filter)}
+              className="px-4 py-2 rounded-lg text-[12px] capitalize transition-all"
+              style={
+                filter === status
+                  ? {
+                      background: "var(--active-overlay)",
+                      color: "var(--accent-navy-light)",
+                      border: "1px solid var(--border-accent)",
+                      fontWeight: 500,
+                    }
+                  : {
+                      background: "var(--input-background)",
+                      color: "var(--text-secondary)",
+                      border: "1px solid var(--border-light)",
+                    }
+              }
+            >
+              {status === "all" ? "All Reviews" : status === "pending" ? "Needs Response" : "Responded"}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Reviews List */}
       <div className="space-y-4">
-        {filteredAndSortedReviews.length === 0 ? (
+        {filteredReviews.map((review) => (
           <div
-            className="rounded-xl p-8 text-center"
+            key={review.id}
+            className="rounded-xl overflow-hidden"
             style={{
               background: "var(--bg-panel)",
               border: "1px solid var(--border-light)",
               boxShadow: "var(--shadow-md)",
             }}
           >
-            <MessageSquare size={48} className="mx-auto mb-4" style={{ color: "var(--text-tertiary)" }} />
-            <p className="text-[14px] mb-2" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              No reviews found
-            </p>
-            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              {searchQuery ? "Try adjusting your search or filters" : "Reviews will appear here once customers leave feedback"}
-            </p>
-          </div>
-        ) : (
-          filteredAndSortedReviews.map((review) => (
-            <div
-              key={review.id}
-              className="rounded-xl overflow-hidden"
-              style={{
-                background: "var(--bg-panel)",
-                border: "1px solid var(--border-light)",
-                boxShadow: "var(--shadow-md)",
-              }}
-            >
-              <div className="p-5">
-                {/* Review Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-[12px] shrink-0"
-                      style={{
-                        background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-                        color: "white",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {review.customer.substring(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                          {review.customer}
-                        </p>
-                        {review.verified && (
-                          <div
-                            className="px-2 py-0.5 rounded text-[10px]"
-                            style={{
-                              background: "rgba(34,197,94,0.1)",
-                              color: "#4ade80",
-                              fontWeight: 600,
-                            }}
-                          >
-                            Verified
-                          </div>
-                        )}
-                        {review.reported && (
-                          <div
-                            className="px-2 py-0.5 rounded text-[10px]"
-                            style={{
-                              background: "rgba(239,68,68,0.1)",
-                              color: "#f87171",
-                              fontWeight: 600,
-                            }}
-                          >
-                            Reported
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                        {review.listing}
+            <div className="p-5">
+              {/* Review Header */}
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-[12px] shrink-0"
+                    style={{
+                      background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+                      color: "white",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {review.customer.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                        {review.customer}
                       </p>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-0.5">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star
-                              key={i}
-                              size={12}
-                              style={{
-                                color: i < review.rating ? "#eab308" : "var(--text-tertiary)",
-                                fill: i < review.rating ? "#eab308" : "none",
-                              }}
-                            />
-                          ))}
+                      {review.verified && (
+                        <div
+                          className="px-2 py-0.5 rounded text-[10px]"
+                          style={{
+                            background: "rgba(34,197,94,0.1)",
+                            color: "#4ade80",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Verified
                         </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                      {review.listing}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0.5">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            size={12}
+                            style={{
+                              color: i < review.rating ? "#eab308" : "var(--text-tertiary)",
+                              fill: i < review.rating ? "#eab308" : "none",
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        •
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Calendar size={10} style={{ color: "var(--text-tertiary)" }} />
                         <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                          •
+                          {review.date}
                         </span>
-                        <div className="flex items-center gap-1">
-                          <Calendar size={10} style={{ color: "var(--text-tertiary)" }} />
-                          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                            {formatDate(review.date)}
-                          </span>
-                        </div>
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleReportReview(review.id)}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-opacity-80"
-                    style={{
-                      background: review.reported ? "rgba(239,68,68,0.1)" : "var(--input-background)",
-                      border: `1px solid ${review.reported ? "rgba(239,68,68,0.3)" : "var(--border-light)"}`,
-                      color: review.reported ? "#f87171" : "var(--text-tertiary)",
-                    }}
-                  >
-                    <Flag size={14} />
-                  </button>
                 </div>
-
-                {/* Review Content */}
-                <p className="text-[13px] mb-3" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  {review.comment}
-                </p>
-
-                {/* Review Response */}
-                {review.response && !editingResponse && (
-                  <div
-                    className="rounded-lg p-3 mb-3"
-                    style={{
-                      background: "var(--input-background)",
-                      border: "1px solid var(--border-light)",
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-[11px]" style={{ color: "var(--accent-navy-light)", fontWeight: 600 }}>
-                        Your Response
-                      </p>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => handleEditResponse(review.id, review.response!)}
-                          className="w-6 h-6 rounded flex items-center justify-center hover:bg-opacity-80 transition-all"
-                          style={{
-                            background: "var(--input-background)",
-                            border: "1px solid var(--border-light)",
-                            color: "var(--text-tertiary)",
-                          }}
-                        >
-                          <Edit size={10} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteResponse(review.id)}
-                          className="w-6 h-6 rounded flex items-center justify-center hover:bg-opacity-80 transition-all"
-                          style={{
-                            background: "rgba(239,68,68,0.1)",
-                            border: "1px solid rgba(239,68,68,0.3)",
-                            color: "#f87171",
-                          }}
-                        >
-                          <Trash2 size={10} />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-[12px]" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                      {review.response}
-                    </p>
-                  </div>
-                )}
-
-                {/* Edit Response Form */}
-                {editingResponse === review.id && (
-                  <div
-                    className="rounded-lg p-3 mb-3"
-                    style={{
-                      background: "var(--input-background)",
-                      border: "1px solid var(--border-light)",
-                    }}
-                  >
-                    <p className="text-[11px] mb-2" style={{ color: "var(--accent-navy-light)", fontWeight: 600 }}>
-                      Edit Response
-                    </p>
-                    <textarea
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Update your response..."
-                      rows={3}
-                      className="w-full px-3 py-2 rounded-lg text-[12px] mb-3 resize-none"
-                      style={{
-                        background: "var(--bg-panel)",
-                        border: "1px solid var(--border-light)",
-                        color: "var(--text-primary)",
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleUpdateResponse(review.id)}
-                        className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-1.5"
-                        style={{
-                          background: "var(--active-overlay)",
-                          color: "var(--accent-navy-light)",
-                          border: "1px solid var(--border-accent)",
-                          fontWeight: 500,
-                        }}
-                      >
-                        <Check size={12} />
-                        Update
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingResponse(null);
-                          setResponseText("");
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-[11px]"
-                        style={{
-                          background: "var(--input-background)",
-                          color: "var(--text-secondary)",
-                          border: "1px solid var(--border-light)",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Respond Form */}
-                {respondingTo === review.id && (
-                  <div
-                    className="rounded-lg p-3 mb-3"
-                    style={{
-                      background: "var(--input-background)",
-                      border: "1px solid var(--border-light)",
-                    }}
-                  >
-                    <p className="text-[11px] mb-2" style={{ color: "var(--accent-navy-light)", fontWeight: 600 }}>
-                      Your Response
-                    </p>
-                    <textarea
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Write your response..."
-                      rows={3}
-                      className="w-full px-3 py-2 rounded-lg text-[12px] mb-3 resize-none"
-                      style={{
-                        background: "var(--bg-panel)",
-                        border: "1px solid var(--border-light)",
-                        color: "var(--text-primary)",
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSaveResponse(review.id)}
-                        className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-1.5"
-                        style={{
-                          background: "var(--active-overlay)",
-                          color: "var(--accent-navy-light)",
-                          border: "1px solid var(--border-accent)",
-                          fontWeight: 500,
-                        }}
-                      >
-                        <Send size={12} />
-                        Send Response
-                      </button>
-                      <button
-                        onClick={() => {
-                          setRespondingTo(null);
-                          setResponseText("");
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-[11px]"
-                        style={{
-                          background: "var(--input-background)",
-                          color: "var(--text-secondary)",
-                          border: "1px solid var(--border-light)",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
-                  <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                    <ThumbsUp size={12} />
-                    <span>{review.helpful} found helpful</span>
-                  </div>
-                  {!review.response && respondingTo !== review.id && (
-                    <button
-                      onClick={() => handleRespond(review.id)}
-                      className="px-4 py-1.5 rounded-lg text-[11px] transition-all hover:bg-opacity-80"
-                      style={{
-                        background: "var(--active-overlay)",
-                        color: "var(--accent-navy-light)",
-                        border: "1px solid var(--border-accent)",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <MessageSquare size={12} className="inline mr-1.5" />
-                      Respond
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Report Modal */}
-      {showReportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div
-            className="rounded-xl p-6 w-full max-w-md mx-4"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                Report Review
-              </h3>
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{
-                  background: "var(--input-background)",
-                  border: "1px solid var(--border-light)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
-                  Reason for reporting
-                </label>
-                <select
-                  value={reportData.reason}
-                  onChange={(e) => setReportData(prev => ({ ...prev, reason: e.target.value as any }))}
-                  className="w-full px-3 py-2 rounded-lg text-[13px]"
+                <button
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
                   style={{
                     background: "var(--input-background)",
                     border: "1px solid var(--border-light)",
-                    color: "var(--text-primary)",
+                    color: "var(--text-tertiary)",
                   }}
                 >
-                  <option value="inappropriate">Inappropriate content</option>
-                  <option value="fake">Fake review</option>
-                  <option value="unrelated">Unrelated to service</option>
-                  <option value="abusive">Abusive language</option>
-                </select>
+                  <Flag size={14} />
+                </button>
               </div>
 
-              <div>
-                <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
-                  Description *
-                </label>
-                <textarea
-                  value={reportData.description}
-                  onChange={(e) => setReportData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Please provide details about why you're reporting this review..."
-                  rows={4}
-                  className="w-full px-3 py-2 rounded-lg text-[13px] resize-none"
-                  style={{
-                    background: "var(--input-background)",
-                    border: "1px solid var(--border-light)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="flex-1 px-4 py-2 rounded-lg text-[13px]"
-                style={{
-                  background: "var(--input-background)",
-                  border: "1px solid var(--border-light)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitReport}
-                className="flex-1 px-4 py-2 rounded-lg text-[13px]"
-                style={{
-                  background: "rgba(239,68,68,0.1)",
-                  border: "1px solid rgba(239,68,68,0.3)",
-                  color: "#ef4444",
-                  fontWeight: 500,
-                }}
-              >
-                Submit Report
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Response Confirmation */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div
-            className="rounded-xl p-6 w-full max-w-sm mx-4"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-            }}
-          >
-            <div className="text-center">
-              <div
-                className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center"
-                style={{
-                  background: "rgba(239,68,68,0.1)",
-                  color: "#ef4444",
-                }}
-              >
-                <Trash2 size={20} />
-              </div>
-              <h3 className="text-[16px] mb-2" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                Delete Response
-              </h3>
-              <p className="text-[13px] mb-6" style={{ color: "var(--text-secondary)" }}>
-                Are you sure you want to delete this response? This action cannot be undone.
+              {/* Review Content */}
+              <p className="text-[13px] mb-3" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                {review.comment}
               </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 px-4 py-2 rounded-lg text-[13px]"
+
+              {/* Review Response */}
+              {review.response && (
+                <div
+                  className="rounded-lg p-3 mb-3"
                   style={{
                     background: "var(--input-background)",
                     border: "1px solid var(--border-light)",
-                    color: "var(--text-secondary)",
                   }}
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteResponse}
-                  className="flex-1 px-4 py-2 rounded-lg text-[13px]"
-                  style={{
-                    background: "rgba(239,68,68,0.1)",
-                    border: "1px solid rgba(239,68,68,0.3)",
-                    color: "#ef4444",
-                    fontWeight: 500,
-                  }}
-                >
-                  Delete
-                </button>
+                  <p className="text-[11px] mb-1" style={{ color: "var(--accent-navy-light)", fontWeight: 600 }}>
+                    Your Response
+                  </p>
+                  <p className="text-[12px]" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    {review.response}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
+                <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  <ThumbsUp size={12} />
+                  <span>{review.helpful} found helpful</span>
+                </div>
+                {!review.response && (
+                  <button
+                    className="px-4 py-1.5 rounded-lg text-[11px] transition-all"
+                    style={{
+                      background: "var(--active-overlay)",
+                      color: "var(--accent-navy-light)",
+                      border: "1px solid var(--border-accent)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    <MessageSquare size={12} className="inline mr-1.5" />
+                    Respond
+                  </button>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
