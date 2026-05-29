@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Bell, CheckCircle, Clock, DollarSign, Star, MessageSquare, Calendar, Settings } from "lucide-react";
 
 type NotificationType = "booking" | "payout" | "review" | "system" | "message";
@@ -13,7 +14,18 @@ interface Notification {
 }
 
 export function VendorNotificationsPage() {
-  const notifications: Notification[] = [
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [preferences, setPreferences] = useState({
+    bookings: true,
+    payouts: true,
+    reviews: true,
+    messages: true,
+    listings: true,
+    marketing: false,
+  });
+
+  const [notifications, setNotifications] = useState<Notification[]>([
     {
       id: "1",
       type: "booking",
@@ -62,7 +74,27 @@ export function VendorNotificationsPage() {
       time: "3 days ago",
       read: true,
     },
-  ];
+  ]);
+
+  const handleMarkAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setToast({ message: "All notifications marked as read", type: "success" });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleTogglePreference = (key: keyof typeof preferences) => {
+    setPreferences(prev => ({ ...prev, [key]: !prev[key] }));
+    setToast({ message: "Notification preferences updated", type: "success" });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) {
+      setNotifications(prev => 
+        prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
+      );
+    }
+  };
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
@@ -95,7 +127,8 @@ export function VendorNotificationsPage() {
         </div>
         <div className="flex gap-2">
           <button
-            className="px-4 py-2 rounded-lg text-[12px] flex items-center gap-2"
+            onClick={handleMarkAllRead}
+            className="px-4 py-2 rounded-lg text-[12px] flex items-center gap-2 transition-all hover:opacity-80"
             style={{
               background: "var(--input-background)",
               color: "var(--text-primary)",
@@ -107,7 +140,8 @@ export function VendorNotificationsPage() {
             Mark All Read
           </button>
           <button
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
+            onClick={() => setShowSettings(!showSettings)}
+            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
             style={{
               background: "var(--input-background)",
               border: "1px solid var(--border-light)",
@@ -136,12 +170,12 @@ export function VendorNotificationsPage() {
         <div className="p-5">
           <div className="grid grid-cols-2 gap-4">
             {[
-              { label: "Booking Requests", sublabel: "New bookings and requests", enabled: true },
-              { label: "Payout Updates", sublabel: "Payment and payout notifications", enabled: true },
-              { label: "Customer Reviews", sublabel: "New reviews and ratings", enabled: true },
-              { label: "Customer Messages", sublabel: "Direct messages from customers", enabled: true },
-              { label: "Listing Updates", sublabel: "Listing approval status", enabled: true },
-              { label: "Marketing Updates", sublabel: "Platform news and promotions", enabled: false },
+              { label: "Booking Requests", sublabel: "New bookings and requests", key: "bookings", enabled: preferences.bookings },
+              { label: "Payout Updates", sublabel: "Payment and payout notifications", key: "payouts", enabled: preferences.payouts },
+              { label: "Customer Reviews", sublabel: "New reviews and ratings", key: "reviews", enabled: preferences.reviews },
+              { label: "Customer Messages", sublabel: "Direct messages from customers", key: "messages", enabled: preferences.messages },
+              { label: "Listing Updates", sublabel: "Listing approval status", key: "listings", enabled: preferences.listings },
+              { label: "Marketing Updates", sublabel: "Platform news and promotions", key: "marketing", enabled: preferences.marketing },
             ].map((pref) => (
               <div
                 key={pref.label}
@@ -161,7 +195,8 @@ export function VendorNotificationsPage() {
                     </p>
                   </div>
                   <div
-                    className="w-10 h-6 rounded-full relative transition-all cursor-pointer"
+                    onClick={() => handleTogglePreference(pref.key as keyof typeof preferences)}
+                    className="w-10 h-6 rounded-full relative transition-all cursor-pointer hover:opacity-80"
                     style={{
                       background: pref.enabled ? "var(--accent-navy)" : "var(--border-medium)",
                     }}
@@ -201,6 +236,7 @@ export function VendorNotificationsPage() {
             return (
               <div
                 key={notification.id}
+                onClick={() => handleNotificationClick(notification)}
                 className="group cursor-pointer transition-all"
                 style={{
                   background: !notification.read ? "var(--active-overlay)" : "transparent",
@@ -252,6 +288,30 @@ export function VendorNotificationsPage() {
           })}
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2"
+          style={{
+            background: toast.type === "success" ? "var(--accent-navy)" : "#ef4444",
+            color: "white",
+          }}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle size={16} />
+          ) : (
+            <Bell size={16} />
+          )}
+          <span className="text-[13px] font-medium">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-2 p-1 rounded-lg transition-all hover:bg-white/20"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
