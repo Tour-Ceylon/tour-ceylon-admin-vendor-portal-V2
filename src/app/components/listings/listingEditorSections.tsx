@@ -469,8 +469,8 @@ export function PricingTab({
                                         className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
                                         style={{ color: "var(--text-secondary)" }}
                                         onMouseEnter={(e) => {
-                                            (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.1)";
-                                            (e.currentTarget as HTMLElement).style.color = "#f87171";
+                                            (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
+                                            (e.currentTarget as HTMLElement).style.color = "var(--error)";
                                         }}
                                         onMouseLeave={(e) => {
                                             (e.currentTarget as HTMLElement).style.background = "transparent";

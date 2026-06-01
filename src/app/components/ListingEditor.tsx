@@ -691,7 +691,7 @@ function CreateListingWizard({
             {category === "Stay" && subcategory && !isImplementedStaySubtype(category, subcategory) && (
               <div
                 className="rounded-lg px-3 py-2 text-[12px]"
-                style={{ background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.25)", color: "#d97706" }}
+                style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--warning)" }}
               >
                 This Stay subtype is not available yet. For now, continue with Hotel or Bed and Breakfast.
               </div>
@@ -817,7 +817,7 @@ function CreateListingWizard({
         {stepErrors.length > 0 && (
           <div
             className="mt-4 rounded-lg px-3 py-2 text-[12px]"
-            style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", color: "#ef4444" }}
+            style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--error)" }}
           >
             {stepErrors.map((error) => (
               <p key={error}>{error}</p>
@@ -1231,11 +1231,11 @@ function StatusPanel({
   category: Category;
 }) {
   const CATEGORY_COLORS_PANEL: Record<Category, { text: string; bg: string }> = {
-    Safari: { text: "#34d399", bg: "rgba(5,150,105,0.12)" },
-    Stay: { text: "#60a5fa", bg: "rgba(37,99,235,0.12)" },
-    Tour: { text: "#22d3ee", bg: "rgba(8,145,178,0.12)" },
-    Experience: { text: "#fbbf24", bg: "rgba(217,119,6,0.12)" },
-    Transfer: { text: "#94a3b8", bg: "rgba(100,116,139,0.12)" },
+    Safari: { text: "var(--success)", bg: "var(--active-overlay)" },
+    Stay: { text: "var(--accent-navy-light)", bg: "var(--active-overlay)" },
+    Tour: { text: "var(--info)", bg: "var(--active-overlay)" },
+    Experience: { text: "var(--warning)", bg: "var(--active-overlay)" },
+    Transfer: { text: "var(--text-secondary)", bg: "var(--active-overlay)" },
   };
 
   const catStyle = CATEGORY_COLORS_PANEL[category];
@@ -1261,7 +1261,7 @@ function StatusPanel({
               boxShadow: active ? "0 0 6px var(--success)" : "0 0 6px var(--warning)",
             }}
           />
-          <span className="text-[13px]" style={{ color: active ? "#4ade80" : "#fbbf24", fontWeight: 500 }}>
+          <span className="text-[13px]" style={{ color: active ? "var(--success)" : "var(--warning)", fontWeight: 500 }}>
             {active ? "Active" : "Draft"}
           </span>
         </div>
@@ -1851,7 +1851,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
                   </span>
                   <button
                     className="px-3 py-1.5 rounded-lg text-[12px] transition-all"
-                    style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)" }}
+                    style={{ background: "var(--active-overlay)", color: "var(--error)", border: "1px solid var(--border-accent)" }}
                     onClick={() => { setDeleteConfirm(false); navigate("/listings"); }}
                   >
                     Yes, Delete
@@ -1870,7 +1870,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
                   style={{ color: "var(--error)", border: "1px solid rgba(239,68,68,0.2)" }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "rgba(239,68,68,0.08)";
+                    (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
                   }}
                   onMouseLeave={(e) => {
                     (e.currentTarget as HTMLElement).style.background = "transparent";

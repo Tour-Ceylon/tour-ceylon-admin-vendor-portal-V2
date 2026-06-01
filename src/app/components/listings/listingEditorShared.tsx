@@ -238,7 +238,7 @@ export function CreateWizardTypeStep({
                                 style={{
                                     background: isActive ? "var(--active-overlay)" : "var(--input-background)",
                                     border: isActive ? "1px solid var(--border-accent)" : "1px solid var(--border-light)",
-                                    boxShadow: isActive ? "0 0 0 1px var(--border-accent), 0 10px 24px rgba(0,0,0,0.12)" : "none",
+                                    boxShadow: isActive ? "0 0 0 1px var(--border-accent), var(--shadow-lg)" : "none",
                                 }}
                             >
                                 <div className="flex items-start justify-between gap-3 mb-3">
