@@ -15,6 +15,9 @@ import {
   ChevronDown,
   CheckSquare,
   Filter,
+  Trash2,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 
 type Category = "All" | "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
@@ -53,25 +56,6 @@ interface StayPropertyListResponse {
   total: number;
 }
 
-const MOCK_LISTINGS: Listing[] = [
-  { id: "lst_001", title: "Jetwing Yala Resort", location: "Yala, Southern Province", category: "Stay", destination: "Yala, Sri Lanka", media: 24, variants: 8, status: "Approved", lastUpdated: "May 18, 2026", color: "#2563eb" },
-  { id: "lst_002", title: "Cinnamon Wild Yala", location: "Yala, Southern Province", category: "Stay", destination: "Yala, Sri Lanka", media: 21, variants: 6, status: "Approved", lastUpdated: "May 17, 2026", color: "#2563eb" },
-  { id: "lst_003", title: "Shangri-La Colombo", location: "Colombo, Western Province", category: "Stay", destination: "Colombo, Sri Lanka", media: 32, variants: 12, status: "Approved", lastUpdated: "May 16, 2026", color: "#2563eb" },
-  { id: "lst_004", title: "Galle Fort Hotel", location: "Galle, Southern Province", category: "Stay", destination: "Galle, Sri Lanka", media: 16, variants: 5, status: "Pending Review", lastUpdated: "May 16, 2026", color: "#2563eb" },
-  { id: "lst_005", title: "Amangalla Heritage Resort", location: "Galle, Southern Province", category: "Stay", destination: "Galle, Sri Lanka", media: 28, variants: 9, status: "Approved", lastUpdated: "May 15, 2026", color: "#2563eb" },
-  { id: "lst_006", title: "Heritance Tea Factory", location: "Nuwara Eliya, Central Province", category: "Stay", destination: "Nuwara Eliya, Sri Lanka", media: 19, variants: 7, status: "Draft", lastUpdated: "May 14, 2026", color: "#2563eb" },
-  { id: "lst_007", title: "Yala National Park Safari", location: "Yala, Southern Province", category: "Safari", destination: "Yala, Sri Lanka", media: 12, variants: 3, status: "Approved", lastUpdated: "May 15, 2026", color: "#059669" },
-  { id: "lst_008", title: "Minneriya Wildlife Safari", location: "Minneriya, North Central", category: "Safari", destination: "Minneriya, Sri Lanka", media: 8, variants: 2, status: "Pending Review", lastUpdated: "May 14, 2026", color: "#059669" },
-  { id: "lst_009", title: "Wasgamuwa Safari Experience", location: "Wasgamuwa, Central Province", category: "Safari", destination: "Wasgamuwa, Sri Lanka", media: 5, variants: 1, status: "Draft", lastUpdated: "May 10, 2026", color: "#059669" },
-  { id: "lst_010", title: "Kaudulla National Park Safari", location: "Kaudulla, North Central", category: "Safari", destination: "Kaudulla, Sri Lanka", media: 9, variants: 2, status: "Approved", lastUpdated: "May 12, 2026", color: "#059669" },
-  { id: "lst_011", title: "Lunugamvehera Wildlife Camp", location: "Lunugamvehera, Uva Province", category: "Safari", destination: "Lunugamvehera, Sri Lanka", media: 11, variants: 3, status: "Approved", lastUpdated: "May 8, 2026", color: "#059669" },
-  { id: "lst_012", title: "Galle Fort Heritage Walking Tour", location: "Galle, Southern Province", category: "Tour", destination: "Galle, Sri Lanka", media: 7, variants: 2, status: "Approved", lastUpdated: "May 13, 2026", color: "#0891b2" },
-  { id: "lst_013", title: "Colombo Sunset City Experience", location: "Colombo, Western Province", category: "Experience", destination: "Colombo, Sri Lanka", media: 4, variants: 1, status: "Pending Review", lastUpdated: "May 7, 2026", color: "#d97706" },
-  { id: "lst_014", title: "CMB Airport Executive Transfer", location: "Katunayake, Western Province", category: "Transfer", destination: "Colombo, Sri Lanka", media: 3, variants: 4, status: "Approved", lastUpdated: "May 11, 2026", color: "#64748b" },
-  { id: "lst_015", title: "Heritance Kandalama Retreat", location: "Dambulla, Central Province", category: "Stay", destination: "Dambulla, Sri Lanka", media: 18, variants: 5, status: "Approved", lastUpdated: "May 16, 2026", color: "#2563eb" },
-  { id: "lst_016", title: "Ceylon Tea Factory Experience", location: "Nuwara Eliya, Central Province", category: "Tour", destination: "Nuwara Eliya, Sri Lanka", media: 6, variants: 1, status: "Rejected", lastUpdated: "Apr 20, 2026", color: "#0891b2" },
-];
-
 const CATEGORY_COLORS: Record<Exclude<Category, "All">, { bg: string; text: string; border: string }> = {
   Stay: { bg: "rgba(37, 99, 235, 0.12)", text: "#60a5fa", border: "rgba(37,99,235,0.25)" },
   Tour: { bg: "rgba(8, 145, 178, 0.12)", text: "#22d3ee", border: "rgba(8,145,178,0.25)" },
@@ -88,6 +72,9 @@ const STATUS_COLORS: Record<Status, { bg: string; text: string; dot: string }> =
   Rejected: { bg: "rgba(239, 68, 68, 0.1)", text: "#f87171", dot: "#ef4444" },
   Archived: { bg: "rgba(100, 116, 139, 0.1)", text: "#94a3b8", dot: "#64748b" },
 };
+
+const ACTION_BUTTON_CLASS =
+  "w-9 h-9 rounded-lg inline-flex items-center justify-center transition-all duration-150 ease-in-out border border-transparent bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50 disabled:cursor-not-allowed";
 
 const CATEGORIES: Category[] = ["All", "Stay", "Tour", "Safari", "Experience", "Transfer"];
 
@@ -155,6 +142,168 @@ function ListingThumbnail({ category, color, imageUrl }: { category: Exclude<Cat
   );
 }
 
+interface ArchiveModalProps {
+  listing: Listing;
+  onConfirm: (reason?: string) => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+function ArchiveModal({ listing, onConfirm, onCancel, loading = false }: ArchiveModalProps) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div
+        className="max-w-md w-full mx-4 rounded-xl p-6"
+        style={{
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border-light)",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div
+            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b" }}
+          >
+            <Archive size={18} />
+          </div>
+          <div>
+            <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+              Archive Listing
+            </h3>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+              {listing.title}
+            </p>
+          </div>
+        </div>
+        
+        <div className="mb-4">
+          <label className="block text-[12px] mb-2" style={{ color: "var(--text-secondary)" }}>
+            Archive Reason (Optional)
+          </label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Enter reason for archiving..."
+            className="w-full px-3 py-2 rounded-lg text-[12px] resize-none"
+            style={{
+              background: "var(--input-background)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-primary)",
+            }}
+            rows={3}
+            disabled={loading}
+          />
+        </div>
+
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 rounded-lg text-[12px] transition-all"
+            style={{
+              background: "var(--input-background)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(reason || undefined)}
+            disabled={loading}
+            className="px-4 py-2 rounded-lg text-[12px] transition-all"
+            style={{
+              background: "#f59e0b",
+              color: "white",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Archiving..." : "Archive Listing"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteModalProps {
+  listing: Listing;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+function DeleteModal({ listing, onConfirm, onCancel, loading = false }: DeleteModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div
+        className="max-w-md w-full mx-4 rounded-xl p-6"
+        style={{
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border-light)",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div
+            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: "rgba(239, 68, 68, 0.15)", color: "#ef4444" }}
+          >
+            <AlertTriangle size={18} />
+          </div>
+          <div>
+            <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+              Delete Listing
+            </h3>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+              {listing.title}
+            </p>
+          </div>
+        </div>
+        
+        <div className="mb-6">
+          <p className="text-[13px] mb-2" style={{ color: "var(--text-primary)" }}>
+            This action cannot be undone. Only draft listings can be permanently deleted.
+          </p>
+          <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+            Are you sure you want to permanently delete this listing?
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 rounded-lg text-[12px] transition-all"
+            style={{
+              background: "var(--input-background)",
+              border: "1px solid var(--border-light)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="px-4 py-2 rounded-lg text-[12px] transition-all"
+            style={{
+              background: "#ef4444",
+              color: "white",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Deleting..." : "Delete Permanently"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ListingsPage() {
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState<Category>("All");
@@ -163,6 +312,10 @@ export function ListingsPage() {
   const [stayListings, setStayListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [archiveModal, setArchiveModal] = useState<Listing | null>(null);
+  const [deleteModal, setDeleteModal] = useState<Listing | null>(null);
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [statusLoadingIds, setStatusLoadingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -191,10 +344,7 @@ export function ListingsPage() {
     };
   }, []);
 
-  const listings = [
-    ...stayListings,
-    ...MOCK_LISTINGS.filter((listing) => listing.category !== "Stay"),
-  ];
+  const listings = [...stayListings];
 
   const filtered = listings.filter((l) => {
     const matchCat = activeCategory === "All" || l.category === activeCategory;
@@ -226,6 +376,121 @@ export function ListingsPage() {
     } else {
       setSelected(new Set(filtered.map((l) => l.id)));
     }
+  };
+
+  const handleArchiveListing = async (reason?: string) => {
+    if (!archiveModal) return;
+
+    setOperationLoading(true);
+    try {
+      // Only archive Stay listings via API, others are mocked
+      if (archiveModal.category === "Stay") {
+        await apiFetch(`/vendor/stays/${archiveModal.id}`, {
+          method: "DELETE",
+          body: JSON.stringify({ reason }),
+        });
+
+        // Update local state
+        setStayListings(prev => 
+          prev.map(listing => 
+            listing.id === archiveModal.id 
+              ? { ...listing, status: "Archived" as Status }
+              : listing
+          )
+        );
+      }
+      
+      setArchiveModal(null);
+    } catch (error: any) {
+      setLoadError(error?.message || "Failed to archive listing");
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const handleDeleteListing = async () => {
+    if (!deleteModal) return;
+
+    setOperationLoading(true);
+    try {
+      // Only delete Stay listings via API, others are mocked
+      if (deleteModal.category === "Stay") {
+        await apiFetch(`/vendor/stays/${deleteModal.id}?hard_delete=true`, {
+          method: "DELETE",
+        });
+
+        // Remove from local state
+        setStayListings(prev => prev.filter(listing => listing.id !== deleteModal.id));
+      }
+      
+      setDeleteModal(null);
+    } catch (error: any) {
+      setLoadError(error?.message || "Failed to delete listing");
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const handleApproveStatus = async (listing: Listing) => {
+    setStatusLoadingIds((prev) => new Set(prev).add(listing.id));
+    try {
+      await apiFetch(`/admin/stays/${listing.id}/approve`, {
+        method: "POST",
+      });
+      setStayListings((prev) =>
+        prev.map((item) =>
+          item.id === listing.id ? { ...item, status: "Approved" } : item
+        )
+      );
+    } catch (error: any) {
+      setLoadError(error?.message || "Failed to approve listing");
+    } finally {
+      setStatusLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(listing.id);
+        return next;
+      });
+    }
+  };
+
+  const handleRejectStatus = async (listing: Listing) => {
+    setStatusLoadingIds((prev) => new Set(prev).add(listing.id));
+    try {
+      await apiFetch(`/admin/stays/${listing.id}/reject`, {
+        method: "POST",
+      });
+      setStayListings((prev) =>
+        prev.map((item) =>
+          item.id === listing.id ? { ...item, status: "Rejected" } : item
+        )
+      );
+    } catch (error: any) {
+      setLoadError(error?.message || "Failed to reject listing");
+    } finally {
+      setStatusLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(listing.id);
+        return next;
+      });
+    }
+  };
+
+  const handleChangeStatus = async (listing: Listing, newStatus: Status) => {
+    if (newStatus === listing.status) return;
+    if (newStatus === "Approved") {
+      await handleApproveStatus(listing);
+      return;
+    }
+    if (newStatus === "Rejected") {
+      await handleRejectStatus(listing);
+      return;
+    }
+
+    setStayListings((prev) =>
+      prev.map((item) =>
+        item.id === listing.id ? { ...item, status: "Pending Review" } : item
+      )
+    );
   };
 
   return (
@@ -513,19 +778,38 @@ export function ListingsPage() {
 
                 {/* Status */}
                 <div>
-                  <span
-                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px]"
-                    style={{
-                      background: statStyle.bg,
-                      color: statStyle.text,
-                    }}
-                  >
+                  {listing.category === "Stay" && ["Pending Review", "Approved", "Rejected"].includes(listing.status) ? (
+                    <select
+                      value={listing.status}
+                      onChange={(e) => handleChangeStatus(listing, e.target.value as Status)}
+                      disabled={statusLoadingIds.has(listing.id)}
+                      className="text-[11px] rounded-full px-3 py-1.5 border border-slate-200 bg-white text-slate-900 shadow-sm outline-none transition duration-150 focus:ring-2 focus:ring-accent/30"
+                      style={{
+                        background: statStyle.bg,
+                        color: statStyle.text,
+                        borderColor: statStyle.dot,
+                        minWidth: "140px",
+                      }}
+                    >
+                      <option value="Pending Review">Pending Review</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  ) : (
                     <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{ background: statStyle.dot, boxShadow: `0 0 4px ${statStyle.dot}` }}
-                    />
-                    {listing.status}
-                  </span>
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px]"
+                      style={{
+                        background: statStyle.bg,
+                        color: statStyle.text,
+                      }}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ background: statStyle.dot, boxShadow: `0 0 4px ${statStyle.dot}` }}
+                      />
+                      {listing.status}
+                    </span>
+                  )}
                 </div>
 
                 {/* Last Updated */}
@@ -534,50 +818,77 @@ export function ListingsPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                    className={ACTION_BUTTON_CLASS}
                     style={{ color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--accent-navy-light)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                    }}
-                  >
-                    <Eye size={13} />
-                  </button>
-                  <button
                     onClick={() => navigate(`/listings/${listing.id}/edit`)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--accent-navy-light)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                    }}
+                    aria-label="Edit listing"
                   >
                     <Edit2 size={13} />
                   </button>
                   <button
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                    className={ACTION_BUTTON_CLASS}
                     style={{ color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                    }}
+                    onClick={() => navigate(`/listings/${listing.id}`)}
+                    aria-label="View listing"
                   >
-                    <MoreHorizontal size={13} />
+                    <Eye size={13} />
                   </button>
+                  {listing.category === "Stay" && listing.status === "Pending Review" && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleApproveStatus(listing);
+                        }}
+                        disabled={statusLoadingIds.has(listing.id)}
+                        className={ACTION_BUTTON_CLASS}
+                        style={{ color: statusLoadingIds.has(listing.id) ? "#94a3b8" : "#22c55e" }}
+                        aria-label="Approve listing"
+                      >
+                        {statusLoadingIds.has(listing.id) ? (
+                          <div className="w-4 h-4 rounded-full border-2 border-t-transparent border-current animate-spin" />
+                        ) : (
+                          <CheckSquare size={13} />
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRejectStatus(listing);
+                        }}
+                        disabled={statusLoadingIds.has(listing.id)}
+                        className={ACTION_BUTTON_CLASS}
+                        style={{ color: statusLoadingIds.has(listing.id) ? "#94a3b8" : "#ef4444" }}
+                        aria-label="Reject listing"
+                      >
+                        <X size={13} />
+                      </button>
+                    </>
+                  )}
+                  {listing.category === "Stay" && listing.status !== "Pending Review" && (
+                    <>
+                      <button
+                        onClick={() => setArchiveModal(listing)}
+                        className={ACTION_BUTTON_CLASS}
+                        style={{ color: "#f59e0b" }}
+                        aria-label="Archive listing"
+                      >
+                        <Archive size={13} />
+                      </button>
+                      {listing.status === "Draft" && (
+                        <button
+                          onClick={() => setDeleteModal(listing)}
+                          className={ACTION_BUTTON_CLASS}
+                          style={{ color: "#ef4444" }}
+                          aria-label="Delete listing"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -610,6 +921,25 @@ export function ListingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      {archiveModal && (
+        <ArchiveModal
+          listing={archiveModal}
+          onConfirm={handleArchiveListing}
+          onCancel={() => setArchiveModal(null)}
+          loading={operationLoading}
+        />
+      )}
+      
+      {deleteModal && (
+        <DeleteModal
+          listing={deleteModal}
+          onConfirm={handleDeleteListing}
+          onCancel={() => setDeleteModal(null)}
+          loading={operationLoading}
+        />
+      )}
     </div>
   );
 }

@@ -369,6 +369,7 @@ function buildStayApplicationPayload({
   lng,
   subcategory,
   categoryData,
+  status = "SUBMITTED",
 }: {
   title: string;
   description: string;
@@ -377,13 +378,22 @@ function buildStayApplicationPayload({
   lng: string;
   subcategory: string | null;
   categoryData: Record<string, any>;
+  status?: string;
 }) {
   const propertyDetails = categoryData.propertyDetails ?? {};
   const images = categoryData.images ?? {};
+  
+  // Helper function to safely convert to number or return undefined
+  const safeNumber = (value: string | number | undefined | null) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  };
+  
   const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
     name: room.type,
     description: "",
-    count: Number(room.count) || 1,
+    count: safeNumber(room.count) || 1,
     unitPrefix: room.type
       .split(/\s+/)
       .map((part) => part[0])
@@ -392,15 +402,15 @@ function buildStayApplicationPayload({
       .toUpperCase() || "RM",
     size: room.size || undefined,
     sizeUnit: room.size ? "sqm" : undefined,
-    maxGuests: Number(room.maxGuests) || undefined,
-    basePrice: Number(room.pricePerNight) || undefined,
+    maxGuests: safeNumber(room.maxGuests) || undefined,
+    basePrice: safeNumber(room.pricePerNight) || undefined,
     currency: room.currency || "LKR",
     smoking: toBoolean(room.smoking),
     guestAccess: toBoolean(room.guestAccess),
     bedConfiguration: {
       hasBeds: room.hasBeds ?? false,
-      beds: Number(room.beds) || 0,
-      cribs: Number(room.cribs) || 0,
+      beds: safeNumber(room.beds) || 0,
+      cribs: safeNumber(room.cribs) || 0,
       breakdown: room.bedBreakdown ?? {},
     },
     bathroom: {
@@ -424,7 +434,7 @@ function buildStayApplicationPayload({
     city: propertyLocation,
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
-    status: "submitted",
+    status,
     contact: {
       languages: propertyDetails.languages ?? [],
     },
@@ -524,6 +534,8 @@ function CreateListingWizard({
         } else if (!isImplementedStaySubtype(category, subcategory)) {
           errors.push("This stay subtype is not available yet. Please choose Hotel or Bed and Breakfast.");
         }
+        // For Stay with tree-selector, we don't need title/destination validation here
+        // They are handled in step 3 (property details)
       } else {
         if (!title.trim()) errors.push("Title is required.");
         if (!destination.trim()) errors.push("Destination is required.");
@@ -561,40 +573,19 @@ function CreateListingWizard({
     }
 
     if (currentStep === 4 && category === "Stay") {
-      const rooms = ((draftCategoryData.roomTypes ?? []) as RoomType[]);
-
+      const rooms = draftCategoryData.roomTypes || [];
       if (!rooms.length) {
-        errors.push("Add at least one room before continuing.");
-      }
-
-      if (
-        rooms.some((room) => {
-          if (!room.type.trim()) return true;
-          if (!room.count.trim() || Number(room.count) <= 0) return true;
-          if (!room.maxGuests.trim() || Number(room.maxGuests) <= 0) return true;
-          if (!room.pricePerNight.trim() || !isPositiveNumber(room.pricePerNight)) return true;
-
-          let remainingPrice = Number(room.pricePerNight);
-
-          return (room.discounts ?? []).some((discount) => {
-            const value = Number(discount.value);
-            if (!discount.label.trim() || !discount.value.trim() || !Number.isFinite(value) || value <= 0) {
-              return true;
-            }
-
-            if (discount.type === "percentage") {
-              if (value > 100) return true;
-              remainingPrice -= (remainingPrice * value) / 100;
-              return false;
-            }
-
-            if (value > remainingPrice) return true;
-            remainingPrice -= value;
-            return false;
-          });
-        })
-      ) {
-        errors.push("Each room must have type, count, max guests, a valid price per night greater than 0, and valid discount values.");
+        errors.push("Add at least one room.");
+      } else {
+        const hasInvalidRoom = rooms.some((room: any) => 
+          !room.type ||
+          !room.count || !isPositiveNumber(String(room.count)) ||
+          !room.maxGuests || !isPositiveNumber(String(room.maxGuests)) ||
+          !room.pricePerNight || !isPositiveNumber(String(room.pricePerNight))
+        );
+        if (hasInvalidRoom) {
+          errors.push("Each room must have type, count, max guests, and a valid price per night greater than 0.");
+        }
       }
     }
 
@@ -636,33 +627,71 @@ function CreateListingWizard({
       return;
     }
 
-    if (category !== "Stay") {
-      useListingDraftStore.getState().clearDraft();
-      navigate("/listings");
+    if (!category) {
+      setStepErrors(["Please select a category before submitting."]);
       return;
     }
 
     setIsSubmitting(true);
     setStepErrors([]);
     try {
-      await apiFetch("/vendor/stays/", {
-        method: "POST",
-        body: JSON.stringify(
-          buildStayApplicationPayload({
-            title,
-            description,
-            destination,
-            lat,
-            lng,
-            subcategory,
-            categoryData: useListingDraftStore.getState().categoryData ?? {},
-          }),
-        ),
-      });
+      // Build conditional payload based on category
+      const categoryData = useListingDraftStore.getState().categoryData ?? {};
+      
+      if (category === "Stay") {
+        // For Stay listings, use specialized Stay endpoint and payload
+        let finalDestination = destination;
+        if (!finalDestination.trim()) {
+          const propertyDetails = categoryData.propertyDetails ?? {};
+          finalDestination = propertyDetails.propertyLocation || "";
+        }
+        
+        const stayPayload = buildStayApplicationPayload({
+          title,
+          description,
+          destination: finalDestination,
+          lat,
+          lng,
+          subcategory,
+          categoryData,
+        });
+
+        await apiFetch("/vendor/stays/", {
+          method: "POST",
+          body: JSON.stringify(stayPayload),
+        });
+      } else {
+        // For other categories, use existing unified listing endpoint
+        let finalDestination = destination;
+        
+        const payload = {
+          title,
+          description,
+          destination: finalDestination,
+          lat,
+          lng,
+          active,
+          categoryData,
+          variants,
+          action: "submit_for_review", // Mark as submitted for review
+        };
+
+        await apiFetch(`/vendor/listings/${category}`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
       useListingDraftStore.getState().clearDraft();
-      navigate("/hotel/dashboard");
+      
+      // Navigate to appropriate dashboard based on category
+      if (category === "Stay") {
+        navigate("/hotel/dashboard");
+      } else {
+        navigate("/listings");
+      }
     } catch (error: any) {
-      setStepErrors([error?.message || "Unable to submit the stay application. Please try again."]);
+      setStepErrors([error?.message || `Unable to submit the ${category.toLowerCase()} listing. Please try again.`]);
     } finally {
       setIsSubmitting(false);
     }
@@ -1618,6 +1647,137 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     useListingDraftStore.getState().setDraft({ variants: v });
   };
 
+  const handleSaveDraft = async () => {
+    if (!category) {
+      alert("Please select a category first.");
+      return;
+    }
+
+    try {
+      if (category === "Stay" && mode === "edit" && listingId) {
+        let finalDestination = destination;
+        if (!finalDestination.trim()) {
+          const categoryData = useListingDraftStore.getState().categoryData ?? {};
+          const propertyDetails = categoryData.propertyDetails ?? {};
+          finalDestination = propertyDetails.propertyLocation || "";
+        }
+        
+        const stayPayload = buildStayApplicationPayload({
+          title,
+          description,
+          destination: finalDestination,
+          lat,
+          lng,
+          subcategory: useListingDraftStore.getState().subcategory ?? null,
+          categoryData: useListingDraftStore.getState().categoryData ?? {},
+          status: "DRAFT",
+        });
+
+        await apiFetch(`/vendor/stays/${listingId}`, {
+          method: "PUT",
+          body: JSON.stringify(stayPayload),
+        });
+
+        useListingDraftStore.getState().clearDraft();
+        alert("Draft saved successfully!");
+        navigate("/hotel/dashboard");
+      } else {
+        const payload = {
+          title,
+          description,
+          destination,
+          lat,
+          lng,
+          active,
+          categoryData: useListingDraftStore.getState().categoryData ?? {},
+          variants,
+          action: "save_draft", // Mark as draft
+        };
+
+        await apiFetch(`/vendor/listings/${category}`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        // Show success message or update UI
+        alert("Draft saved successfully!");
+      }
+    } catch (error: any) {
+      alert(`Failed to save draft: ${error?.message || "Unknown error"}`);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    if (!category) {
+      alert("Please select a category first.");
+      return;
+    }
+
+    try {
+      if (category === "Stay" && mode === "edit" && listingId) {
+        // For Stay edit mode, use specialized Stay endpoint and payload
+        let finalDestination = destination;
+        if (!finalDestination.trim()) {
+          const categoryData = useListingDraftStore.getState().categoryData ?? {};
+          const propertyDetails = categoryData.propertyDetails ?? {};
+          finalDestination = propertyDetails.propertyLocation || "";
+        }
+        
+        const stayPayload = buildStayApplicationPayload({
+          title,
+          description,
+          destination: finalDestination,
+          lat,
+          lng,
+          subcategory: useListingDraftStore.getState().subcategory ?? null,
+          categoryData: useListingDraftStore.getState().categoryData ?? {},
+          status: "SUBMITTED",
+        });
+
+        await apiFetch(`/vendor/stays/${listingId}`, {
+          method: "PUT",
+          body: JSON.stringify(stayPayload),
+        });
+
+        useListingDraftStore.getState().clearDraft();
+      } else {
+        // For other categories or create mode, use existing unified listing endpoint
+        const payload = {
+          title,
+          description,
+          destination,
+          lat,
+          lng,
+          active,
+          categoryData: useListingDraftStore.getState().categoryData ?? {},
+          variants,
+          action: "submit_for_review", // Mark as submitted for review
+        };
+
+        await apiFetch(`/vendor/listings/${category}`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      // Navigate back to listings
+      if (category === "Stay") {
+        navigate("/hotel/dashboard");
+      } else {
+        navigate("/listings");
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || "Unknown error";
+      
+      // Show detailed error message for room update blocks
+      if (errorMessage.includes("Room configuration cannot be replaced")) {
+        alert(`⚠️ Room Update Blocked\n\n${errorMessage}\n\nYou can still update property details, amenities, policies, and media. Room changes require separate inventory management for published listings.`);
+      } else {
+        alert(`Failed to save changes: ${errorMessage}`);
+      }
+    }
+  };
+
   if (mode === "create") {
     return (
       <CreateListingWizard
@@ -1687,14 +1847,25 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           </span>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/listings")}
+              onClick={() => navigate("/hotel/dashboard")}
               className="px-4 py-1.5 rounded-lg text-[12px] transition-all"
               style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
             >
-              Back to Listings
+              Cancel
             </button>
             <button
-              onClick={() => navigate("/listings")}
+              onClick={() => handleSaveDraft()}
+              className="px-4 py-1.5 rounded-lg text-[12px] transition-all"
+              style={{
+                color: "var(--text-secondary)",
+                border: "1px solid var(--border-light)",
+                background: "var(--input-background)"
+              }}
+            >
+              Save Draft
+            </button>
+            <button
+              onClick={() => handleSaveChanges()}
               className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
               style={{
                 background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
@@ -1705,7 +1876,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
               }}
             >
               <Check size={12} />
-              Done
+              Submit Review
             </button>
           </div>
         </div>
@@ -1907,7 +2078,26 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             Cancel
           </button>
           <button
-            onClick={() => navigate("/listings")}
+            onClick={() => handleSaveDraft()}
+            className="px-4 py-1.5 rounded-lg text-[12px] transition-all"
+            style={{ 
+              color: "var(--text-secondary)", 
+              border: "1px solid var(--border-light)",
+              background: "var(--input-background)"
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
+              (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--input-background)";
+              (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+            }}
+          >
+            Save Draft
+          </button>
+          <button
+            onClick={() => handleSaveChanges()}
             className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
             style={{
               background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",

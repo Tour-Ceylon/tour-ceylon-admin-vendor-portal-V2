@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Filter,
@@ -23,6 +23,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { ListingReviewDrawer } from "./ListingReviewDrawer";
+import { apiFetch } from "../api/apiClient";
 
 type ListingStatus = "draft" | "submitted" | "pending_review" | "needs_changes" | "approved" | "rejected" | "archived";
 type Category = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
@@ -46,6 +47,7 @@ interface Listing {
   hasPolicies: boolean;
   hasLocation: boolean;
   categoryFieldsComplete: boolean;
+  dataSource?: "stay_property" | "marketplace_listing";
   issues?: string[];
   categoryData?: {
     // Stay
@@ -71,6 +73,26 @@ interface Listing {
     capacity?: number;
     route?: string;
   };
+}
+
+interface StayProperty {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  vendorId: string;
+  vendorName?: string;
+  location?: string;
+  media?: any[];
+  pricePerNight?: number;
+  amenities?: any[];
+  roomTypes?: any[];
+  policies?: {
+    checkIn?: string;
+    checkOut?: string;
+    cancellationPolicy?: string;
+  };
+  createdAt: string;
 }
 
 const STATUS_CONFIG: Record<ListingStatus, { bg: string; text: string; dot: string }> = {
@@ -318,27 +340,133 @@ export function ListingReviewPage() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedListings, setSelectedListings] = useState<Set<string>>(new Set());
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
+
+  const getStatusLabel = (status: string): string => {
+    const normalized = status.toLowerCase();
+    if (normalized === "draft") return "Draft";
+    if (normalized === "submitted" || normalized === "pending_review") return "Pending Review";
+    if (normalized === "approved") return "Approved";
+    if (normalized === "rejected") return "Rejected";
+    if (normalized === "archived") return "Archived";
+    if (normalized === "needs_changes") return "Needs Changes";
+    return status;
+  };
+
+  // Transform stay property to listing format
+  const transformStayProperty = (stay: StayProperty): Listing => {
+    const timeAgo = (date: string) => {
+      const now = new Date();
+      const created = new Date(date);
+      const diffInHours = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60));
+      if (diffInHours < 24) return `${diffInHours} hours ago`;
+      const diffInDays = Math.floor(diffInHours / 24);
+      return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+    };
+
+    // Calculate quality score based on completeness
+    let qualityScore = 60; // Base score
+    if (stay.description && stay.description.length > 50) qualityScore += 15;
+    if (stay.pricePerNight && stay.pricePerNight > 0) qualityScore += 10;
+    if (stay.amenities && stay.amenities.length > 0) qualityScore += 10;
+    if (stay.roomTypes && stay.roomTypes.length > 0) qualityScore += 5;
+
+    const statusMapping: Record<string, ListingStatus> = {
+      'draft': 'draft',
+      'DRAFT': 'draft',
+      'submitted': 'submitted',
+      'SUBMITTED': 'submitted',
+      'pending_review': 'pending_review',
+      'approved': 'approved',
+      'APPROVED': 'approved',
+      'rejected': 'rejected',
+      'REJECTED': 'rejected',
+      'needs_changes': 'needs_changes',
+      'archived': 'archived',
+      'ARCHIVED': 'archived',
+    };
+
+    return {
+      id: stay.id,
+      thumbnail: stay.media && stay.media.length > 0 ? stay.media[0].url : "stay-property.jpg",
+      name: stay.name,
+      category: "Stay" as Category,
+      vendor: stay.vendorName || "Unknown Vendor",
+      destination: stay.location || "Sri Lanka",
+      mediaCount: stay.media ? stay.media.length : 0,
+      startingPrice: stay.pricePerNight || 0,
+      qualityScore,
+      status: statusMapping[stay.status] || 'submitted',
+      submittedDate: timeAgo(stay.createdAt),
+      description: stay.description || "",
+      variants: stay.roomTypes ? stay.roomTypes.length : 1,
+      hasDescription: !!(stay.description && stay.description.length > 20),
+      hasPricing: !!(stay.pricePerNight && stay.pricePerNight > 0),
+      hasPolicies: !!(stay.policies?.cancellationPolicy),
+      hasLocation: !!stay.location,
+      categoryFieldsComplete: !!(stay.amenities && stay.roomTypes && stay.policies),
+      dataSource: "stay_property" as const,
+      categoryData: {
+        roomTypes: stay.roomTypes?.map(rt => rt.name) || [],
+        amenities: stay.amenities?.map(a => a.name) || [],
+        checkIn: stay.policies?.checkIn || "",
+        checkOut: stay.policies?.checkOut || "",
+        cancellationPolicy: stay.policies?.cancellationPolicy || ""
+      }
+    };
+  };
+
+  // Fetch all review data
+  const fetchReviewData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Fetch stay properties awaiting review
+      const response = await apiFetch<{ properties: StayProperty[]; total: number }>('/admin/stays?status=SUBMITTED');
+      const stayProperties = response?.properties || [];
+      
+      // Transform stay properties to listing format
+      const stayListings = stayProperties.map(transformStayProperty);
+      
+      // Do not mix mock/sample listings with real actionable stay approvals
+      setListings(stayListings);
+    } catch (err) {
+      console.error('Failed to fetch review data:', err);
+      setError('Failed to load review data. Please try again.');
+      setListings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReviewData();
+  }, []);
 
   const statusTabs = [
-    { id: "all", label: "All", count: SAMPLE_LISTINGS.length },
-    { id: "draft", label: "Draft", count: SAMPLE_LISTINGS.filter(l => l.status === "draft").length },
-    { id: "submitted", label: "Submitted", count: SAMPLE_LISTINGS.filter(l => l.status === "submitted").length },
-    { id: "pending_review", label: "Pending Review", count: SAMPLE_LISTINGS.filter(l => l.status === "pending_review").length },
-    { id: "needs_changes", label: "Needs Changes", count: SAMPLE_LISTINGS.filter(l => l.status === "needs_changes").length },
-    { id: "approved", label: "Approved", count: SAMPLE_LISTINGS.filter(l => l.status === "approved").length },
-    { id: "rejected", label: "Rejected", count: SAMPLE_LISTINGS.filter(l => l.status === "rejected").length },
-    { id: "archived", label: "Archived", count: SAMPLE_LISTINGS.filter(l => l.status === "archived").length },
+    { id: "all", label: "All", count: listings.length },
+    { id: "draft", label: "Draft", count: listings.filter(l => l.status === "draft").length },
+    { id: "submitted", label: "Submitted", count: listings.filter(l => l.status === "submitted").length },
+    { id: "pending_review", label: "Pending Review", count: listings.filter(l => l.status === "pending_review").length },
+    { id: "needs_changes", label: "Needs Changes", count: listings.filter(l => l.status === "needs_changes").length },
+    { id: "approved", label: "Approved", count: listings.filter(l => l.status === "approved").length },
+    { id: "rejected", label: "Rejected", count: listings.filter(l => l.status === "rejected").length },
+    { id: "archived", label: "Archived", count: listings.filter(l => l.status === "archived").length },
   ];
 
   // Stats
   const stats = {
-    pending: SAMPLE_LISTINGS.filter(l => l.status === "pending_review" || l.status === "submitted").length,
-    needsChanges: SAMPLE_LISTINGS.filter(l => l.status === "needs_changes").length,
-    approved: SAMPLE_LISTINGS.filter(l => l.status === "approved").length,
-    avgQuality: Math.round(SAMPLE_LISTINGS.reduce((sum, l) => sum + l.qualityScore, 0) / SAMPLE_LISTINGS.length),
+    pending: listings.filter(l => l.status === "pending_review" || l.status === "submitted").length,
+    needsChanges: listings.filter(l => l.status === "needs_changes").length,
+    approved: listings.filter(l => l.status === "approved").length,
+    avgQuality: listings.length > 0 ? Math.round(listings.reduce((sum, l) => sum + l.qualityScore, 0) / listings.length) : 0,
   };
 
-  const filteredListings = SAMPLE_LISTINGS.filter((listing) => {
+  const filteredListings = listings.filter((listing) => {
     const matchStatus = filterStatus === "all" || listing.status === filterStatus;
     const matchSearch = !search ||
       listing.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -368,22 +496,80 @@ export function ListingReviewPage() {
     setDrawerOpen(true);
   };
 
-  const handleApproveListing = (id: string) => {
-    console.log("Approving listing:", id);
-    // In production: API call to approve listing
-    // Update listing status to 'approved'
+  const handleApproveListing = async (id: string) => {
+    try {
+      setActionLoading(prev => new Set([...prev, id]));
+      
+      const listing = listings.find(l => l.id === id);
+      if (!listing) return;
+      
+      // Only stay properties are supported for approval
+      if (listing.dataSource !== "stay_property") {
+        setError("Only stay properties can be approved through this interface.");
+        return;
+      }
+      
+      await apiFetch(`/admin/stays/${id}/approve`, { method: 'POST' });
+      
+      // Update local state
+      setListings((prev: Listing[]) => prev.map((l: Listing) => 
+        l.id === id ? { ...l, status: 'approved' as ListingStatus } : l
+      ));
+      
+      
+    } catch (error) {
+      console.error("Failed to approve listing:", error);
+      setError("Failed to approve listing. Please try again.");
+    } finally {
+      setActionLoading(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
-  const handleRejectListing = (id: string, reason: string) => {
-    console.log("Rejecting listing:", id, "Reason:", reason);
-    // In production: API call to reject listing with reason
-    // Update listing status to 'rejected'
+  const handleRejectListing = async (id: string, reason?: string) => {
+    try {
+      setActionLoading(prev => new Set([...prev, id]));
+      
+      const listing = listings.find(l => l.id === id);
+      if (!listing) return;
+      
+      // Only stay properties are supported for rejection
+      if (listing.dataSource !== "stay_property") {
+        setError("Only stay properties can be rejected through this interface.");
+        return;
+      }
+      
+      // POST /admin/stays/{id}/reject with no request body
+      await apiFetch(`/admin/stays/${id}/reject`, { 
+        method: 'POST'
+      });
+      
+      // Update local state
+      setListings((prev: Listing[]) => prev.map((l: Listing) => 
+        l.id === id ? { ...l, status: 'rejected' as ListingStatus } : l
+      ));
+      
+      console.log("Successfully rejected stay property:", id);
+      
+    } catch (error) {
+      console.error("Failed to reject listing:", error);
+      setError("Failed to reject listing. Please try again.");
+    } finally {
+      setActionLoading(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
-  const handleRequestChanges = (id: string, feedback: string[]) => {
-    console.log("Requesting changes for listing:", id, "Feedback:", feedback);
-    // In production: API call to send feedback to vendor
-    // Update listing status to 'needs_changes'
+  const handleRequestChanges = async (id: string, feedback: string[]) => {
+    // Request changes functionality is not supported for any listing type
+    setError("Request changes functionality is not supported. Please use approve or reject instead.");
+    return;
   };
 
   const getQualityColor = (score: number) => {
@@ -728,9 +914,23 @@ export function ListingReviewPage() {
                   <p className="text-[13px] truncate mb-0.5" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
                     {listing.name}
                   </p>
-                  <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                    {listing.id}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                      {listing.id}
+                    </p>
+                    {listing.dataSource === "stay_property" && (
+                      <span
+                        className="text-[9px] px-1.5 py-0.5 rounded"
+                        style={{
+                          background: "rgba(37,99,235,0.1)",
+                          color: "#60a5fa",
+                          border: "1px solid rgba(37,99,235,0.2)"
+                        }}
+                      >
+                        Stay Property
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Category */}
@@ -806,7 +1006,7 @@ export function ListingReviewPage() {
                       className="w-1.5 h-1.5 rounded-full"
                       style={{ background: statusConfig.dot, boxShadow: `0 0 4px ${statusConfig.dot}` }}
                     />
-                    {listing.status.replace("_", " ")}
+                    {getStatusLabel(listing.status)}
                   </span>
                   {hasIssues && (
                     <div className="flex items-center gap-1 mt-1">
@@ -879,6 +1079,7 @@ export function ListingReviewPage() {
           listing={{
             ...selectedListing,
             price: selectedListing.startingPrice,
+            issues: selectedListing.issues || [],
           }}
           onClose={() => setDrawerOpen(false)}
           onApprove={handleApproveListing}
