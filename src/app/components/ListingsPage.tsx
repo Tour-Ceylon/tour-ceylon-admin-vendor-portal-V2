@@ -37,23 +37,27 @@ interface Listing {
   coverUrl?: string;
 }
 
-interface StayPropertyResponse {
+interface ListingResponse {
   id: string;
-  name: string;
-  propertyType: string;
-  address?: string | null;
-  city?: string | null;
-  district?: string | null;
-  status: string;
+  title: string;
+  slug?: string;
+  listing_type: "hotel" | "tour" | "safari" | "experience" | "transfer";
+  status: "draft" | "submitted" | "published" | "rejected" | "archived";
+  is_active: boolean;
+  destination?: { name?: string | null } | null;
+  base_currency?: string;
+  created_at: string;
+  updated_at: string;
   media?: Array<{ url?: string; role?: string }>;
-  roomTypes?: unknown[];
-  updatedAt?: string;
-  createdAt?: string;
+  variants?: unknown[];
 }
 
-interface StayPropertyListResponse {
-  properties: StayPropertyResponse[];
+interface ListingSearchResponse {
+  listings: ListingResponse[];
   total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
 }
 
 const CATEGORY_COLORS: Record<Exclude<Category, "All">, { bg: string; text: string; border: string }> = {
@@ -102,22 +106,57 @@ function formatListingDate(value?: string) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function stayToListing(property: StayPropertyResponse): Listing {
-  const cover = property.media?.find((item) => item.role === "cover" && item.url)?.url || property.media?.find((item) => item.url)?.url;
-  const location = [property.city || property.address, property.district].filter(Boolean).join(", ") || "Location not set";
+function listingResponseToListing(item: ListingResponse): Listing {
+  const category = listingTypeToCategory(item.listing_type);
+  const coverUrl = item.media?.find((media) => media.role === "cover" && media.url)?.url || 
+                   item.media?.find((media) => media.url)?.url;
+  const destination = item.destination?.name || "Destination not set";
+
   return {
-    id: property.id,
-    title: property.name,
-    location,
-    category: "Stay",
-    destination: property.city || property.address || "Stay property",
-    media: property.media?.length ?? 0,
-    variants: property.roomTypes?.length ?? 0,
-    status: mapStayStatus(property.status),
-    lastUpdated: formatListingDate(property.updatedAt || property.createdAt),
-    color: "#2563eb",
-    coverUrl: cover,
+    id: item.id,
+    title: item.title,
+    location: destination,
+    category,
+    destination,
+    media: item.media?.length ?? 0,
+    variants: item.variants?.length ?? 0,
+    status: mapListingStatus(item.status, item.is_active),
+    lastUpdated: formatListingDate(item.updated_at),
+    color: CATEGORY_COLORS[category].text,
+    coverUrl,
   };
+}
+
+function listingTypeToCategory(listingType: "hotel" | "tour" | "safari" | "experience" | "transfer"): Exclude<Category, "All"> {
+  const mapping: Record<string, Exclude<Category, "All">> = {
+    hotel: "Stay",
+    tour: "Tour",
+    safari: "Safari",
+    experience: "Experience",
+    transfer: "Transfer",
+  };
+  return mapping[listingType] || "Stay";
+}
+
+function categoryToListingType(category: Category): "hotel" | "tour" | "safari" | "experience" | "transfer" | null {
+  if (category === "All") return null;
+  const mapping: Record<Exclude<Category, "All">, string> = {
+    Stay: "hotel",
+    Tour: "tour",
+    Safari: "safari",
+    Experience: "experience",
+    Transfer: "transfer",
+  };
+  return mapping[category] as any;
+}
+
+function mapListingStatus(status: string, isActive: boolean): Status {
+  const normalized = status.toLowerCase();
+  if (normalized === "submitted") return "Pending Review";
+  if (normalized === "published" && isActive) return "Approved";
+  if (normalized === "rejected") return "Rejected";
+  if (normalized === "archived" || !isActive) return "Archived";
+  return "Draft";
 }
 
 function ListingThumbnail({ category, color, imageUrl }: { category: Exclude<Category, "All">; color: string; imageUrl?: string }) {
@@ -309,7 +348,7 @@ export function ListingsPage() {
   const [activeCategory, setActiveCategory] = useState<Category>("All");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [stayListings, setStayListings] = useState<Listing[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [archiveModal, setArchiveModal] = useState<Listing | null>(null);
@@ -324,14 +363,23 @@ export function ListingsPage() {
       setLoading(true);
       setLoadError(null);
       try {
-        const response = await apiFetch<StayPropertyListResponse>("/vendor/stays/");
+        // Use the listings search endpoint with no filters to get all listings
+        const response = await apiFetch<ListingSearchResponse>("/listings/search", {
+          method: "POST",
+          body: JSON.stringify({
+            page: 1,
+            per_page: 1000 // Get all listings
+          }),
+        });
+
         if (!cancelled) {
-          setStayListings(response.properties.map(stayToListing));
+          const mappedListings = response.listings.map(listingResponseToListing);
+          setListings(mappedListings);
         }
       } catch (error: any) {
         if (!cancelled) {
-          setLoadError(error?.message || "Unable to load saved listings.");
-          setStayListings([]);
+          setLoadError(error?.message || "Unable to load listings.");
+          setListings([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -344,10 +392,18 @@ export function ListingsPage() {
     };
   }, []);
 
-  const listings = [...stayListings];
-
+  // CATEGORY FILTER FIX: Normalize both sides to handle case sensitivity and category variations
+  const normalizeCategory = (value: string) => String(value || "").toLowerCase();
+  
   const filtered = listings.filter((l) => {
-    const matchCat = activeCategory === "All" || l.category === activeCategory;
+    const listingCategory = normalizeCategory(l.category);
+    const filterCategory = normalizeCategory(activeCategory);
+    
+    // Stay filter should match both "stay" and "hotel" variants
+    const matchCat = activeCategory === "All" || 
+                     listingCategory === filterCategory ||
+                     (filterCategory === "stay" && (listingCategory === "hotel" || listingCategory === "stay"));
+    
     const matchSearch =
       !search ||
       l.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -383,22 +439,19 @@ export function ListingsPage() {
 
     setOperationLoading(true);
     try {
-      // Only archive Stay listings via API, others are mocked
-      if (archiveModal.category === "Stay") {
-        await apiFetch(`/vendor/stays/${archiveModal.id}`, {
-          method: "DELETE",
-          body: JSON.stringify({ reason }),
-        });
+      // Use the listings archive endpoint for all listing types
+      await apiFetch(`/listings/${archiveModal.id}/archive`, {
+        method: "PATCH",
+      });
 
-        // Update local state
-        setStayListings(prev => 
-          prev.map(listing => 
-            listing.id === archiveModal.id 
-              ? { ...listing, status: "Archived" as Status }
-              : listing
-          )
-        );
-      }
+      // Update local state
+      setListings(prev => 
+        prev.map(listing => 
+          listing.id === archiveModal.id 
+            ? { ...listing, status: "Archived" as Status }
+            : listing
+        )
+      );
       
       setArchiveModal(null);
     } catch (error: any) {
@@ -413,15 +466,13 @@ export function ListingsPage() {
 
     setOperationLoading(true);
     try {
-      // Only delete Stay listings via API, others are mocked
-      if (deleteModal.category === "Stay") {
-        await apiFetch(`/vendor/stays/${deleteModal.id}?hard_delete=true`, {
-          method: "DELETE",
-        });
+      // Use the listings delete endpoint for all listing types
+      await apiFetch(`/listings/${deleteModal.id}`, {
+        method: "DELETE",
+      });
 
-        // Remove from local state
-        setStayListings(prev => prev.filter(listing => listing.id !== deleteModal.id));
-      }
+      // Remove from local state
+      setListings(prev => prev.filter(listing => listing.id !== deleteModal.id));
       
       setDeleteModal(null);
     } catch (error: any) {
@@ -434,10 +485,11 @@ export function ListingsPage() {
   const handleApproveStatus = async (listing: Listing) => {
     setStatusLoadingIds((prev) => new Set(prev).add(listing.id));
     try {
+      // For now, still use the stay-specific endpoint until we have a generic one
       await apiFetch(`/admin/stays/${listing.id}/approve`, {
         method: "POST",
       });
-      setStayListings((prev) =>
+      setListings((prev) =>
         prev.map((item) =>
           item.id === listing.id ? { ...item, status: "Approved" } : item
         )
@@ -456,10 +508,11 @@ export function ListingsPage() {
   const handleRejectStatus = async (listing: Listing) => {
     setStatusLoadingIds((prev) => new Set(prev).add(listing.id));
     try {
+      // For now, still use the stay-specific endpoint until we have a generic one
       await apiFetch(`/admin/stays/${listing.id}/reject`, {
         method: "POST",
       });
-      setStayListings((prev) =>
+      setListings((prev) =>
         prev.map((item) =>
           item.id === listing.id ? { ...item, status: "Rejected" } : item
         )
@@ -486,7 +539,7 @@ export function ListingsPage() {
       return;
     }
 
-    setStayListings((prev) =>
+    setListings((prev) =>
       prev.map((item) =>
         item.id === listing.id ? { ...item, status: "Pending Review" } : item
       )

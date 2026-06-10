@@ -57,6 +57,7 @@ import {
   PricingTab,
   type PricingVariant,
   type RoomType,
+  getRoomTypeDisplayName,
 } from "./listings/listingEditorSections";
 
 type ListingMode = "create" | "edit";
@@ -390,48 +391,64 @@ function buildStayApplicationPayload({
     return Number.isFinite(num) ? num : undefined;
   };
   
-  const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
-    name: room.type,
-    description: "",
-    count: safeNumber(room.count) || 1,
-    unitPrefix: room.type
-      .split(/\s+/)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 4)
-      .toUpperCase() || "RM",
-    size: room.size || undefined,
-    sizeUnit: room.size ? "sqm" : undefined,
-    maxGuests: safeNumber(room.maxGuests) || undefined,
-    basePrice: safeNumber(room.pricePerNight) || undefined,
-    currency: room.currency || "LKR",
-    smoking: toBoolean(room.smoking),
-    guestAccess: toBoolean(room.guestAccess),
-    bedConfiguration: {
-      hasBeds: room.hasBeds ?? false,
-      beds: safeNumber(room.beds) || 0,
-      cribs: safeNumber(room.cribs) || 0,
-      breakdown: room.bedBreakdown ?? {},
-    },
-    bathroom: {
-      type: room.bathroomType,
-      items: room.bathroomItems ?? [],
-    },
-    discounts: room.discounts ?? [],
-    metadata: {
-      localDraftId: room.id,
-    },
-  }));
+  const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => {
+    // Convert room type ID to display name using helper function from listingEditorSections
+    const roomTypeDisplayName = getRoomTypeDisplayName ? getRoomTypeDisplayName(room.type) : room.type;
+    return {
+      name: roomTypeDisplayName,
+      description: "",
+      count: safeNumber(room.count) || 1,
+      unitPrefix: roomTypeDisplayName
+        .split(/\s+/)
+        .map((part: string) => part[0])
+        .join("")
+        .slice(0, 4)
+        .toUpperCase() || "RM",
+      size: room.size || undefined,
+      sizeUnit: room.size ? "sqm" : undefined,
+      maxGuests: safeNumber(room.maxGuests) || undefined,
+      basePrice: safeNumber(room.pricePerNight) || undefined,
+      currency: room.currency || "LKR",
+      smoking: toBoolean(room.smoking),
+      guestAccess: toBoolean(room.guestAccess),
+      bedConfiguration: {
+        hasBeds: room.hasBeds ?? false,
+        beds: safeNumber(room.beds) || 0,
+        cribs: safeNumber(room.cribs) || 0,
+        breakdown: room.bedBreakdown ?? {},
+      },
+      bathroom: {
+        type: room.bathroomType,
+        items: room.bathroomItems ?? [],
+      },
+      discounts: room.discounts ?? [],
+      metadata: {
+        localDraftId: room.id,
+      },
+    };
+  });
 
   const propertyName = propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
+  
+  // WEEK 1 FIX: Stop mapping destination to both address and city
+  // Use destination as primary address, extract city if possible
+  const destinationParts = destination.split(',').map((s: string) => s.trim());
+  const primaryAddress = destination; // Full address
+  const extractedCity = destinationParts.length > 1 ? destinationParts[destinationParts.length - 1] : destination;
+  const extractedDistrict = destinationParts.length > 2 ? destinationParts[destinationParts.length - 2] : undefined;
+  
+  // Override with explicit propertyLocation if provided
   const propertyLocation = propertyDetails.propertyLocation || destination;
-
+  const propertyLocationParts = propertyLocation.split(',').map(s => s.trim());
+  
   return {
     name: propertyName,
     propertyType: subcategory || "hotel",
     description,
-    address: propertyLocation,
-    city: propertyLocation,
+    // WEEK 1 FIX: Separate address, city, and district fields
+    address: propertyLocation, // Full address string
+    city: propertyLocationParts.length > 1 ? propertyLocationParts[propertyLocationParts.length - 1] : propertyLocation,
+    district: propertyLocationParts.length > 2 ? propertyLocationParts[propertyLocationParts.length - 2] : undefined,
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
     status,
@@ -517,6 +534,16 @@ function CreateListingWizard({
     return Number.isFinite(parsed) && parsed > 0;
   };
 
+  const hasValidRoomType = (room: any): boolean => {
+    const roomTypeId = room.type ?? room.name ?? room.roomType ?? "";
+    return String(roomTypeId).trim().length > 0;
+  };
+
+  const safeNumberCheck = (value: any): boolean => {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0;
+  };
+
   const validateStep = (currentStep: WizardStep): string[] => {
     const errors: string[] = [];
 
@@ -577,12 +604,16 @@ function CreateListingWizard({
       if (!rooms.length) {
         errors.push("Add at least one room.");
       } else {
-        const hasInvalidRoom = rooms.some((room: any) => 
-          !room.type ||
-          !room.count || !isPositiveNumber(String(room.count)) ||
-          !room.maxGuests || !isPositiveNumber(String(room.maxGuests)) ||
-          !room.pricePerNight || !isPositiveNumber(String(room.pricePerNight))
-        );
+        const hasInvalidRoom = rooms.some((room: any) => {
+          const hasValidType = hasValidRoomType(room);
+          const count = safeNumberCheck(room.count);
+          const maxGuests = safeNumberCheck(room.maxGuests);
+          const price = safeNumberCheck(room.pricePerNight ?? room.basePrice);
+          const isInvalid = !hasValidType || !count || !maxGuests || !price;
+
+          return isInvalid;
+        });
+        
         if (hasInvalidRoom) {
           errors.push("Each room must have type, count, max guests, and a valid price per night greater than 0.");
         }

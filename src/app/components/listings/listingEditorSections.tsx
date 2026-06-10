@@ -32,6 +32,39 @@ const DEFAULT_HOUSE_RULES = {
     Pets: false,
 };
 
+// Stable room type options with consistent IDs
+const ROOM_TYPE_OPTIONS = [
+    { id: "bedroom", label: "Bedroom" },
+    { id: "living_room", label: "Living Room" },
+    { id: "suite", label: "Suite" },
+    { id: "deluxe_room", label: "Deluxe Room" },
+    { id: "standard_room", label: "Standard Room" },
+    { id: "family_room", label: "Family Room" },
+    { id: "executive_room", label: "Executive Room" },
+    { id: "other_room", label: "Other Room" }
+];
+
+// Helper to get room type label from ID
+function getRoomTypeLabel(typeId: string): string {
+    const option = ROOM_TYPE_OPTIONS.find(opt => opt.id === typeId);
+    return option ? option.label : typeId;
+}
+
+// Helper to convert room type ID to backend display name
+export function getRoomTypeDisplayName(typeId: string): string {
+    const labelMap: Record<string, string> = {
+        "bedroom": "Bedroom",
+        "living_room": "Living Room", 
+        "suite": "Suite",
+        "deluxe_room": "Deluxe Room",
+        "standard_room": "Standard Room",
+        "family_room": "Family Room",
+        "executive_room": "Executive Room",
+        "other_room": "Other Room"
+    };
+    return labelMap[typeId] || typeId;
+}
+
 type DiscountType = "percentage" | "flat";
 
 export interface RoomDiscount {
@@ -681,10 +714,27 @@ function StayDetails() {
 
     const [rooms, setRooms] = useState<RoomType[]>(() => (draftCategoryData.roomTypes ?? []) as RoomType[]);
 
+    const persistRooms = (nextRooms: RoomType[]) => {
+        setDraft({
+            categoryData: {
+                ...(useListingDraftStore.getState().categoryData || {}),
+                roomTypes: nextRooms,
+            },
+        });
+    };
+
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
+        persistRooms(rooms);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms]);
+
+    const updateRooms = (updater: (currentRooms: RoomType[]) => RoomType[]) => {
+        setRooms((currentRooms) => {
+            const nextRooms = updater(currentRooms);
+            persistRooms(nextRooms);
+            return nextRooms;
+        });
+    };
 
     const addRoom = () => {
         const newRoom: RoomType = {
@@ -1218,6 +1268,13 @@ export function RoomsSection() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms]);
 
+    const updateRooms = (updater: (currentRooms: RoomType[]) => RoomType[]) => {
+        setRooms((currentRooms) => {
+            const nextRooms = updater(currentRooms);
+            return nextRooms;
+        });
+    };
+
     const addRoom = () => {
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
@@ -1236,13 +1293,14 @@ export function RoomsSection() {
             currency: "LKR",
             discounts: [],
         };
-        setRooms((r) => [...r, newRoom]);
+        updateRooms((currentRooms) => [...currentRooms, newRoom]);
     };
 
-    const removeRoom = (id: string) => setRooms((r) => r.filter((x) => x.id !== id));
+    const removeRoom = (id: string) => updateRooms((currentRooms) => currentRooms.filter((x) => x.id !== id));
 
-    const updateRoom = (id: string, updates: Partial<RoomType>) =>
-        setRooms((r) => r.map((room) => (room.id === id ? { ...room, ...updates } : room)));
+    const updateRoom = (id: string, updates: Partial<RoomType>) => {
+        updateRooms((currentRooms) => currentRooms.map((room) => (room.id === id ? { ...room, ...updates } : room)));
+    };
 
     const addDiscount = (roomId: string) => {
         const currentRoom = rooms.find((room) => room.id === roomId);
@@ -1284,7 +1342,7 @@ export function RoomsSection() {
             <SectionCard title="Rooms">
                 <div className="flex items-center justify-between mb-3">
                     <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>Manage room types for this property. Add one entry per room type.</p>
-                    <button onClick={addRoom} className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px]" style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 12px var(--border-accent)" }}>
+                    <button type="button" onClick={addRoom} className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px]" style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 12px var(--border-accent)" }}>
                         <Plus size={14} />
                         Add Room
                     </button>
@@ -1303,7 +1361,14 @@ export function RoomsSection() {
                                     <div className="grid grid-cols-2 gap-4 mb-2">
                                         <div>
                                             <FieldLabel required>Type</FieldLabel>
-                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={["BedRoom", "Living Room", "Other Room"]} />
+                                            <SelectField 
+                                                value={getRoomTypeLabel(room.type)} 
+                                                onChange={(label) => {
+                                                    const option = ROOM_TYPE_OPTIONS.find(opt => opt.label === label);
+                                                    updateRoom(room.id, { type: option ? option.id : label });
+                                                }} 
+                                                options={ROOM_TYPE_OPTIONS.map(opt => opt.label)}
+                                            />
                                         </div>
                                         <div>
                                             <FieldLabel required>Count</FieldLabel>
@@ -1342,11 +1407,11 @@ export function RoomsSection() {
                                                                 <div className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{desc}</div>
                                                             </div>
                                                             <div className="flex items-center gap-2">
-                                                                <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: Math.max(0, count - 1) } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
+                                                                <button type="button" onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: Math.max(0, count - 1) } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
                                                                     <Minus size={14} />
                                                                 </button>
                                                                 <div style={{ minWidth: 28, textAlign: "center" }}>{count}</div>
-                                                                <button onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: count + 1 } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
+                                                                <button type="button" onClick={() => updateRoom(room.id, { bedBreakdown: { ...(room.bedBreakdown || {}), [key]: count + 1 } })} className="px-2 py-1 rounded-lg" style={{ border: "1px solid var(--border-light)", background: "var(--bg-card)" }}>
                                                                     <Plus size={14} />
                                                                 </button>
                                                             </div>
@@ -1417,6 +1482,7 @@ export function RoomsSection() {
                                         <div className="flex items-center justify-between gap-3">
                                             <FieldLabel>Discounts</FieldLabel>
                                             <button
+                                                type="button"
                                                 onClick={() => addDiscount(room.id)}
                                                 className="px-3 py-1.5 rounded-lg text-[12px] transition-all"
                                                 style={{ background: "var(--active-overlay)", color: "var(--accent-navy-light)", border: "1px solid var(--border-accent)" }}
@@ -1462,6 +1528,7 @@ export function RoomsSection() {
                                                         />
                                                     </div>
                                                     <button
+                                                        type="button"
                                                         onClick={() => removeDiscount(room.id, discount.id)}
                                                         className="h-9 px-3 rounded-lg text-[12px] transition-all"
                                                         style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
@@ -1507,7 +1574,7 @@ export function RoomsSection() {
                                         ) : null}
                                     </div>
                                     <div className="flex justify-end mt-3">
-                                        <button onClick={() => removeRoom(room.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                                        <button type="button" onClick={() => removeRoom(room.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
                                             <Trash2 size={14} />
                                             Remove
                                         </button>
