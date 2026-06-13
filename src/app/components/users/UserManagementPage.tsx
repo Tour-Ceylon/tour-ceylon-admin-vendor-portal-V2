@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle,
   CheckSquare,
+  ChevronDown,
   Download,
   Eye,
   Filter,
@@ -78,6 +79,14 @@ const STATUS_CONFIG: Record<UserStatus, { bg: string; text: string; dot: string 
   incomplete_profile: { bg: "rgba(168, 85, 247, 0.1)", text: "#a78bfa", dot: "#8b5cf6" },
 };
 
+// Unified status options for all users
+type DropdownStatusValue = "pending" | "approved" | "suspended";
+const DROPDOWN_STATUS_CONFIG: Record<DropdownStatusValue, { bg: string; text: string; border: string; label: string }> = {
+  pending:   { bg: "rgba(245,158,11,0.12)",  text: "#fbbf24", border: "rgba(245,158,11,0.3)",  label: "waiting for approve" },
+  approved:  { bg: "rgba(34,197,94,0.12)",   text: "#4ade80", border: "rgba(34,197,94,0.3)",   label: "approved" },
+  suspended: { bg: "rgba(249,115,22,0.12)",  text: "#fb923c", border: "rgba(249,115,22,0.3)",  label: "suspended" },
+};
+
 const ROLE_CONFIG: Record<UserRole, { bg: string; text: string; border: string; label: string }> = {
   tourist: { bg: "rgba(59, 130, 246, 0.12)", text: "#60a5fa", border: "rgba(59,130,246,0.25)", label: "customer" },
   vendor: { bg: "rgba(168, 85, 247, 0.12)", text: "#a78bfa", border: "rgba(168,85,247,0.25)", label: "vendor" },
@@ -94,7 +103,10 @@ function normalizeRole(role: string): UserRole {
 
 function userStatus(user: ApiUser): UserStatus {
   if (!user.is_active) return "suspended";
-  if (normalizeRole(String(user.role)) === "vendor" && (user.vendor_status || user.vendorStatus) === "pending") return "pending";
+  const vs = user.vendor_status || user.vendorStatus;
+  const role = normalizeRole(String(user.role));
+  if (role === "vendor" && vs === "suspended") return "suspended";
+  if (role === "vendor" && vs === "pending") return "pending";
   if (!user.full_name && !user.name) return "incomplete_profile";
   return "active";
 }
@@ -240,7 +252,15 @@ export function UserManagementPage() {
   const changeRole = async (user: UiUser, role: UserRole) => {
     await updateUser(user, {
       role: apiRole(role),
-      vendor_status: role === "vendor" ? user.raw.vendor_status || "approved" : user.raw.vendor_status,
+      vendor_status: role === "vendor" ? user.raw.vendor_status || "pending" : user.raw.vendor_status,
+    });
+  };
+
+  const changeDropdownStatus = async (user: UiUser, status: DropdownStatusValue) => {
+    // Update both vendor_status (for the 3-state label) and is_active (to actually block/allow login)
+    await updateUser(user, { 
+      vendor_status: status,
+      is_active: status !== "suspended" 
     });
   };
 
@@ -407,11 +427,55 @@ export function UserManagementPage() {
                   <option value="support">support</option>
                 </select>
 
-                <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px]" style={{ background: statusConfig.bg, color: statusConfig.text }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusConfig.dot, boxShadow: `0 0 4px ${statusConfig.dot}` }} />
-                    {user.status.replace("_", " ")}
-                  </span>
+                {/* STATUS — all users get the same 3-option dropdown */}
+                <div onClick={(e) => e.stopPropagation()}>
+                  {(() => {
+                    // Treat null/empty as "approved" for non-vendors, or "pending" for vendors
+                    let rawVs = (user.raw.vendor_status || user.raw.vendorStatus) as string;
+                    if (!rawVs) {
+                      rawVs = user.role === "vendor" ? "pending" : "approved";
+                    }
+                    if (user.raw.is_active === false) rawVs = "suspended";
+
+                    const vs: DropdownStatusValue = ["pending", "approved", "suspended"].includes(rawVs) 
+                      ? (rawVs as DropdownStatusValue) 
+                      : "pending";
+                    const vsCfg = DROPDOWN_STATUS_CONFIG[vs];
+
+                    return (
+                      <div
+                        className="relative inline-flex items-center h-7 rounded-full"
+                        style={{ background: vsCfg.bg, opacity: busy ? 0.65 : 1 }}
+                      >
+                        <span
+                          className="absolute left-2 w-1.5 h-1.5 rounded-full pointer-events-none"
+                          style={{ background: vsCfg.text, boxShadow: `0 0 4px ${vsCfg.text}` }}
+                        />
+                        <select
+                          value={vs}
+                          disabled={busy}
+                          onChange={(e) => changeDropdownStatus(user, e.target.value as DropdownStatusValue)}
+                          className="h-7 w-[130px] rounded-full text-[10px] outline-none cursor-pointer"
+                          style={{
+                            appearance: "none",
+                            WebkitAppearance: "none",
+                            background: "transparent",
+                            border: `1px solid ${vsCfg.border}`,
+                            color: vsCfg.text,
+                            paddingLeft: 18,
+                            paddingRight: 6,
+                            fontWeight: 600,
+                          }}
+                          aria-label={`Change status for ${user.name}`}
+                        >
+                          <option value="pending">waiting for approve</option>
+                          <option value="approved">approved</option>
+                          <option value="suspended">suspended</option>
+                        </select>
+                        <ChevronDown size={9} className="absolute right-1.5 pointer-events-none" style={{ color: vsCfg.text }} />
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{user.joinedDate}</p>
