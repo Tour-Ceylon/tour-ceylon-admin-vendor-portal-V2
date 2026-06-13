@@ -12,6 +12,7 @@ import {
   Compass,
   Anchor,
   Layers,
+  Plus,
   BarChart3,
   Users,
   Bell,
@@ -77,6 +78,7 @@ const ROUTE_MAP: Record<string, string> = {
   admins: "/users/admins",
   "vendor-approvals": "/vendor-approvals",
   listings: "/listings",
+  "create-listing": "/listings/create",
   "listing-reviews": "/reviews",
   stays: "/listings",
   tours: "/listings",
@@ -185,6 +187,7 @@ export function Sidebar() {
       if (path === "/settings/integrations") return "settings-integrations";
     }
     if (path === "/dashboard") return "dashboard";
+    if (path === "/listings/create") return "create-listing";
     if (path === "/listings" || path.startsWith("/listings/")) return "listings";
     if (path === "/reviews") return "listing-reviews";
     if (path === "/vendors") return "vendors";
@@ -395,6 +398,11 @@ export function Sidebar() {
       listingsItems.push({ id: "experiences", label: "Experiences", icon: Anchor });
       listingsItems.push({ id: "transfers", label: "Transfers", icon: Car });
     } else if (isVendor) {
+      listingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
+      if (effectiveUser?.vendorStatus === "approved") {
+        listingsItems.push({ id: "create-listing", label: "Create Listing", icon: Plus });
+      }
+      
       // Vendors only see their approved categories
       if (approvedCategories.includes("Stay")) {
         listingsItems.push({ id: "stays", label: "Stay Listings", icon: Building2 });
@@ -415,7 +423,7 @@ export function Sidebar() {
 
     if (listingsItems.length > 0) {
       nav.push({
-        group: isAdmin ? "Listings" : "My Listings",
+        group: "Listings",
         items: listingsItems,
       });
     }

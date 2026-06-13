@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useListingDraftStore } from "../stores/listingDraftStore";
 import { useParams, useNavigate } from "react-router";
+import { useAuth } from "../contexts/AuthContext";
 import type { Category } from "../stores/listingDraftStore";
 import { apiFetch } from "./api/apiClient";
 import {
@@ -371,6 +372,7 @@ function buildStayApplicationPayload({
   lng,
   subcategory,
   categoryData,
+  isAdmin,
 }: {
   active?: boolean;
   title: string;
@@ -380,6 +382,7 @@ function buildStayApplicationPayload({
   lng: string;
   subcategory: string | null;
   categoryData: Record<string, any>;
+  isAdmin?: boolean;
 }) {
   const propertyDetails = categoryData.propertyDetails ?? {};
   const images = categoryData.images ?? {};
@@ -430,7 +433,7 @@ function buildStayApplicationPayload({
     city: propertyLocation,
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
-    status: active === false ? "draft" : "approved",
+    status: active ? (isAdmin ? "approved" : "submitted") : "draft",
     contact: {
       languages: propertyDetails.languages ?? [],
     },
@@ -500,6 +503,8 @@ function CreateListingWizard({
   const [step, setStep] = useState<WizardStep>(1);
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { effectiveUser } = useAuth();
+  const isAdmin = effectiveUser?.role === "admin";
   const flow = category ? getFlow(category) : null;
   const steps = getCreateSteps(category);
   const subcategory = useListingDraftStore((state) => state.subcategory ?? null);
@@ -664,6 +669,7 @@ function CreateListingWizard({
             lng,
             subcategory,
             categoryData: useListingDraftStore.getState().categoryData ?? {},
+            isAdmin,
           }),
         ),
       });
@@ -733,8 +739,10 @@ function CreateListingWizard({
             </div>
             <div className="col-span-2 flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
               <div>
-                <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>Active listing</p>
-                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Enable this listing once it is ready to publish.</p>
+                <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{isAdmin ? "Active listing" : "Submit for Review"}</p>
+                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  {isAdmin ? "Enable this listing once it is ready to publish." : "Submit this listing for admin approval. It will not be active until approved."}
+                </p>
               </div>
               <Toggle value={active} onChange={setActive} />
             </div>

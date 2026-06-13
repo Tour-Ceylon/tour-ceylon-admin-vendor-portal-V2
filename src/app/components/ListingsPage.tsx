@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "./api/apiClient";
 import {
   Search,
@@ -207,6 +208,10 @@ export function ListingsPage() {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const { effectiveUser } = useAuth();
+
+  const isAdmin = effectiveUser?.role === "admin";
+  const isPendingVendor = effectiveUser?.role === "vendor" && effectiveUser?.vendorStatus !== "approved";
 
   useEffect(() => {
     let cancelled = false;
@@ -475,26 +480,33 @@ export function ListingsPage() {
         </button>
 
         {/* Add Listing */}
-        <button
-          onClick={() => navigate("/listings/create")}
-          className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[12px] transition-all shrink-0"
-          style={{
-            background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-            color: "white",
-            boxShadow: "0 0 16px var(--border-accent)",
-            border: "1px solid var(--border-accent)",
-            fontWeight: 500,
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px var(--border-accent)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px var(--border-accent)";
-          }}
-        >
-          <Plus size={13} />
-          Add Listing
-        </button>
+        {isPendingVendor ? (
+          <div className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[12px] font-medium shrink-0"
+               style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+            Your vendor account is pending admin approval.
+          </div>
+        ) : (
+          <button
+            onClick={() => navigate("/listings/create")}
+            className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[12px] transition-all shrink-0"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+              color: "white",
+              boxShadow: "0 0 16px var(--border-accent)",
+              border: "1px solid var(--border-accent)",
+              fontWeight: 500,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px var(--border-accent)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px var(--border-accent)";
+            }}
+          >
+            <Plus size={13} />
+            Add Listing
+          </button>
+        )}
       </div>
 
       {loadError && (
@@ -671,38 +683,46 @@ export function ListingsPage() {
                       className="absolute left-2 w-1.5 h-1.5 rounded-full pointer-events-none"
                       style={{ background: statStyle.dot, boxShadow: `0 0 4px ${statStyle.dot}` }}
                     />
-                    <select
-                      value={listing.status}
-                      disabled={updatingStatusId === listing.id}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateListingStatus(listing, e.target.value as Status);
-                      }}
-                      className="h-6 w-[92px] rounded-full text-[11px] outline-none cursor-pointer"
-                      style={{
-                        appearance: "none",
-                        WebkitAppearance: "none",
-                        background: "transparent",
-                        border: "none",
-                        color: statStyle.text,
-                        paddingLeft: 18,
-                        paddingRight: 18,
-                        fontWeight: 500,
-                      }}
-                      aria-label={`Change status for ${listing.title}`}
-                    >
-                      {STATUS_OPTIONS.map((statusOption) => (
-                        <option key={statusOption} value={statusOption}>
-                          {statusOption}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={10}
-                      className="absolute right-2 pointer-events-none"
-                      style={{ color: statStyle.text }}
-                    />
+                    {isAdmin ? (
+                      <>
+                        <select
+                          value={listing.status}
+                          disabled={updatingStatusId === listing.id}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            updateListingStatus(listing, e.target.value as Status);
+                          }}
+                          className="h-6 w-[92px] rounded-full text-[11px] outline-none cursor-pointer"
+                          style={{
+                            appearance: "none",
+                            WebkitAppearance: "none",
+                            background: "transparent",
+                            border: "none",
+                            color: statStyle.text,
+                            paddingLeft: 18,
+                            paddingRight: 18,
+                            fontWeight: 500,
+                          }}
+                          aria-label={`Change status for ${listing.title}`}
+                        >
+                          {STATUS_OPTIONS.map((statusOption) => (
+                            <option key={statusOption} value={statusOption}>
+                              {statusOption}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={10}
+                          className="absolute right-2 pointer-events-none"
+                          style={{ color: statStyle.text }}
+                        />
+                      </>
+                    ) : (
+                      <span className="text-[11px] font-medium px-5 whitespace-nowrap">
+                        {listing.status}
+                      </span>
+                    )}
                   </div>
                 </div>
 

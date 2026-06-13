@@ -250,18 +250,32 @@ export function UserManagementPage() {
   };
 
   const changeRole = async (user: UiUser, role: UserRole) => {
-    await updateUser(user, {
+    const payload: Record<string, any> = {
       role: apiRole(role),
       vendor_status: role === "vendor" ? user.raw.vendor_status || "pending" : user.raw.vendor_status,
-    });
+    };
+    if (role === "vendor") {
+      const currentCats = user.vendorCategories || [];
+      if (currentCats.length === 0) {
+        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience", "Transfer"];
+      }
+    }
+    await updateUser(user, payload);
   };
 
   const changeDropdownStatus = async (user: UiUser, status: DropdownStatusValue) => {
     // Update both vendor_status (for the 3-state label) and is_active (to actually block/allow login)
-    await updateUser(user, { 
+    const payload: Record<string, any> = { 
       vendor_status: status,
       is_active: status !== "suspended" 
-    });
+    };
+    if (status === "approved" && user.role === "vendor") {
+      const currentCats = user.vendorCategories || [];
+      if (currentCats.length === 0) {
+        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience", "Transfer"];
+      }
+    }
+    await updateUser(user, payload);
   };
 
   const toggleActive = async (user: UiUser) => {
