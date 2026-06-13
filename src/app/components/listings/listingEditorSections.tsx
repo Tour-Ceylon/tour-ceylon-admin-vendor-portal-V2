@@ -25,6 +25,13 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
 const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
+const ROOM_TYPE_OPTIONS = ["Bedroom", "Living Room", "Other Room"];
+
+export function normalizeStayRoomType(value?: string | null) {
+    const normalized = String(value ?? "").trim();
+    if (!normalized || normalized === "BedRoom") return "Bedroom";
+    return normalized;
+}
 const DEFAULT_HOUSE_RULES = {
     Smoking: false,
     Children: false,
@@ -1206,6 +1213,7 @@ export function RoomsSection() {
     const [rooms, setRooms] = useState<RoomType[]>(() =>
         ((draftCategoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
             ...room,
+            type: normalizeStayRoomType(room.type),
             smoking: typeof room.smoking === "boolean" ? room.smoking : false,
             guestAccess: typeof room.guestAccess === "boolean" ? room.guestAccess : false,
             hasBeds: typeof room.hasBeds === "boolean" ? room.hasBeds : false,
@@ -1221,7 +1229,7 @@ export function RoomsSection() {
     const addRoom = () => {
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
-            type: "",
+            type: "Bedroom",
             count: "1",
             beds: "0",
             hasBeds: false,
@@ -1303,7 +1311,7 @@ export function RoomsSection() {
                                     <div className="grid grid-cols-2 gap-4 mb-2">
                                         <div>
                                             <FieldLabel required>Type</FieldLabel>
-                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={["BedRoom", "Living Room", "Other Room"]} />
+                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={ROOM_TYPE_OPTIONS} />
                                         </div>
                                         <div>
                                             <FieldLabel required>Count</FieldLabel>

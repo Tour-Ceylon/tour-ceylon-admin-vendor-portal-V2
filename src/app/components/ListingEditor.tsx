@@ -55,6 +55,7 @@ import {
   RoomsSection,
   ImagesSection,
   PricingTab,
+  normalizeStayRoomType,
   type PricingVariant,
   type RoomType,
 } from "./listings/listingEditorSections";
@@ -362,6 +363,7 @@ function toBoolean(value: unknown, fallback = false) {
 }
 
 function buildStayApplicationPayload({
+  active,
   title,
   description,
   destination,
@@ -370,6 +372,7 @@ function buildStayApplicationPayload({
   subcategory,
   categoryData,
 }: {
+  active?: boolean;
   title: string;
   description: string;
   destination: string;
@@ -380,11 +383,13 @@ function buildStayApplicationPayload({
 }) {
   const propertyDetails = categoryData.propertyDetails ?? {};
   const images = categoryData.images ?? {};
-  const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => ({
-    name: room.type,
+  const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => {
+    const roomType = normalizeStayRoomType(room.type);
+    return {
+    name: roomType,
     description: "",
     count: Number(room.count) || 1,
-    unitPrefix: room.type
+    unitPrefix: roomType
       .split(/\s+/)
       .map((part) => part[0])
       .join("")
@@ -411,7 +416,8 @@ function buildStayApplicationPayload({
     metadata: {
       localDraftId: room.id,
     },
-  }));
+  };
+  });
 
   const propertyName = propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
   const propertyLocation = propertyDetails.propertyLocation || destination;
@@ -424,7 +430,7 @@ function buildStayApplicationPayload({
     city: propertyLocation,
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
-    status: "submitted",
+    status: active === false ? "draft" : "approved",
     contact: {
       languages: propertyDetails.languages ?? [],
     },
@@ -569,7 +575,8 @@ function CreateListingWizard({
 
       if (
         rooms.some((room) => {
-          if (!room.type.trim()) return true;
+          const roomType = normalizeStayRoomType(room.type);
+          if (!roomType.trim()) return true;
           if (!room.count.trim() || Number(room.count) <= 0) return true;
           if (!room.maxGuests.trim() || Number(room.maxGuests) <= 0) return true;
           if (!room.pricePerNight.trim() || !isPositiveNumber(room.pricePerNight)) return true;
@@ -650,6 +657,7 @@ function CreateListingWizard({
         body: JSON.stringify(
           buildStayApplicationPayload({
             title,
+            active,
             description,
             destination,
             lat,
@@ -1500,6 +1508,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editLoading, setEditLoading] = useState(mode === "edit");
   const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -1613,6 +1622,38 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     setLng(v);
     useListingDraftStore.getState().setDraft({ lng: v });
   };
+
+  const saveStayListing = async () => {
+    if (!listingId || category !== "Stay") {
+      navigate("/listings");
+      return;
+    }
+
+    setSaving(true);
+    setEditError(null);
+    try {
+      await apiFetch(`/vendor/stays/${listingId}`, {
+        method: "PUT",
+        body: JSON.stringify(
+          buildStayApplicationPayload({
+            active,
+            title,
+            description,
+            destination,
+            lat,
+            lng,
+            subcategory: useListingDraftStore.getState().subcategory ?? null,
+            categoryData: useListingDraftStore.getState().categoryData ?? {},
+          }),
+        ),
+      });
+      navigate("/listings");
+    } catch (error: any) {
+      setEditError(error?.message || "Unable to save this stay listing.");
+    } finally {
+      setSaving(false);
+    }
+  };
   const setVariantsPersist = (v: PricingVariant[]) => {
     setVariants(v);
     useListingDraftStore.getState().setDraft({ variants: v });
@@ -1694,11 +1735,14 @@ export function ListingEditor({ mode }: ListingEditorProps) {
               Back to Listings
             </button>
             <button
-              onClick={() => navigate("/listings")}
+              onClick={saveStayListing}
+              disabled={saving}
               className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
               style={{
                 background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
                 color: "white",
+                opacity: saving ? 0.65 : 1,
+                cursor: saving ? "not-allowed" : "pointer",
                 boxShadow: "0 0 16px var(--border-accent)",
                 border: "1px solid var(--border-accent)",
                 fontWeight: 500,
@@ -1922,10 +1966,10 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px var(--border-accent)";
             }}
-          >
-            <Check size={12} />
-            Save Changes
-          </button>
+            >
+              <Check size={12} />
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
         </div>
       </div>
     </div>
