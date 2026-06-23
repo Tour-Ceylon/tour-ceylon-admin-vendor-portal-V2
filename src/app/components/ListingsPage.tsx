@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "./api/apiClient";
 import {
@@ -69,6 +69,9 @@ interface AdminSnapshotResponse {
   listings: Record<"stay" | "tour" | "safari" | "experience" | "transfer", AdminListingResponse[]>;
 }
 
+type AdminCategoryQuery = "all" | "stay" | "tour" | "safari" | "experience" | "transfer";
+type VendorCategoryQuery = "all" | "stay" | "safari" | "experience";
+
 const CATEGORY_COLORS: Record<Exclude<Category, "All">, { bg: string; text: string; border: string }> = {
   Stay: { bg: "rgba(37, 99, 235, 0.12)", text: "#60a5fa", border: "rgba(37,99,235,0.25)" },
   Tour: { bg: "rgba(8, 145, 178, 0.12)", text: "#22d3ee", border: "rgba(8,145,178,0.25)" },
@@ -87,6 +90,7 @@ const STATUS_COLORS: Record<Status, { bg: string; text: string; dot: string }> =
 };
 
 const CATEGORIES: Category[] = ["All", "Stay", "Tour", "Safari", "Experience", "Transfer"];
+const VENDOR_CATEGORIES: Category[] = ["All", "Stay", "Safari", "Experience"];
 const STATUS_OPTIONS: Status[] = ["Draft", "Pending Review", "Approved", "Rejected", "Archived"];
 const PAGE_SIZE = 10;
 
@@ -122,6 +126,44 @@ const CATEGORY_HEX: Record<Exclude<Category, "All">, string> = {
   Experience: "#d97706",
   Transfer: "#64748b",
 };
+
+const ADMIN_QUERY_TO_CATEGORY: Record<AdminCategoryQuery, Category> = {
+  all: "All",
+  stay: "Stay",
+  tour: "Tour",
+  safari: "Safari",
+  experience: "Experience",
+  transfer: "Transfer",
+};
+
+const CATEGORY_TO_ADMIN_QUERY: Partial<Record<Category, AdminCategoryQuery>> = {
+  Stay: "stay",
+  Tour: "tour",
+  Safari: "safari",
+  Experience: "experience",
+  Transfer: "transfer",
+};
+
+const ADMIN_CATEGORY_ENDPOINTS: Partial<Record<AdminCategoryQuery, string>> = {
+  stay: "/admin/listings/stay",
+  tour: "/admin/listings/tour",
+  safari: "/admin/listings/safari",
+  experience: "/admin/listings/experience",
+};
+
+function normalizeAdminCategoryQuery(value: string | null): AdminCategoryQuery {
+  if (value === "stay" || value === "tour" || value === "safari" || value === "experience" || value === "transfer" || value === "all") {
+    return value;
+  }
+  return "all";
+}
+
+function normalizeVendorCategoryQuery(value: string | null): VendorCategoryQuery {
+  if (value === "stay" || value === "safari" || value === "experience" || value === "all") {
+    return value;
+  }
+  return "all";
+}
 
 function mapListingStatus(listing: AdminListingResponse): Status {
   const normalized = (listing.status || "").toLowerCase();
@@ -198,7 +240,16 @@ function ListingThumbnail({ category, color, imageUrl }: { category: Exclude<Cat
 
 export function ListingsPage() {
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState<Category>("All");
+  const { effectiveUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isAdmin = effectiveUser?.role === "admin";
+  const isVendor = effectiveUser?.role === "vendor";
+  const isPendingVendor = effectiveUser?.role === "vendor" && effectiveUser?.vendorStatus !== "approved";
+  const adminQueryCategory = normalizeAdminCategoryQuery(searchParams.get("category"));
+  const vendorQueryCategory = normalizeVendorCategoryQuery(searchParams.get("category"));
+  const [activeCategory, setActiveCategory] = useState<Category>(() =>
+    isAdmin ? ADMIN_QUERY_TO_CATEGORY[adminQueryCategory] : ADMIN_QUERY_TO_CATEGORY[vendorQueryCategory]
+  );
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [listings, setListings] = useState<Listing[]>([]);
@@ -208,10 +259,16 @@ export function ListingsPage() {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const { effectiveUser } = useAuth();
 
-  const isAdmin = effectiveUser?.role === "admin";
-  const isPendingVendor = effectiveUser?.role === "vendor" && effectiveUser?.vendorStatus !== "approved";
+  useEffect(() => {
+    if (isAdmin) {
+      setActiveCategory(ADMIN_QUERY_TO_CATEGORY[adminQueryCategory]);
+      return;
+    }
+    if (isVendor) {
+      setActiveCategory(ADMIN_QUERY_TO_CATEGORY[vendorQueryCategory]);
+    }
+  }, [adminQueryCategory, isAdmin, isVendor, vendorQueryCategory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,11 +277,13 @@ export function ListingsPage() {
       setLoading(true);
       setLoadError(null);
       try {
-        const response = await apiFetch<AdminSnapshotResponse>("/admin/snapshot");
+        const endpoint = isAdmin ? ADMIN_CATEGORY_ENDPOINTS[adminQueryCategory] || "/admin/snapshot" : "/admin/snapshot";
+        const response = await apiFetch<AdminSnapshotResponse | AdminListingResponse[]>(endpoint);
         if (!cancelled) {
-          const realListings = Object.values(response.listings)
-            .flat()
-            .map(adminListingToListing);
+          const rawListings = Array.isArray(response)
+            ? response
+            : Object.values(response.listings).flat();
+          const realListings = rawListings.map(adminListingToListing);
           setListings(realListings);
         }
       } catch (error: any) {
@@ -241,7 +300,27 @@ export function ListingsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [adminQueryCategory, isAdmin]);
+
+  const handleCategoryChange = (category: Category) => {
+    setActiveCategory(category);
+
+    if (!isAdmin && !isVendor) {
+      return;
+    }
+
+    const nextQueryCategory = category === "All" ? "all" : CATEGORY_TO_ADMIN_QUERY[category];
+    if (!nextQueryCategory || nextQueryCategory === "all") {
+      setSearchParams(new URLSearchParams());
+      return;
+    }
+
+    const nextParams = new URLSearchParams();
+    nextParams.set("category", nextQueryCategory);
+    setSearchParams(nextParams);
+  };
+
+  const visibleCategories = isVendor ? VENDOR_CATEGORIES : CATEGORIES;
 
   const filtered = listings.filter((l) => {
     const matchCat = activeCategory === "All" || l.category === activeCategory;
@@ -420,12 +499,12 @@ export function ListingsPage() {
       <div className="flex items-center gap-3">
         {/* Category pills */}
         <div className="flex items-center gap-1.5 flex-1">
-          {CATEGORIES.map((cat) => {
+          {visibleCategories.map((cat) => {
             const isActive = activeCategory === cat;
             return (
               <button
                 key={cat}
-                onClick={() => setActiveCategory(cat)}
+                onClick={() => handleCategoryChange(cat)}
                 className="px-3.5 py-1.5 rounded-lg text-[12px] transition-all shrink-0"
                 style={
                   isActive

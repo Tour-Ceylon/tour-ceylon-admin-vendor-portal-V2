@@ -2,9 +2,6 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard,
-  MapPin,
-  Package,
-  Puzzle,
   Settings,
   ChevronDown,
   ChevronRight,
@@ -13,7 +10,6 @@ import {
   Anchor,
   Layers,
   Plus,
-  BarChart3,
   Users,
   Bell,
   HelpCircle,
@@ -30,15 +26,9 @@ import {
   CalendarCheck,
   TrendingUp,
   FileText,
-  CreditCard,
   Wallet,
-  LineChart,
-  MessageSquare,
   Star,
   UserCheck,
-  Smartphone,
-  RefreshCw,
-  Activity,
   BarChart2,
   ThumbsUp,
   CalendarRange,
@@ -49,20 +39,18 @@ import {
   Lock,
   Palette,
   Plug,
-  GitBranch,
   Server,
   Database,
   CheckSquare,
 } from "lucide-react";
-import { useAuth, Category } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
-// Category icon mapping
-const CATEGORY_ICONS: Record<Category, React.ComponentType<any>> = {
-  Stay: Building2,
-  Tour: Compass,
-  Safari: Globe,
-  Experience: Anchor,
-  Transfer: Car,
+const DEFAULT_COLLAPSED_GROUPS: Record<string, boolean> = {
+  Developer: true,
+  "System Settings": true,
+  Settings: true,
+  Insights: true,
+  "Customer Relations": true,
 };
 
 // Map sidebar item IDs to routes
@@ -141,19 +129,22 @@ const ROUTE_MAP: Record<string, string> = {
   notifications: "/notifications",
   help: "/help",
   settings: "/settings",
-  packages: "/packages",
-  addons: "/addons",
 };
 
 export function Sidebar() {
   const { user, effectiveUser, logout, viewAsVendor, toggleViewAsVendor } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(DEFAULT_COLLAPSED_GROUPS);
+  const isAdmin = effectiveUser?.role === "admin";
+  const isVendor = effectiveUser?.role === "vendor";
+  const approvedCategories = effectiveUser?.approvedCategories || [];
+  const isStayVendor = isVendor && approvedCategories.length === 1 && approvedCategories.includes("Stay");
 
   // Determine active section from current route
   const getActiveSection = () => {
     const path = location.pathname;
+    const listingCategory = new URLSearchParams(location.search).get("category");
     if (path.startsWith("/hotel/")) {
       if (path === "/hotel/dashboard") return "hotel-dashboard";
       if (path === "/hotel/availability") return "availability-calendar";
@@ -187,8 +178,23 @@ export function Sidebar() {
       if (path === "/settings/integrations") return "settings-integrations";
     }
     if (path === "/dashboard") return "dashboard";
+    if (path === "/bookings") return "bookings";
     if (path === "/listings/create") return "create-listing";
-    if (path === "/listings" || path.startsWith("/listings/")) return "listings";
+    if (path === "/listings") {
+      if (isAdmin) {
+        if (listingCategory === "stay") return "stays";
+        if (listingCategory === "tour") return "tours";
+        if (listingCategory === "safari") return "safaris";
+        if (listingCategory === "experience") return "experiences";
+      }
+      if (isVendor) {
+        if (listingCategory === "stay") return "stays";
+        if (listingCategory === "safari") return "safaris";
+        if (listingCategory === "experience") return "experiences";
+      }
+      return "listings";
+    }
+    if (path.startsWith("/listings/")) return "listings";
     if (path === "/reviews") return "listing-reviews";
     if (path === "/vendors") return "vendors";
     if (path === "/admins") return "admins";
@@ -219,10 +225,20 @@ export function Sidebar() {
 
   const activeSection = getActiveSection();
 
-  const isAdmin = effectiveUser?.role === "admin";
-  const isVendor = effectiveUser?.role === "vendor";
-  const approvedCategories = effectiveUser?.approvedCategories || [];
-  const isStayVendor = isVendor && approvedCategories.length === 1 && approvedCategories.includes("Stay");
+  const getRouteForItem = (id: string) => {
+    if (isVendor) {
+      if (id === "stays") return "/listings?category=stay";
+      if (id === "safaris") return "/listings?category=safari";
+      if (id === "experiences") return "/listings?category=experience";
+      return ROUTE_MAP[id] || "/dashboard";
+    }
+    if (!isAdmin) return ROUTE_MAP[id] || "/dashboard";
+    if (id === "stays") return "/listings?category=stay";
+    if (id === "tours") return "/listings?category=tour";
+    if (id === "safaris") return "/listings?category=safari";
+    if (id === "experiences") return "/listings?category=experience";
+    return ROUTE_MAP[id] || "/dashboard";
+  };
 
   // Build dynamic navigation based on role
   const buildNav = () => {
@@ -265,30 +281,63 @@ export function Sidebar() {
       return nav;
     }
 
-    // Dashboard (all users)
+    // Dashboard (all users) + Bookings for admins
+    const overviewItems = [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }];
+    if (isAdmin) {
+      overviewItems.push({ id: "bookings", label: "Bookings", icon: CalendarCheck });
+    }
+    
     nav.push({
       group: "Overview",
-      items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }],
+      items: overviewItems,
     });
 
-    // Admin-only sections - Operational structure
+    // Listings sections (role-aware)
+    const stayItems = [];
+    const otherListingsItems = [];
+
     if (isAdmin) {
-      nav.push({
-        group: "Operations",
-        items: [
-          { id: "bookings", label: "Bookings", icon: CalendarCheck },
-        ],
-      });
+      stayItems.push({ id: "stays", label: "Stays", icon: Building2 });
+      otherListingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
+      otherListingsItems.push({ id: "tours", label: "Tours", icon: Compass });
+      otherListingsItems.push({ id: "safaris", label: "Safaris", icon: Globe });
+      otherListingsItems.push({ id: "experiences", label: "Experiences", icon: Anchor });
+    } else if (isVendor) {
+      if (approvedCategories.includes("Stay")) {
+        stayItems.push({ id: "stays", label: "Stay Listings", icon: Building2 });
+      }
 
-      nav.push({
-        group: "Support",
-        items: [
-          { id: "support", label: "Support Dashboard", icon: LayoutDashboard },
-          { id: "tickets", label: "Tickets", icon: MessageSquare },
-          { id: "refund-disputes", label: "Refund Disputes", icon: RefreshCw },
-        ],
-      });
+      otherListingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
+      if (effectiveUser?.vendorStatus === "approved") {
+        otherListingsItems.push({ id: "create-listing", label: "Create Listing", icon: Plus });
+      }
 
+      // Vendors only see their approved categories
+      if (approvedCategories.includes("Safari")) {
+        otherListingsItems.push({ id: "safaris", label: "Safari Listings", icon: Globe });
+      }
+      if (approvedCategories.includes("Experience")) {
+        otherListingsItems.push({ id: "experiences", label: "Experience Listings", icon: Anchor });
+      }
+    }
+
+    const pushListingsSections = () => {
+      if (stayItems.length > 0) {
+        nav.push({
+          group: "Stays",
+          items: stayItems,
+        });
+      }
+
+      if (otherListingsItems.length > 0) {
+        nav.push({
+          group: "Other Listings",
+          items: otherListingsItems,
+        });
+      }
+    };
+
+    if (isAdmin) {
       nav.push({
         group: "Transport",
         items: [
@@ -299,56 +348,13 @@ export function Sidebar() {
         ],
       });
 
+      pushListingsSections();
       nav.push({
-        group: "Users",
+        group: "Management",
         items: [
           { id: "users", label: "All Users", icon: Users },
-          { id: "customers", label: "Customers", icon: Smartphone },
-          { id: "vendors-users", label: "Vendors", icon: Building2 },
-          { id: "admins", label: "Admins", icon: Shield },
-        ],
-      });
-
-      nav.push({
-        group: "Marketplace",
-        items: [
           { id: "vendor-approvals", label: "Vendor Approvals", icon: UserCheck },
-          { id: "listings", label: "Listings", icon: Layers },
           { id: "listing-reviews", label: "Listing Reviews", icon: Star },
-          { id: "categories", label: "Categories", icon: FolderTree },
-        ],
-      });
-
-      nav.push({
-        group: "Finance",
-        items: [
-          { id: "finance", label: "Finance Dashboard", icon: DollarSign },
-          { id: "payments", label: "Payments", icon: CreditCard },
-          { id: "payouts", label: "Payouts", icon: Wallet },
-          { id: "refunds", label: "Refunds", icon: RefreshCw },
-          { id: "commission", label: "Commission", icon: TrendingUp },
-        ],
-      });
-
-      nav.push({
-        group: "Activity & Monitoring",
-        items: [
-          { id: "activity", label: "Activity Feed", icon: Activity },
-          { id: "audit-logs", label: "Audit Logs", icon: Shield },
-        ],
-      });
-
-      nav.push({
-        group: "Analytics",
-        items: [
-          { id: "analytics", label: "Analytics Dashboard", icon: BarChart3 },
-        ],
-      });
-
-      nav.push({
-        group: "Workflows",
-        items: [
-          { id: "workflows", label: "Workflow Center", icon: GitBranch },
         ],
       });
 
@@ -358,15 +364,6 @@ export function Sidebar() {
           { id: "api-integration", label: "API Integration", icon: Server },
           { id: "system-architecture", label: "System Architecture", icon: Database },
           { id: "qa-checklist", label: "Portal QA Checklist", icon: CheckSquare },
-        ],
-      });
-
-      nav.push({
-        group: "Reports",
-        items: [
-          { id: "analytics", label: "Analytics", icon: BarChart3 },
-          { id: "performance", label: "Performance", icon: TrendingUp },
-          { id: "revenue-reports", label: "Revenue Reports", icon: LineChart },
         ],
       });
 
@@ -385,59 +382,10 @@ export function Sidebar() {
           { id: "settings-integrations", label: "Integrations", icon: Plug },
         ],
       });
+    } else {
+      pushListingsSections();
     }
 
-    // Listings section (role-aware)
-    const listingsItems = [];
-
-    if (isAdmin) {
-      listingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
-      listingsItems.push({ id: "stays", label: "Stays", icon: Building2 });
-      listingsItems.push({ id: "tours", label: "Tours", icon: Compass });
-      listingsItems.push({ id: "safaris", label: "Safaris", icon: Globe });
-      listingsItems.push({ id: "experiences", label: "Experiences", icon: Anchor });
-      listingsItems.push({ id: "transfers", label: "Transfers", icon: Car });
-    } else if (isVendor) {
-      listingsItems.push({ id: "listings", label: "All Listings", icon: Layers });
-      if (effectiveUser?.vendorStatus === "approved") {
-        listingsItems.push({ id: "create-listing", label: "Create Listing", icon: Plus });
-      }
-      
-      // Vendors only see their approved categories
-      if (approvedCategories.includes("Stay")) {
-        listingsItems.push({ id: "stays", label: "Stay Listings", icon: Building2 });
-      }
-      if (approvedCategories.includes("Tour")) {
-        listingsItems.push({ id: "tours", label: "Tour Listings", icon: Compass });
-      }
-      if (approvedCategories.includes("Safari")) {
-        listingsItems.push({ id: "safaris", label: "Safari Listings", icon: Globe });
-      }
-      if (approvedCategories.includes("Experience")) {
-        listingsItems.push({ id: "experiences", label: "Experience Listings", icon: Anchor });
-      }
-      if (approvedCategories.includes("Transfer")) {
-        listingsItems.push({ id: "transfers", label: "Transfer Listings", icon: Car });
-      }
-    }
-
-    if (listingsItems.length > 0) {
-      nav.push({
-        group: "Listings",
-        items: listingsItems,
-      });
-    }
-
-    // Admin-only: Packages and Add-ons
-    if (isAdmin) {
-      nav.push({
-        group: "Products",
-        items: [
-          { id: "packages", label: "Packages", icon: Package },
-          { id: "addons", label: "Add-Ons", icon: Puzzle },
-        ],
-      });
-    }
 
     // Vendor-only: Business Center
     if (isVendor && !isStayVendor) {
@@ -445,8 +393,7 @@ export function Sidebar() {
         group: "Business",
         items: [
           { id: "vendor-bookings", label: "Booking Center", icon: CalendarCheck },
-          { id: "vendor-performance", label: "Performance", icon: BarChart2 },
-          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
+          { id: "vendor-availability", label: "Availability", icon: CalendarRange },
         ],
       });
 
@@ -454,15 +401,6 @@ export function Sidebar() {
         group: "Customer Relations",
         items: [
           { id: "vendor-reviews", label: "Reviews", icon: ThumbsUp },
-          { id: "vendor-availability", label: "Availability", icon: CalendarRange },
-        ],
-      });
-
-      nav.push({
-        group: "Resources",
-        items: [
-          { id: "media", label: "Media Library", icon: Image },
-          { id: "pricing", label: "Pricing", icon: DollarSign },
         ],
       });
 
@@ -471,6 +409,8 @@ export function Sidebar() {
         items: [
           { id: "vendor-insights", label: "Business Insights", icon: Target },
           { id: "vendor-team", label: "Team", icon: UsersRound },
+          { id: "vendor-performance", label: "Performance", icon: BarChart2 },
+          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
         ],
       });
     }
@@ -592,7 +532,7 @@ export function Sidebar() {
               <ul className="space-y-0.5">
                 {items.map(({ id, label, icon: Icon }) => {
                   const isActive = activeSection === id;
-                  const route = ROUTE_MAP[id] || "/dashboard";
+                  const route = getRouteForItem(id);
                   return (
                     <li key={id}>
                       <Link
