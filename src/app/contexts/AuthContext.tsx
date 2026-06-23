@@ -12,6 +12,7 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  isActive: boolean;
   vendorStatus?: VendorStatus;
   approvedCategories?: Category[];
   company?: string;
@@ -69,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? {
           ...user,
           role: "vendor",
+          isActive: true,
           vendorStatus: "approved",
           approvedCategories: user.approvedCategories?.length
             ? user.approvedCategories
@@ -120,19 +122,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // 3. Resolve Vendor Status & Approved Categories
-        // Since backend uses standard model, read status, categories, and company details 
-        // primarily from backendUser, and fallback to Clerk metadata or secure defaults
+        // Read status, categories, and company details from backendUser (DB source of truth),
+        // with fallback to Clerk public metadata.
         const clerkMetadata = clerkUser.publicMetadata || {};
-        const vendorStatus =
-          (backendUser.vendorStatus || backendUser.vendor_status || clerkMetadata.vendorStatus as VendorStatus) ||
-          "approved";
-        const approvedCategories =
-          (backendUser.approvedCategories || backendUser.approved_categories || clerkMetadata.approvedCategories as Category[]) || [
-            "Stay", "Tour", "Safari", "Experience", "Transfer"
-          ];
+
+        // IMPORTANT: Do NOT default vendor_status to "approved" when it is null.
+        // A null vendor_status on a vendor account should be treated as "pending" —
+        // only use "approved" as default for non-vendor roles (admin/support) which
+        // don't use vendor_status in the UI gate logic.
+        const rawVendorStatus =
+          backendUser.vendorStatus ||
+          backendUser.vendor_status ||
+          (clerkMetadata.vendorStatus as VendorStatus | undefined);
+        const vendorStatus: VendorStatus =
+          rawVendorStatus || (role === "vendor" ? "pending" : "approved");
+
+        const approvedCategories: Category[] =
+          backendUser.approvedCategories ||
+          backendUser.approved_categories ||
+          (clerkMetadata.approvedCategories as Category[] | undefined) ||
+          (role !== "vendor" ? ["Stay", "Tour", "Safari", "Experience", "Transfer"] : []);
+
         const company =
           (backendUser.company || backendUser.company_name || clerkMetadata.company as string) ||
           "Voyage Operations";
+
+        // is_active comes from the SoftDeleteMixin column on the User model
+        const isActive: boolean = backendUser.is_active !== false;
 
         const normalizedUser: User = {
           id: backendUser.id || backendUser.clerk_user_id || userId,
@@ -140,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: backendUser.email || clerkUser.primaryEmailAddress?.emailAddress || "",
           name: backendUser.full_name || clerkUser.fullName || "Management Member",
           role,
+          isActive,
           vendorStatus,
           approvedCategories,
           company,
@@ -210,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.email,
         name: data.vendorName,
         role: "vendor",
+        isActive: true,
         vendorStatus: "pending",
         approvedCategories: data.categories,
         company: data.businessName,

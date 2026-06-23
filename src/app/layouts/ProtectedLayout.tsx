@@ -78,7 +78,51 @@ export function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  // 3. Pending Vendor Routing
+  // 3a. Block deactivated accounts (any role)
+  // When admin uses the deactivate toggle, is_active becomes false.
+  // Deactivated users cannot access any protected page.
+  if (user.isActive === false) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ background: "var(--bg-main)" }}
+      >
+        <div
+          className="w-full max-w-md rounded-xl p-6 text-center"
+          style={{
+            background: "var(--bg-panel)",
+            border: "1px solid var(--border-light)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+            <Lock className="text-amber-500" size={24} />
+          </div>
+          <h2 className="text-[18px] mb-2" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            Account Deactivated
+          </h2>
+          <p className="text-[13px] mb-6" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Your account has been deactivated by an administrator. Please contact the Voyage operations desk to restore access.
+          </p>
+          <button
+            onClick={logout}
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[13px] transition-all"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+              color: "white",
+              border: "1px solid var(--border-accent)",
+              fontWeight: 500,
+            }}
+          >
+            <LogOut size={14} />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3b. Pending Vendor Routing
   if (effectiveUser?.role === "vendor" && effectiveUser?.vendorStatus === "pending") {
     return <Navigate to="/pending" replace />;
   }
