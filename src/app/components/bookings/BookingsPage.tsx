@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Filter,
@@ -33,6 +33,15 @@ import {
 import { BookingDetailDrawer } from "./BookingDetailDrawer";
 import { useCommonActions } from "../../hooks/useCommonActions";
 import { FilterModal, type FilterOption } from "../shared/FilterModal";
+import {
+  adminListBookingInquiries,
+  adminUpdateInquiryStatus,
+  inferBookingType,
+  mapInquiryStatusToUI,
+  type AdminBookingInquiryItem,
+  type AdminBookingInquiryPaginatedResponse,
+  type InquiryStatus,
+} from "../api/bookingInquiriesApi";
 
 type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "rejected" | "refunded";
 type PaymentStatus = "unpaid" | "paid" | "partially_paid" | "refunded" | "failed" | "pay_later";
@@ -40,6 +49,8 @@ type BookingType = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
 
 interface Booking {
   id: string;
+  _inquiryId?: string;          // raw UUID for API status updates
+  _inquiryStatus?: InquiryStatus; // raw backend status
   customer: {
     name: string;
     email: string;
@@ -59,6 +70,7 @@ interface Booking {
   duration?: string;
   specialRequests?: string;
   riskFlags?: string[];
+  nationality?: string;
 }
 
 const BOOKING_STATUS_CONFIG: Record<BookingStatus, { bg: string; text: string; dot: string; icon: any }> = {
@@ -209,6 +221,44 @@ const SAMPLE_BOOKINGS: Booking[] = [
   },
 ];
 
+// Helper: convert an AdminBookingInquiryItem to the local Booking shape
+function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
+  const firstItem = inq.cartItems?.[0];
+  const travelDate = firstItem?.travelDate
+    ? new Date(firstItem.travelDate).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "TBD";
+
+  return {
+    id: inq.reference || inq.id,
+    _inquiryId: inq.id,          // raw UUID for API calls
+    _inquiryStatus: inq.status,  // raw backend status
+    customer: {
+      name: `${inq.firstName || 'N/A'} ${inq.lastName || ''}`.trim(),
+      email: inq.email || 'N/A',
+      phone: inq.phone || 'N/A',
+    },
+    type: (inferBookingType(inq.cartItems) || "Tour") as BookingType,
+    listing: firstItem?.title || "—",
+    vendor: "—",
+    travelDate,
+    amount: inq.total || inq.subtotal || 0,
+    bookingStatus: mapInquiryStatusToUI(inq.status),
+    paymentStatus: "unpaid" as PaymentStatus,
+    createdAt: new Date(inq.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    passengers: inq.numberOfTravelers,
+    specialRequests: inq.specialRequests,
+    nationality: inq.nationality,
+  };
+}
+
 export function BookingsPage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -218,40 +268,120 @@ export function BookingsPage() {
   const [dateRange, setDateRange] = useState("all_time");
   const [filterModalOpen, setFilterModalOpen] = useState(false);
 
+  // Live data state
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [apiMeta, setApiMeta] = useState<Omit<AdminBookingInquiryPaginatedResponse, "items"> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState<string | null>(null); // inquiry ID being updated
+
   const { handleExport } = useCommonActions();
 
+  // Fetch live booking inquiries from backend
+  const fetchInquiries = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const statusParam: InquiryStatus | "all" =
+        filterStatus === "all" ? "all" :
+        filterStatus === "pending"   ? "pending_contact"      :
+        filterStatus === "confirmed" ? "quoted"               :
+        filterStatus === "completed" ? "converted_to_booking" :
+        filterStatus === "cancelled" ? "cancelled"            : "all";
+
+      const response = await adminListBookingInquiries({
+        status: statusParam === "all" ? undefined : statusParam,
+        search: search || undefined,
+        perPage: 50,
+      });
+
+      // Handle the actual API response format: {"inquiries": [...]}
+      if (response && (response as any).inquiries && Array.isArray((response as any).inquiries)) {
+        const inquiries = (response as any).inquiries as AdminBookingInquiryItem[];
+        console.log("✅ Found inquiries array with", inquiries.length, "items");
+        const mappedBookings = inquiries.map(inquiryToBooking);
+        setBookings(mappedBookings);
+        setApiMeta({ 
+          total: inquiries.length, 
+          page: 1, 
+          perPage: 50, 
+          totalPages: 1, 
+          statusCounts: {}, 
+          metrics: { 
+            totalValue: inquiries.reduce((sum: number, inq: any) => sum + (inq.total || inq.subtotal || 0), 0),
+            pendingValue: inquiries.filter((inq: any) => inq.status === "pending_contact").reduce((sum: number, inq: any) => sum + (inq.total || inq.subtotal || 0), 0),
+            confirmedOrConvertedCount: inquiries.filter((inq: any) => inq.status === "quoted" || inq.status === "converted_to_booking").length,
+            cancelledCount: inquiries.filter((inq: any) => inq.status === "cancelled").length
+          } 
+        });
+      } else if (response && response.items && Array.isArray(response.items)) {
+        // Fallback for paginated format
+        const { items, ...meta } = response;
+        setBookings(items.map(inquiryToBooking));
+        setApiMeta(meta);
+      } else if (Array.isArray(response)) {
+        // Direct array response
+        setBookings(response.map(inquiryToBooking));
+        setApiMeta({ total: response.length, page: 1, perPage: 50, totalPages: 1, statusCounts: {}, metrics: { totalValue: 0, pendingValue: 0, confirmedOrConvertedCount: 0, cancelledCount: 0 } });
+      } else {
+        console.warn("Unexpected API response format:", response);
+        setBookings([]);
+        setApiMeta(null);
+      }
+    } catch (err: any) {
+      console.error("Failed to load booking inquiries:", err);
+      setFetchError(err?.message || "Failed to load bookings");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [filterStatus, search]);
+
+  useEffect(() => {
+    fetchInquiries();
+  }, [fetchInquiries]);
+
+  // Admin status update handler (wired to BookingDetailDrawer callbacks)
+  const handleUpdateStatus = async (inquiryId: string, newStatus: InquiryStatus) => {
+    setIsUpdating(inquiryId);
+    try {
+      await adminUpdateInquiryStatus(inquiryId, newStatus);
+      await fetchInquiries();
+    } catch (err: any) {
+      console.error("Status update failed:", err);
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
   const statusTabs = [
-    { id: "all", label: "All", count: SAMPLE_BOOKINGS.length },
-    { id: "pending", label: "Pending", count: SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "pending").length },
-    { id: "confirmed", label: "Confirmed", count: SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "confirmed").length },
-    { id: "completed", label: "Completed", count: SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "completed").length },
-    { id: "cancelled", label: "Cancelled", count: SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "cancelled").length },
-    { id: "refunded", label: "Refunded", count: SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "refunded").length },
-    { id: "pay_later", label: "Pay Later", count: SAMPLE_BOOKINGS.filter(b => b.paymentStatus === "pay_later").length },
+    { id: "all", label: "All", count: apiMeta?.statusCounts ? Object.values(apiMeta.statusCounts).reduce((a, b) => a + b, 0) : bookings.length },
+    { id: "pending",   label: "Pending",   count: bookings.filter(b => b.bookingStatus === "pending").length },
+    { id: "confirmed", label: "Quoted",    count: bookings.filter(b => b.bookingStatus === "confirmed").length },
+    { id: "completed", label: "Converted", count: bookings.filter(b => b.bookingStatus === "completed").length },
+    { id: "cancelled", label: "Cancelled", count: bookings.filter(b => b.bookingStatus === "cancelled").length },
   ];
 
-  // Revenue metrics
-  const totalRevenue = SAMPLE_BOOKINGS.reduce((sum, b) => sum + b.amount, 0);
-  const pendingPayments = SAMPLE_BOOKINGS.filter(b => b.paymentStatus === "unpaid" || b.paymentStatus === "partially_paid").reduce((sum, b) => sum + b.amount, 0);
-  const refundsAmount = SAMPLE_BOOKINGS.filter(b => b.paymentStatus === "refunded").reduce((sum, b) => sum + b.amount, 0);
+  // Revenue metrics derived from live data
+  const totalRevenue = apiMeta?.metrics?.totalValue ?? bookings.reduce((sum, b) => sum + b.amount, 0);
+  const pendingPayments = bookings.filter(b => b.bookingStatus === "pending").reduce((sum, b) => sum + b.amount, 0);
+  const refundsAmount = 0; // not tracked at inquiry stage – TODO post-payment
 
   // Category breakdown
   const categoryStats = {
-    Stay: SAMPLE_BOOKINGS.filter(b => b.type === "Stay").length,
-    Tour: SAMPLE_BOOKINGS.filter(b => b.type === "Tour").length,
-    Safari: SAMPLE_BOOKINGS.filter(b => b.type === "Safari").length,
-    Experience: SAMPLE_BOOKINGS.filter(b => b.type === "Experience").length,
-    Transfer: SAMPLE_BOOKINGS.filter(b => b.type === "Transfer").length,
+    Stay:       bookings.filter(b => b.type === "Stay").length,
+    Tour:       bookings.filter(b => b.type === "Tour").length,
+    Safari:     bookings.filter(b => b.type === "Safari").length,
+    Experience: bookings.filter(b => b.type === "Experience").length,
+    Transfer:   bookings.filter(b => b.type === "Transfer").length,
   };
 
-  const filteredBookings = SAMPLE_BOOKINGS.filter((booking) => {
-    const matchStatus = filterStatus === "all" ||
-      (filterStatus === "pay_later" ? booking.paymentStatus === "pay_later" : booking.bookingStatus === filterStatus);
+  // Client-side filter on top of already-server-filtered data
+  const filteredBookings = bookings.filter((booking) => {
     const matchSearch = !search ||
       booking.id.toLowerCase().includes(search.toLowerCase()) ||
       booking.customer.name.toLowerCase().includes(search.toLowerCase()) ||
       booking.listing.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+    return matchSearch;
   });
 
   const toggleSelect = (id: string) => {
@@ -286,6 +416,36 @@ export function BookingsPage() {
           Manage and monitor all marketplace bookings
         </p>
       </div>
+
+      {/* Loading / Error / Empty states */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12" style={{ color: "var(--text-tertiary)" }}>
+          <RefreshCw size={20} className="animate-spin mr-2" />
+          <span className="text-[13px]">Loading booking inquiries…</span>
+        </div>
+      )}
+
+      {!isLoading && fetchError && (
+        <div
+          className="rounded-xl p-4 flex items-start gap-3"
+          style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)" }}
+        >
+          <AlertTriangle size={16} style={{ color: "#f87171" }} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[13px] mb-1" style={{ color: "#f87171", fontWeight: 600 }}>
+              Failed to load bookings
+            </p>
+            <p className="text-[12px]" style={{ color: "#f87171" }}>{fetchError}</p>
+            <button
+              onClick={fetchInquiries}
+              className="mt-2 text-[11px] underline"
+              style={{ color: "#f87171" }}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Revenue Overview Cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -378,7 +538,7 @@ export function BookingsPage() {
             </div>
           </div>
           <p className="text-[24px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {SAMPLE_BOOKINGS.filter(b => b.bookingStatus === "confirmed").length}
+            {bookings.filter(b => b.bookingStatus === "confirmed" || b.bookingStatus === "pending").length}
           </p>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Active Bookings
@@ -547,9 +707,9 @@ export function BookingsPage() {
         <div>
           {filteredBookings.map((booking, i) => {
             const isSelected = selectedBookings.has(booking.id);
-            const bookingConfig = BOOKING_STATUS_CONFIG[booking.bookingStatus];
-            const paymentConfig = PAYMENT_STATUS_CONFIG[booking.paymentStatus];
-            const typeConfig = TYPE_COLORS[booking.type];
+            const bookingConfig = BOOKING_STATUS_CONFIG[booking.bookingStatus] ?? BOOKING_STATUS_CONFIG["pending"];
+            const paymentConfig = PAYMENT_STATUS_CONFIG[booking.paymentStatus] ?? PAYMENT_STATUS_CONFIG["unpaid"];
+            const typeConfig = TYPE_COLORS[booking.type] ?? TYPE_COLORS["Tour"];
             const hasRisk = booking.riskFlags && booking.riskFlags.length > 0;
 
             return (
@@ -716,7 +876,7 @@ export function BookingsPage() {
         >
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Showing <span style={{ color: "var(--text-secondary)" }}>{filteredBookings.length}</span> of{" "}
-            <span style={{ color: "var(--text-secondary)" }}>{SAMPLE_BOOKINGS.length}</span> bookings
+            <span style={{ color: "var(--text-secondary)" }}>{apiMeta?.total || bookings.length}</span> bookings
           </p>
           <div className="flex items-center gap-2">
             {[1, 2, 3].map((p) => (
@@ -741,6 +901,12 @@ export function BookingsPage() {
         <BookingDetailDrawer
           booking={selectedBooking}
           onClose={() => setDrawerOpen(false)}
+          onStatusUpdate={(newStatus: string) => {
+            if (selectedBooking._inquiryId) {
+              handleUpdateStatus(selectedBooking._inquiryId, newStatus as InquiryStatus);
+            }
+          }}
+          isUpdating={!!isUpdating && isUpdating === selectedBooking._inquiryId}
         />
       )}
 
