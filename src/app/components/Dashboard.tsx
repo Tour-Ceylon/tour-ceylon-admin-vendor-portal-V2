@@ -1,7 +1,7 @@
+import { Navigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { AdminDashboard } from "./dashboards/AdminDashboard";
 import { VendorDashboard } from "./dashboards/VendorDashboard";
-import { HotelDashboard } from "./hotel/HotelDashboard";
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -13,7 +13,7 @@ export function Dashboard() {
     user?.approvedCategories?.includes("Stay");
 
   if (isStayVendor) {
-    return <HotelDashboard />;
+    return <Navigate to="/hotel/dashboard" replace />;
   }
 
   return isAdmin ? <AdminDashboard /> : <VendorDashboard />;

@@ -1,7 +1,61 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const TOKEN_CACHE_TTL_MS = 15_000;
+
+type TokenCacheEntry = {
+  sessionId: string | null;
+  token: string;
+  cachedAt: number;
+};
+
+let tokenCache: TokenCacheEntry | null = null;
 
 interface CustomRequestInit extends RequestInit {
   token?: string;
+}
+
+function clearTokenCache() {
+  tokenCache = null;
+}
+
+async function getCachedClerkToken(): Promise<string | undefined> {
+  if (typeof window === "undefined" || !(window as any).Clerk) {
+    clearTokenCache();
+    return undefined;
+  }
+
+  const clerk = (window as any).Clerk;
+  const session = clerk?.session;
+  const sessionId = session?.id ?? null;
+  if (!session || !sessionId) {
+    clearTokenCache();
+    return undefined;
+  }
+
+  if (
+    tokenCache &&
+    tokenCache.sessionId === sessionId &&
+    Date.now() - tokenCache.cachedAt < TOKEN_CACHE_TTL_MS
+  ) {
+    return tokenCache.token;
+  }
+
+  try {
+    const token = await session.getToken();
+    if (!token) {
+      clearTokenCache();
+      return undefined;
+    }
+    tokenCache = {
+      sessionId,
+      token,
+      cachedAt: Date.now(),
+    };
+    return token;
+  } catch (err) {
+    clearTokenCache();
+    console.warn("Failed to retrieve Clerk token automatically:", err);
+    return undefined;
+  }
 }
 
 /**
@@ -17,12 +71,8 @@ export async function apiFetch<T = any>(
 
   // Get token either passed explicitly or from global Clerk session
   let token = options.token;
-  if (!token && typeof window !== "undefined" && (window as any).Clerk) {
-    try {
-      token = await (window as any).Clerk?.session?.getToken();
-    } catch (err) {
-      console.warn("Failed to retrieve Clerk token automatically:", err);
-    }
+  if (!token) {
+    token = await getCachedClerkToken();
   }
 
   const headers = new Headers(options.headers || {});
@@ -41,6 +91,10 @@ export async function apiFetch<T = any>(
     ...options,
     headers,
   });
+
+  if (response.status === 401) {
+    clearTokenCache();
+  }
 
   if (!response.ok) {
     let errorMessage = "An error occurred during the API request.";

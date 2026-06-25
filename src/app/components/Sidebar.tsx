@@ -250,7 +250,7 @@ export function Sidebar() {
         group: "Hotel Operations",
         items: [
           { id: "hotel-dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { id: "availability-calendar", label: "Availability Calendar", icon: CalendarDays },
+          { id: "availability-calendar", label: "Availability", icon: CalendarDays },
           { id: "room-inventory", label: "Room Inventory", icon: BedDouble },
           { id: "reservations", label: "Reservations", icon: CalendarCheck },
         ],
@@ -393,7 +393,7 @@ export function Sidebar() {
         group: "Business",
         items: [
           { id: "vendor-bookings", label: "Booking Center", icon: CalendarCheck },
-          { id: "vendor-availability", label: "Availability", icon: CalendarRange },
+          { id: "availability-calendar", label: "Availability", icon: CalendarRange },
         ],
       });
 

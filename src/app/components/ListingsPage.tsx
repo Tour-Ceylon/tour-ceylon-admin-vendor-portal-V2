@@ -149,6 +149,7 @@ const ADMIN_CATEGORY_ENDPOINTS: Partial<Record<AdminCategoryQuery, string>> = {
   tour: "/admin/listings/tour",
   safari: "/admin/listings/safari",
   experience: "/admin/listings/experience",
+  transfer: "/admin/listings/transfer",
 };
 
 function normalizeAdminCategoryQuery(value: string | null): AdminCategoryQuery {
@@ -277,7 +278,8 @@ export function ListingsPage() {
       setLoading(true);
       setLoadError(null);
       try {
-        const endpoint = isAdmin ? ADMIN_CATEGORY_ENDPOINTS[adminQueryCategory] || "/admin/snapshot" : "/admin/snapshot";
+        const queryCategory = isAdmin ? adminQueryCategory : vendorQueryCategory;
+        const endpoint = ADMIN_CATEGORY_ENDPOINTS[queryCategory] || "/admin/snapshot";
         const response = await apiFetch<AdminSnapshotResponse | AdminListingResponse[]>(endpoint);
         if (!cancelled) {
           const rawListings = Array.isArray(response)
@@ -300,7 +302,7 @@ export function ListingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [adminQueryCategory, isAdmin]);
+  }, [adminQueryCategory, isAdmin, vendorQueryCategory]);
 
   const handleCategoryChange = (category: Category) => {
     setActiveCategory(category);
