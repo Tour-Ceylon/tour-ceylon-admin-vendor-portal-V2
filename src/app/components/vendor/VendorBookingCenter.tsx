@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Calendar,
   CheckCircle,
@@ -16,9 +16,17 @@ import {
   ArrowUpDown,
   RefreshCw,
   Mail,
+  Loader2,
 } from "lucide-react";
 import { ContextualActions } from "../common/QuickActions";
 import { useToast } from "../common/ToastNotification";
+import {
+  vendorListBookingInquiries,
+  vendorUpdateInquiryStatus,
+  inferBookingType,
+  type AdminBookingInquiryItem,
+  type InquiryStatus,
+} from "../api/bookingInquiriesApi";
 
 type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
 type PaymentStatus = "pending" | "paid" | "refunded";
@@ -41,91 +49,103 @@ interface Booking {
   notes?: string;
 }
 
+// Map an inquiry to the local Booking shape used by this vendor UI
+function inquiryToVendorBooking(inq: AdminBookingInquiryItem): Booking {
+  const firstItem = inq.cartItems?.[0];
+  const travelDate = firstItem?.travelDate
+    ? new Date(firstItem.travelDate).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "TBD";
+  const status: BookingStatus =
+    inq.status === "new" || inq.status === "contacted"
+      ? "pending"
+      : inq.status === "quoted"
+      ? "confirmed"
+      : inq.status === "converted_to_booking"
+      ? "completed"
+      : "cancelled";
+
+  return {
+    id: inq.id,
+    bookingRef: inq.reference || inq.id,
+    customer: `${inq.firstName} ${inq.lastName}`,
+    customerEmail: inq.email,
+    listing: firstItem?.title || "—",
+    listingType: inferBookingType(inq.cartItems),
+    travelDate,
+    guests: inq.numberOfTravelers,
+    amount: inq.total ? `$${inq.total.toFixed(0)}` : "TBD",
+    paymentStatus: "pending" as PaymentStatus,
+    bookingStatus: status,
+    createdAt: new Date(inq.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    notes: inq.specialRequests,
+  };
+}
+
 export function VendorBookingCenter() {
   const { addToast } = useToast();
   const [filter, setFilter] = useState<BookingStatus | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const bookings: Booking[] = [
-    {
-      id: "1",
-      bookingRef: "BKG-2026-0547",
-      customer: "John Smith",
-      customerEmail: "john.smith@email.com",
-      listing: "Yala National Park Safari",
-      listingType: "Safari",
-      travelDate: "May 25, 2026",
-      guests: 4,
-      amount: "$680",
-      paymentStatus: "paid",
-      bookingStatus: "confirmed",
-      createdAt: "2 hours ago",
-    },
-    {
-      id: "2",
-      bookingRef: "BKG-2026-0548",
-      customer: "Emma Wilson",
-      customerEmail: "emma.w@email.com",
-      listing: "Galle Fort Heritage Walk",
-      listingType: "Tour",
-      travelDate: "May 24, 2026",
-      guests: 2,
-      amount: "$170",
-      paymentStatus: "paid",
-      bookingStatus: "completed",
-      createdAt: "1 day ago",
-    },
-    {
-      id: "3",
-      bookingRef: "BKG-2026-0549",
-      customer: "Michael Brown",
-      customerEmail: "m.brown@email.com",
-      listing: "Minneriya Wildlife Safari",
-      listingType: "Safari",
-      travelDate: "May 26, 2026",
-      guests: 2,
-      amount: "$340",
-      paymentStatus: "pending",
-      bookingStatus: "pending",
-      createdAt: "3 hours ago",
-      notes: "Customer requested early morning slot",
-    },
-    {
-      id: "4",
-      bookingRef: "BKG-2026-0550",
-      customer: "Sarah Johnson",
-      customerEmail: "sarah.j@email.com",
-      listing: "Sigiriya Rock Fortress Tour",
-      listingType: "Tour",
-      travelDate: "May 28, 2026",
-      guests: 3,
-      amount: "$255",
-      paymentStatus: "pending",
-      bookingStatus: "pending",
-      createdAt: "5 hours ago",
-    },
-    {
-      id: "5",
-      bookingRef: "BKG-2026-0545",
-      customer: "David Lee",
-      customerEmail: "david.lee@email.com",
-      listing: "Yala National Park Safari",
-      listingType: "Safari",
-      travelDate: "May 20, 2026",
-      guests: 2,
-      amount: "$340",
-      paymentStatus: "refunded",
-      bookingStatus: "cancelled",
-      createdAt: "3 days ago",
-    },
-  ];
+  // Live data
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const fetchInquiries = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const response = await vendorListBookingInquiries({ perPage: 100 });
+      setBookings(response.items.map(inquiryToVendorBooking));
+    } catch (err: any) {
+      console.error("Failed to load vendor booking inquiries:", err);
+      setFetchError(err?.message || "Failed to load bookings");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
+
+  const handleVendorStatusUpdate = async (bookingId: string, newStatus: InquiryStatus) => {
+    setUpdatingId(bookingId);
+    try {
+      await vendorUpdateInquiryStatus(bookingId, newStatus);
+      await fetchInquiries();
+      addToast({
+        type: "success",
+        title: "Status updated",
+        message: `Inquiry marked as ${newStatus.replace(/_/g, " ")}`,
+        duration: 3000,
+      });
+    } catch (err: any) {
+      addToast({
+        type: "error",
+        title: "Update failed",
+        message: err?.message || "Could not update status",
+        duration: 4000,
+      });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const stats = [
-    { label: "Pending Requests", value: "8", color: "#f59e0b", icon: Clock },
-    { label: "Confirmed", value: "34", color: "#3b82f6", icon: CheckCircle },
-    { label: "Completed", value: "142", color: "#22c55e", icon: CheckCircle },
-    { label: "Total Revenue", value: "$24.8K", color: "#10b981", icon: DollarSign },
+    { label: "Pending Requests", value: String(bookings.filter(b => b.bookingStatus === "pending").length), color: "#f59e0b", icon: Clock },
+    { label: "Confirmed",        value: String(bookings.filter(b => b.bookingStatus === "confirmed").length), color: "#3b82f6", icon: CheckCircle },
+    { label: "Completed",        value: String(bookings.filter(b => b.bookingStatus === "completed").length), color: "#22c55e", icon: CheckCircle },
+    { label: "Total Inquiries",  value: String(bookings.length),                                              color: "#10b981", icon: DollarSign },
   ];
+
 
   const getBookingStatusStyle = (status: BookingStatus) => {
     switch (status) {
@@ -424,11 +444,12 @@ export function VendorBookingCenter() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-2">
-                      {booking.bookingStatus === "pending" && (
+                    <div className="flex items-center justify-end gap-2">                       {booking.bookingStatus === "pending" && (
                         <>
                           <button
-                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all"
+                            onClick={() => handleVendorStatusUpdate(booking.id, "quoted")}
+                            disabled={updatingId === booking.id}
+                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all disabled:opacity-60"
                             style={{
                               background: "rgba(34,197,94,0.1)",
                               color: "#4ade80",
@@ -436,18 +457,21 @@ export function VendorBookingCenter() {
                               fontWeight: 500,
                             }}
                           >
-                            Accept
+                            {updatingId === booking.id ? <Loader2 size={12} className="animate-spin inline" /> : null}
+                            Accept / Send Quote
                           </button>
                           <button
-                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all"
+                            onClick={() => handleVendorStatusUpdate(booking.id, "contacted")}
+                            disabled={updatingId === booking.id}
+                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all disabled:opacity-60"
                             style={{
-                              background: "rgba(239,68,68,0.1)",
-                              color: "#f87171",
-                              border: "1px solid rgba(239,68,68,0.3)",
+                              background: "var(--active-overlay)",
+                              color: "var(--accent-navy-light)",
+                              border: "1px solid var(--border-accent)",
                               fontWeight: 500,
                             }}
                           >
-                            Reject
+                            Contacted Customer
                           </button>
                         </>
                       )}
@@ -490,6 +514,7 @@ export function VendorBookingCenter() {
             icon: RefreshCw,
             variant: "secondary",
             onClick: () => {
+              fetchInquiries();
               addToast({
                 type: "info",
                 title: "Refreshing bookings",
