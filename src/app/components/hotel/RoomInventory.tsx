@@ -1,166 +1,132 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  Search,
-  Filter,
   BedDouble,
-  Wrench,
-  Sparkles,
-  Lock,
-  CheckCircle,
-  Users,
-  Plus,
-  ChevronDown,
   Edit3,
-  MoreHorizontal,
+  Plus,
   RefreshCw,
-  AlertCircle,
+  Search,
+  Trash2,
   X,
 } from "lucide-react";
+import {
+  createStayRoomType,
+  createStayRoomUnit,
+  deleteStayRoomType,
+  deleteStayRoomUnit,
+  getStayInventory,
+  listStayBookings,
+  updateStayRoomType,
+  updateStayRoomUnit,
+  type StayBookingResponse,
+  type StayInventoryResponse,
+  type StayRoomType,
+  type StayRoomUnit,
+} from "../api/stayVendorApi";
+import { EmptyState } from "../common/EmptyState";
+import { DashboardSkeleton } from "../common/SkeletonLoader";
+import { StayHotelPropertyGate, StayHotelPropertySwitcher, useStayHotel } from "./StayHotelContext";
 
-type UnitStatus = "available" | "occupied" | "maintenance" | "cleaning" | "blocked";
-
-interface RoomUnit {
-  id: string;
-  unitId: string;
-  roomType: string;
-  typeColor: string;
-  floor: number;
-  status: UnitStatus;
-  occupancy: string;
-  cleaning: "clean" | "dirty" | "in-progress";
-  maintenance: "ok" | "needed" | "in-progress";
-  basePrice: number;
-  lastUpdated: string;
-  guest?: string;
-  checkOut?: string;
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-const UNITS: RoomUnit[] = [
-  { id: "1", unitId: "DLX-101", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 1, status: "occupied", occupancy: "2 adults", cleaning: "dirty", maintenance: "ok", basePrice: 120, lastUpdated: "10 min ago", guest: "Priya Sharma", checkOut: "Aug 21" },
-  { id: "2", unitId: "DLX-102", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 1, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 120, lastUpdated: "1 hr ago" },
-  { id: "3", unitId: "DLX-103", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 1, status: "cleaning", occupancy: "—", cleaning: "in-progress", maintenance: "ok", basePrice: 120, lastUpdated: "35 min ago" },
-  { id: "4", unitId: "DLX-104", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 1, status: "occupied", occupancy: "2 adults, 1 child", cleaning: "dirty", maintenance: "ok", basePrice: 120, lastUpdated: "2 hr ago", guest: "Tom Eriksson", checkOut: "Aug 22" },
-  { id: "5", unitId: "DLX-105", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 1, status: "maintenance", occupancy: "—", cleaning: "clean", maintenance: "in-progress", basePrice: 120, lastUpdated: "3 hr ago" },
-  { id: "6", unitId: "DLX-106", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 2, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 125, lastUpdated: "1 hr ago" },
-  { id: "7", unitId: "DLX-107", roomType: "Deluxe Room", typeColor: "#3b82f6", floor: 2, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 125, lastUpdated: "1 hr ago" },
-  { id: "8", unitId: "VILLA-01", roomType: "Ocean Villa", typeColor: "#10b981", floor: 0, status: "occupied", occupancy: "2 adults", cleaning: "dirty", maintenance: "ok", basePrice: 380, lastUpdated: "5 hr ago", guest: "Marcus Weber", checkOut: "Aug 25" },
-  { id: "9", unitId: "VILLA-02", roomType: "Ocean Villa", typeColor: "#10b981", floor: 0, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 380, lastUpdated: "2 hr ago" },
-  { id: "10", unitId: "VILLA-03", roomType: "Ocean Villa", typeColor: "#10b981", floor: 0, status: "blocked", occupancy: "—", cleaning: "clean", maintenance: "needed", basePrice: 380, lastUpdated: "1 day ago" },
-  { id: "11", unitId: "STE-201", roomType: "Suite", typeColor: "#8b5cf6", floor: 2, status: "occupied", occupancy: "2 adults", cleaning: "dirty", maintenance: "ok", basePrice: 280, lastUpdated: "4 hr ago", guest: "Yuki Tanaka", checkOut: "Aug 20" },
-  { id: "12", unitId: "STE-202", roomType: "Suite", typeColor: "#8b5cf6", floor: 2, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 280, lastUpdated: "2 hr ago" },
-  { id: "13", unitId: "STE-203", roomType: "Suite", typeColor: "#8b5cf6", floor: 2, status: "cleaning", occupancy: "—", cleaning: "in-progress", maintenance: "ok", basePrice: 280, lastUpdated: "20 min ago" },
-  { id: "14", unitId: "STD-001", roomType: "Standard Room", typeColor: "#f59e0b", floor: 1, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 75, lastUpdated: "3 hr ago" },
-  { id: "15", unitId: "STD-002", roomType: "Standard Room", typeColor: "#f59e0b", floor: 1, status: "occupied", occupancy: "1 adult", cleaning: "dirty", maintenance: "ok", basePrice: 75, lastUpdated: "1 hr ago", guest: "Anika Roth", checkOut: "Aug 23" },
-  { id: "16", unitId: "STD-003", roomType: "Standard Room", typeColor: "#f59e0b", floor: 1, status: "available", occupancy: "—", cleaning: "clean", maintenance: "ok", basePrice: 75, lastUpdated: "2 hr ago" },
-  { id: "17", unitId: "FAM-401", roomType: "Family Room", typeColor: "#ec4899", floor: 4, status: "occupied", occupancy: "2 adults, 2 children", cleaning: "dirty", maintenance: "ok", basePrice: 165, lastUpdated: "6 hr ago", guest: "James Okonkwo", checkOut: "Aug 24" },
-  { id: "18", unitId: "FAM-402", roomType: "Family Room", typeColor: "#ec4899", floor: 4, status: "maintenance", occupancy: "—", cleaning: "clean", maintenance: "needed", basePrice: 165, lastUpdated: "1 day ago" },
-];
+function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+    >
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border-light)" }}>
+        <h2 className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+          {title}
+        </h2>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
 
-const STATUS_CONFIG: Record<UnitStatus, { label: string; bg: string; text: string; icon: React.ComponentType<any> }> = {
-  available:   { label: "Available",   bg: "rgba(34,197,94,0.12)",  text: "#4ade80",  icon: CheckCircle },
-  occupied:    { label: "Occupied",    bg: "rgba(59,130,246,0.12)", text: "#60a5fa",  icon: Users },
-  maintenance: { label: "Maintenance", bg: "rgba(251,191,36,0.12)", text: "#fbbf24",  icon: Wrench },
-  cleaning:    { label: "Cleaning",    bg: "rgba(139,92,246,0.12)", text: "#a78bfa",  icon: Sparkles },
-  blocked:     { label: "Blocked",     bg: "rgba(100,116,139,0.12)",text: "#94a3b8",  icon: Lock },
-};
-
-const CLEANING_CONFIG = {
-  clean: { label: "Clean", color: "#4ade80" },
-  dirty: { label: "Dirty", color: "#f87171" },
-  "in-progress": { label: "Cleaning", color: "#a78bfa" },
-};
-
-const MAINTENANCE_CONFIG = {
-  ok:          { label: "OK",       color: "#4ade80" },
-  needed:      { label: "Needed",   color: "#f97316" },
-  "in-progress":{ label: "Active",  color: "#fbbf24" },
-};
-
-// Add Room Type Modal
-function AddRoomTypeModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [qty, setQty] = useState("5");
-  const [prefix, setPrefix] = useState("");
-  const [price, setPrice] = useState("");
-  const [preview, setPreview] = useState<string[]>([]);
-
-  const generatePreview = () => {
-    const q = parseInt(qty) || 0;
-    const p = prefix.toUpperCase() || "RM";
-    setPreview(Array.from({ length: Math.min(q, 6) }, (_, i) => `${p}-${String(i + 1).padStart(3, "0")}`));
-  };
+function RoomTypeModal({
+  roomType,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  roomType?: StayRoomType | null;
+  onClose: () => void;
+  onSubmit: (payload: { name: string; description: string; size: string; sizeUnit: string; maxGuests?: number; basePrice?: number; currency: string }) => void;
+  submitting: boolean;
+}) {
+  const [name, setName] = useState(roomType?.name ?? "");
+  const [description, setDescription] = useState(roomType?.description ?? "");
+  const [size, setSize] = useState(roomType?.size ?? "");
+  const [sizeUnit, setSizeUnit] = useState(roomType?.sizeUnit ?? "sqm");
+  const [maxGuests, setMaxGuests] = useState(roomType?.maxGuests ?? "");
+  const [basePrice, setBasePrice] = useState(String(roomType?.basePrice ?? ""));
+  const [currency, setCurrency] = useState(roomType?.currency ?? "LKR");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
-      <div
-        className="w-[440px] rounded-2xl p-6"
-        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.65)" }}>
+      <div className="w-full max-w-xl rounded-2xl p-6" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-[15px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>Add Room Type</h3>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--bg-card)", color: "var(--text-tertiary)" }}>
-            <X size={14} />
+          <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {roomType ? "Edit Room Type" : "Add Room Type"}
+          </h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--input-background)" }}>
+            <X size={14} style={{ color: "var(--text-secondary)" }} />
           </button>
         </div>
-        <div className="space-y-3">
-          <div>
-            <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Room Type Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Deluxe Room"
-              className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="md:col-span-2">
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Name</label>
+            <input value={name} onChange={(event) => setName(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Unit Prefix</label>
-              <input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. DLX"
-                className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
-            </div>
-            <div>
-              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Quantity</label>
-              <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="5"
-                className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
-            </div>
+          <div className="md:col-span-2">
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Description</label>
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
           </div>
           <div>
-            <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Base Price ($)</label>
-            <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="120"
-              className="w-full px-3 py-2 rounded-lg text-[13px] outline-none"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Size</label>
+            <input value={size} onChange={(event) => setSize(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
           </div>
-          <button
-            onClick={generatePreview}
-            className="w-full py-2 rounded-lg text-[12px] flex items-center justify-center gap-1.5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            <RefreshCw size={12} />
-            Preview Auto-Generated IDs
-          </button>
-          {preview.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {preview.map((id) => (
-                <span key={id} className="text-[11px] px-2 py-0.5 rounded"
-                  style={{ background: "rgba(59,130,246,0.12)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.2)" }}>
-                  {id}
-                </span>
-              ))}
-              {parseInt(qty) > 6 && (
-                <span className="text-[11px] px-2 py-0.5 rounded" style={{ color: "var(--text-tertiary)" }}>
-                  +{parseInt(qty) - 6} more
-                </span>
-              )}
-            </div>
-          )}
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Size unit</label>
+            <input value={sizeUnit} onChange={(event) => setSizeUnit(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+          </div>
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Max guests</label>
+            <input value={maxGuests} onChange={(event) => setMaxGuests(event.target.value)} type="number" min="1" className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+          </div>
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Base price</label>
+            <input value={basePrice} onChange={(event) => setBasePrice(event.target.value)} type="number" min="0" className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+          </div>
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Currency</label>
+            <input value={currency} onChange={(event) => setCurrency(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+          </div>
         </div>
-        <div className="flex gap-2 mt-5">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px]"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
             Cancel
           </button>
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px]"
-            style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 12px var(--border-accent)" }}>
-            Create {qty} Units
+          <button
+            disabled={submitting || !name.trim()}
+            onClick={() =>
+              onSubmit({
+                name: name.trim(),
+                description: description.trim(),
+                size: size.trim(),
+                sizeUnit: sizeUnit.trim(),
+                maxGuests: maxGuests ? Number(maxGuests) : undefined,
+                basePrice: basePrice ? Number(basePrice) : undefined,
+                currency: currency.trim() || "LKR",
+              })
+            }
+            className="px-4 py-2 rounded-lg text-[13px] disabled:opacity-50"
+            style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
+          >
+            {submitting ? "Saving..." : roomType ? "Save Changes" : "Create Room Type"}
           </button>
         </div>
       </div>
@@ -168,282 +134,453 @@ function AddRoomTypeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function RoomInventory() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<UnitStatus | "all">("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+function RoomUnitModal({
+  roomTypes,
+  roomUnit,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  roomTypes: StayRoomType[];
+  roomUnit?: StayRoomUnit | null;
+  onClose: () => void;
+  onSubmit: (payload: { roomTypeId: string; roomNumber: string; floor: string; roomName: string; status: string }) => void;
+  submitting: boolean;
+}) {
+  const [roomTypeId, setRoomTypeId] = useState(roomTypes[0]?.id ?? "");
+  const [roomNumber, setRoomNumber] = useState(roomUnit?.roomNumber ?? "");
+  const [floor, setFloor] = useState(roomUnit?.floor ?? "");
+  const [roomName, setRoomName] = useState(roomUnit?.roomName ?? "");
+  const [status, setStatus] = useState(roomUnit?.status ?? "available");
 
-  const roomTypes = Array.from(new Set(UNITS.map((u) => u.roomType)));
-
-  const filtered = UNITS.filter((u) => {
-    const q = search.toLowerCase();
-    const matchSearch = u.unitId.toLowerCase().includes(q) || u.roomType.toLowerCase().includes(q) || (u.guest ?? "").toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || u.status === statusFilter;
-    const matchType = typeFilter === "all" || u.roomType === typeFilter;
-    return matchSearch && matchStatus && matchType;
-  });
-
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  };
-
-  const toggleAll = () => {
-    setSelected(selected.length === filtered.length ? [] : filtered.map((u) => u.id));
-  };
-
-  const statusCounts = Object.keys(STATUS_CONFIG).reduce((acc, s) => {
-    acc[s] = UNITS.filter((u) => u.status === s).length;
-    return acc;
-  }, {} as Record<string, number>);
+  useEffect(() => {
+    if (roomUnit) {
+      const matchedRoomType = roomTypes.find((entry) => entry.roomUnits?.some((item) => item.id === roomUnit.id));
+      setRoomTypeId(matchedRoomType?.id ?? roomTypes[0]?.id ?? "");
+    }
+  }, [roomUnit, roomTypes]);
 
   return (
-    <div className="p-6 space-y-5 max-w-[1600px]">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.65)" }}>
+      <div className="w-full max-w-lg rounded-2xl p-6" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {roomUnit ? "Edit Room Unit" : "Add Room Unit"}
+          </h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--input-background)" }}>
+            <X size={14} style={{ color: "var(--text-secondary)" }} />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Room type</label>
+            <select value={roomTypeId} onChange={(event) => setRoomTypeId(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}>
+              {roomTypes.map((roomType) => (
+                <option key={roomType.id} value={roomType.id}>
+                  {roomType.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Room number</label>
+              <input value={roomNumber} onChange={(event) => setRoomNumber(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+            </div>
+            <div>
+              <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Floor</label>
+              <input value={floor} onChange={(event) => setFloor(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+            </div>
+          </div>
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Room name</label>
+            <input value={roomName} onChange={(event) => setRoomName(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+          </div>
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Status</label>
+            <select value={status} onChange={(event) => setStatus(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}>
+              <option value="available">available</option>
+              <option value="maintenance">maintenance</option>
+              <option value="blocked">blocked</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+            Cancel
+          </button>
+          <button
+            disabled={submitting || !roomTypeId || !roomNumber.trim()}
+            onClick={() => onSubmit({ roomTypeId, roomNumber: roomNumber.trim(), floor: floor.trim(), roomName: roomName.trim(), status })}
+            className="px-4 py-2 rounded-lg text-[13px] disabled:opacity-50"
+            style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
+          >
+            {submitting ? "Saving..." : roomUnit ? "Save Changes" : "Create Room Unit"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoomInventoryContent() {
+  const { selectedProperty } = useStayHotel();
+  const [inventory, setInventory] = useState<StayInventoryResponse | null>(null);
+  const [bookings, setBookings] = useState<StayBookingResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [roomTypeFilter, setRoomTypeFilter] = useState("all");
+  const [showRoomTypeModal, setShowRoomTypeModal] = useState(false);
+  const [editingRoomType, setEditingRoomType] = useState<StayRoomType | null>(null);
+  const [showRoomUnitModal, setShowRoomUnitModal] = useState(false);
+  const [editingRoomUnit, setEditingRoomUnit] = useState<StayRoomUnit | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function loadData() {
+    if (!selectedProperty) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [inventoryResponse, bookingsResponse] = await Promise.all([
+        getStayInventory(selectedProperty.id),
+        listStayBookings(selectedProperty.id),
+      ]);
+      setInventory(inventoryResponse);
+      setBookings(bookingsResponse.bookings || []);
+    } catch (err: any) {
+      setError(err?.message || "Unable to load room inventory.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadData();
+  }, [selectedProperty?.id]);
+
+  const occupiedUnitIds = useMemo(() => {
+    const today = todayIso();
+    const ids = new Set<string>();
+    for (const booking of bookings) {
+      for (const room of booking.rooms) {
+        if (room.checkInDate <= today && room.checkOutDate > today) {
+          ids.add(room.roomUnitId);
+        }
+      }
+    }
+    return ids;
+  }, [bookings]);
+
+  const roomTypeByUnitId = useMemo(() => {
+    const map = new Map<string, StayRoomType>();
+    for (const roomType of inventory?.roomTypes ?? []) {
+      for (const roomUnit of roomType.roomUnits ?? []) {
+        map.set(roomUnit.id, roomType);
+      }
+    }
+    return map;
+  }, [inventory]);
+
+  const filteredUnits = useMemo(() => {
+    const query = search.toLowerCase();
+    return (inventory?.roomUnits ?? []).filter((roomUnit) => {
+      const roomType = roomTypeByUnitId.get(roomUnit.id);
+      const matchesSearch =
+        roomUnit.roomNumber.toLowerCase().includes(query) ||
+        String(roomUnit.roomName ?? "").toLowerCase().includes(query) ||
+        String(roomType?.name ?? "").toLowerCase().includes(query);
+      const matchesType = roomTypeFilter === "all" || roomType?.id === roomTypeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [inventory, roomTypeByUnitId, roomTypeFilter, search]);
+
+  async function handleRoomTypeSubmit(payload: { name: string; description: string; size: string; sizeUnit: string; maxGuests?: number; basePrice?: number; currency: string }) {
+    if (!selectedProperty) return;
+    setSaving(true);
+    try {
+      if (editingRoomType) {
+        await updateStayRoomType(selectedProperty.id, editingRoomType.id, payload);
+      } else {
+        await createStayRoomType(selectedProperty.id, payload);
+      }
+      setShowRoomTypeModal(false);
+      setEditingRoomType(null);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || "Unable to save the room type.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRoomUnitSubmit(payload: { roomTypeId: string; roomNumber: string; floor: string; roomName: string; status: string }) {
+    if (!selectedProperty) return;
+    setSaving(true);
+    try {
+      if (editingRoomUnit) {
+        await updateStayRoomUnit(selectedProperty.id, editingRoomUnit.id, payload);
+      } else {
+        await createStayRoomUnit(selectedProperty.id, payload);
+      }
+      setShowRoomUnitModal(false);
+      setEditingRoomUnit(null);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || "Unable to save the room unit.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteRoomType(roomType: StayRoomType) {
+    if (!selectedProperty) return;
+    if (!window.confirm(`Delete room type "${roomType.name}"?`)) return;
+    try {
+      await deleteStayRoomType(selectedProperty.id, roomType.id);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || "Unable to delete this room type.");
+    }
+  }
+
+  async function handleDeleteRoomUnit(roomUnit: StayRoomUnit) {
+    if (!selectedProperty) return;
+    if (!window.confirm(`Delete room unit "${roomUnit.roomNumber}"?`)) return;
+    try {
+      await deleteStayRoomUnit(selectedProperty.id, roomUnit.id);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || "Unable to delete this room unit.");
+    }
+  }
+
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
+  if (error && !inventory) {
+    return <EmptyState icon={RefreshCw} title="Unable to load room inventory" description={error} />;
+  }
+
+  return (
+    <div className="p-6 space-y-6 max-w-[1600px]">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <BedDouble size={15} style={{ color: "var(--accent-navy)" }} />
-            <span className="text-[11px] uppercase tracking-widest" style={{ color: "var(--accent-navy)" }}>Room Inventory</span>
-          </div>
-          <h1 className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            Jetwing Yala — {UNITS.length} Units
-          </h1>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px]"
-          style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 12px var(--border-accent)" }}
-        >
-          <Plus size={14} />
-          Add Room Type
-        </button>
-      </div>
-
-      {/* Status summary chips */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setStatusFilter("all")}
-          className="px-3 py-1.5 rounded-lg text-[12px] transition-all"
-          style={{
-            background: statusFilter === "all" ? "var(--accent-navy)" : "var(--bg-card)",
-            color: statusFilter === "all" ? "white" : "var(--text-secondary)",
-            border: `1px solid ${statusFilter === "all" ? "transparent" : "var(--border-light)"}`,
-            fontWeight: statusFilter === "all" ? 600 : 400,
-          }}
-        >
-          All ({UNITS.length})
-        </button>
-        {(Object.entries(STATUS_CONFIG) as [UnitStatus, typeof STATUS_CONFIG[UnitStatus]][]).map(([key, cfg]) => (
-          <button
-            key={key}
-            onClick={() => setStatusFilter(key)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
-            style={{
-              background: statusFilter === key ? cfg.bg : "var(--bg-card)",
-              color: statusFilter === key ? cfg.text : "var(--text-secondary)",
-              border: `1px solid ${statusFilter === key ? cfg.text + "40" : "var(--border-light)"}`,
-            }}
-          >
-            <cfg.icon size={11} />
-            {cfg.label} ({statusCounts[key] ?? 0})
-          </button>
-        ))}
-      </div>
-
-      {/* Controls */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Search */}
-        <div className="relative flex-1" style={{ minWidth: 220, maxWidth: 320 }}>
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by unit, type, guest…"
-            className="w-full pl-8 pr-3 py-2 rounded-lg text-[13px] outline-none"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
-          />
-        </div>
-
-        {/* Type filter */}
-        <div className="relative">
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="appearance-none pl-3 pr-7 py-2 rounded-lg text-[13px] outline-none"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            <option value="all">All Types</option>
-            {roomTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-tertiary)" }} />
-        </div>
-
-        {/* Bulk actions */}
-        {selected.length > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              {selected.length} selected
+            <BedDouble size={16} style={{ color: "var(--accent-navy)" }} />
+            <span className="text-[11px] uppercase tracking-widest" style={{ color: "var(--accent-navy)" }}>
+              Room Inventory
             </span>
-            {[
-              { label: "Mark Available", color: "#4ade80" },
-              { label: "Block", color: "#94a3b8" },
-              { label: "Set Maintenance", color: "#fbbf24" },
-            ].map((a) => (
-              <button
-                key={a.label}
-                onClick={() => setSelected([])}
-                className="px-3 py-1.5 rounded-lg text-[12px]"
-                style={{ background: "var(--bg-card)", border: `1px solid ${a.color}30`, color: a.color }}
-              >
-                {a.label}
-              </button>
+          </div>
+          <h1 className="text-[22px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {selectedProperty?.name}
+          </h1>
+          <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+            Room types and physical room units are loaded from the stay inventory backend.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <StayHotelPropertySwitcher />
+          <button onClick={() => void loadData()} className="px-3 py-2 rounded-lg text-[12px] flex items-center gap-2" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}>
+            <RefreshCw size={13} />
+            Refresh
+          </button>
+          <button onClick={() => { setEditingRoomType(null); setShowRoomTypeModal(true); }} className="px-3 py-2 rounded-lg text-[12px] flex items-center gap-2" style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--accent-navy-light)", fontWeight: 600 }}>
+            <Plus size={13} />
+            Add Room Type
+          </button>
+          <button onClick={() => { setEditingRoomUnit(null); setShowRoomUnitModal(true); }} className="px-3 py-2 rounded-lg text-[12px] flex items-center gap-2" style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}>
+            <Plus size={13} />
+            Add Room Unit
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-xl px-4 py-3 text-[13px]" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SectionCard title="Room Types">
+          <p className="text-[24px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {inventory?.roomTypes.length ?? 0}
+          </p>
+        </SectionCard>
+        <SectionCard title="Physical Units">
+          <p className="text-[24px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {inventory?.roomUnits.length ?? 0}
+          </p>
+        </SectionCard>
+        <SectionCard title="Occupied Tonight">
+          <p className="text-[24px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {occupiedUnitIds.size}
+          </p>
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Room Type Catalog">
+        {(inventory?.roomTypes.length ?? 0) === 0 ? (
+          <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            No room types configured yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {(inventory?.roomTypes ?? []).map((roomType) => (
+              <div key={roomType.id} className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                      {roomType.name}
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      {roomType.currency} {roomType.basePrice ?? "—"} • {roomType.maxGuests ?? "—"} max guests
+                    </p>
+                    {roomType.description && (
+                      <p className="text-[11px] mt-2" style={{ color: "var(--text-tertiary)" }}>
+                        {roomType.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => { setEditingRoomType(roomType); setShowRoomTypeModal(true); }} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
+                      <Edit3 size={13} style={{ color: "var(--text-secondary)" }} />
+                    </button>
+                    <button onClick={() => void handleDeleteRoomType(roomType)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                      <Trash2 size={13} style={{ color: "#f87171" }} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-4">
+                  <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {roomType.totalUnits ?? roomType.roomUnits?.length ?? 0} units
+                  </span>
+                  <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {roomType.size ? `${roomType.size} ${roomType.sizeUnit ?? ""}`.trim() : "Size not set"}
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
 
-      {/* Table */}
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}
-      >
-        {/* Table header */}
-        <div
-          className="grid text-[11px] uppercase tracking-wider px-5 py-3"
-          style={{
-            gridTemplateColumns: "32px 100px 1fr 120px 130px 110px 110px 80px 80px",
-            borderBottom: "1px solid var(--border-light)",
-            color: "var(--text-tertiary)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <div>
-            <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0}
-              onChange={toggleAll} className="w-3.5 h-3.5 rounded" />
+      <SectionCard title="Room Units">
+        <div className="flex items-center gap-3 flex-wrap mb-4">
+          <div className="relative flex-1 min-w-[240px]">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search room number, name, or room type"
+              className="w-full pl-9 pr-3 py-2 rounded-lg text-[13px]"
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+            />
           </div>
-          <div>Unit ID</div>
-          <div>Room Type</div>
-          <div>Status</div>
-          <div>Occupancy</div>
-          <div>Cleaning</div>
-          <div>Maintenance</div>
-          <div>Rate</div>
-          <div>Actions</div>
+          <select value={roomTypeFilter} onChange={(event) => setRoomTypeFilter(event.target.value)} className="px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}>
+            <option value="all">All room types</option>
+            {(inventory?.roomTypes ?? []).map((roomType) => (
+              <option key={roomType.id} value={roomType.id}>
+                {roomType.name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Rows */}
-        <div className="divide-y" style={{ borderColor: "var(--border-light)" }}>
-          {filtered.map((unit) => {
-            const statusCfg = STATUS_CONFIG[unit.status];
-            const cleaningCfg = CLEANING_CONFIG[unit.cleaning];
-            const maintCfg = MAINTENANCE_CONFIG[unit.maintenance];
-            const isSelected = selected.includes(unit.id);
-
-            return (
-              <div
-                key={unit.id}
-                className="grid items-center px-5 py-3 transition-all"
-                style={{
-                  gridTemplateColumns: "32px 100px 1fr 120px 130px 110px 110px 80px 80px",
-                  background: isSelected ? "rgba(59,130,246,0.04)" : "transparent",
-                }}
-                onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)"; }}
-                onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-              >
-                <div>
-                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(unit.id)} className="w-3.5 h-3.5 rounded" />
-                </div>
-
-                {/* Unit ID */}
-                <div>
-                  <span
-                    className="text-[12px] px-2 py-0.5 rounded font-mono"
-                    style={{ background: `${unit.typeColor}15`, color: unit.typeColor, border: `1px solid ${unit.typeColor}25` }}
-                  >
-                    {unit.unitId}
-                  </span>
-                </div>
-
-                {/* Room type + guest */}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: unit.typeColor }} />
-                    <span className="text-[13px]" style={{ color: "var(--text-primary)" }}>{unit.roomType}</span>
-                  </div>
-                  {unit.guest && (
-                    <p className="text-[11px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                      {unit.guest} · out {unit.checkOut}
-                    </p>
-                  )}
-                </div>
-
-                {/* Status */}
-                <div>
-                  <span
-                    className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full"
-                    style={{ background: statusCfg.bg, color: statusCfg.text }}
-                  >
-                    <statusCfg.icon size={10} />
-                    {statusCfg.label}
-                  </span>
-                </div>
-
-                {/* Occupancy */}
-                <div className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                  {unit.occupancy}
-                </div>
-
-                {/* Cleaning */}
-                <div>
-                  <span className="text-[11px]" style={{ color: cleaningCfg.color }}>
-                    ● {cleaningCfg.label}
-                  </span>
-                </div>
-
-                {/* Maintenance */}
-                <div>
-                  <span className="text-[11px]" style={{ color: maintCfg.color }}>
-                    {unit.maintenance === "ok" ? "✓" : "⚠"} {maintCfg.label}
-                  </span>
-                </div>
-
-                {/* Rate */}
-                <div className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                  ${unit.basePrice}
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1">
-                  <button
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ background: "var(--bg-panel)", color: "var(--text-tertiary)" }}
-                  >
-                    <Edit3 size={12} />
-                  </button>
-                  <button
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ background: "var(--bg-panel)", color: "var(--text-tertiary)" }}
-                  >
-                    <MoreHorizontal size={12} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {filtered.length === 0 && (
-          <div className="py-12 flex flex-col items-center gap-2">
-            <AlertCircle size={24} style={{ color: "var(--text-tertiary)" }} />
-            <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>No units match your filters</p>
+        {filteredUnits.length === 0 ? (
+          <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            No room units match the current filters.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px]">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
+                  {["Room", "Type", "Floor", "Status", "Guests", "Actions"].map((label) => (
+                    <th key={label} className="px-3 py-3 text-left text-[11px]" style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUnits.map((roomUnit) => {
+                  const roomType = roomTypeByUnitId.get(roomUnit.id);
+                  const derivedStatus = occupiedUnitIds.has(roomUnit.id) ? "occupied" : roomUnit.status;
+                  return (
+                    <tr key={roomUnit.id} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                      <td className="px-3 py-3">
+                        <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                          {roomUnit.roomNumber}
+                        </p>
+                        {roomUnit.roomName && (
+                          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                            {roomUnit.roomName}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                        {roomType?.name ?? "Unknown"}
+                      </td>
+                      <td className="px-3 py-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                        {roomUnit.floor || "—"}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="px-2 py-1 rounded-full text-[11px]" style={{ background: derivedStatus === "occupied" ? "rgba(59,130,246,0.12)" : "var(--input-background)", color: derivedStatus === "occupied" ? "#60a5fa" : "var(--text-secondary)", border: "1px solid var(--border-light)" }}>
+                          {derivedStatus}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                        {occupiedUnitIds.has(roomUnit.id) ? "Occupied tonight" : "Available for assignment"}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => { setEditingRoomUnit(roomUnit); setShowRoomUnitModal(true); }} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
+                            <Edit3 size={13} style={{ color: "var(--text-secondary)" }} />
+                          </button>
+                          <button onClick={() => void handleDeleteRoomUnit(roomUnit)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                            <Trash2 size={13} style={{ color: "#f87171" }} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      </div>
+      </SectionCard>
 
-      {showAddModal && <AddRoomTypeModal onClose={() => setShowAddModal(false)} />}
+      {showRoomTypeModal && (
+        <RoomTypeModal
+          roomType={editingRoomType}
+          onClose={() => { setShowRoomTypeModal(false); setEditingRoomType(null); }}
+          onSubmit={(payload) => void handleRoomTypeSubmit(payload)}
+          submitting={saving}
+        />
+      )}
+
+      {showRoomUnitModal && (
+        <RoomUnitModal
+          roomTypes={inventory?.roomTypes ?? []}
+          roomUnit={editingRoomUnit}
+          onClose={() => { setShowRoomUnitModal(false); setEditingRoomUnit(null); }}
+          onSubmit={(payload) => void handleRoomUnitSubmit(payload)}
+          submitting={saving}
+        />
+      )}
     </div>
+  );
+}
+
+export function RoomInventory() {
+  return (
+    <StayHotelPropertyGate loadingFallback={<DashboardSkeleton />}>
+      <RoomInventoryContent />
+    </StayHotelPropertyGate>
   );
 }

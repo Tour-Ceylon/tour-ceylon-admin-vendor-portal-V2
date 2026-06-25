@@ -72,6 +72,15 @@ interface UiUser {
   raw: ApiUser;
 }
 
+interface UserSearchRequest {
+  email?: string;
+  role?: Exclude<UserRole, "tourist"> | UserRole;
+  is_active?: boolean;
+  vendor_status?: string;
+  page: number;
+  per_page: number;
+}
+
 const STATUS_CONFIG: Record<UserStatus, { bg: string; text: string; dot: string }> = {
   active: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80", dot: "#22c55e" },
   pending: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", dot: "#f59e0b" },
@@ -159,11 +168,35 @@ export function UserManagementPage() {
 
   const { handleExport } = useCommonActions();
 
-  const loadUsers = async () => {
+  const loadUsers = async (searchValue: string, roleFilter: FilterRole) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiFetch<UserListResponse>("/users/?skip=0&limit=100");
+      const payload: UserSearchRequest = {
+        page: 1,
+        per_page: 100,
+      };
+
+      const trimmedSearch = searchValue.trim();
+      if (trimmedSearch) {
+        payload.email = trimmedSearch;
+      }
+
+      if (roleFilter === "tourist" || roleFilter === "vendor" || roleFilter === "admin" || roleFilter === "support") {
+        payload.role = roleFilter;
+      }
+      if (roleFilter === "vendor_applicants") {
+        payload.role = "vendor";
+        payload.vendor_status = "pending";
+      }
+      if (roleFilter === "suspended") {
+        payload.is_active = false;
+      }
+
+      const response = await apiFetch<UserListResponse>("/users/search", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       setUsers(response.users.map(mapUser));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load real users.");
@@ -173,8 +206,12 @@ export function UserManagementPage() {
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    const timeoutId = window.setTimeout(() => {
+      void loadUsers(search, filterRole);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [filterRole, search]);
 
   const stats = useMemo(
     () => ({
@@ -241,7 +278,7 @@ export function UserManagementPage() {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      await loadUsers();
+      await loadUsers(search, filterRole);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update user.");
     } finally {
