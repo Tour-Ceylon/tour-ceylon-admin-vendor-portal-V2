@@ -4,6 +4,7 @@ import { ProtectedLayout } from "./layouts/ProtectedLayout";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { VendorRegistration } from "./components/auth/VendorRegistration";
 import { PendingApprovalScreen } from "./components/auth/PendingApprovalScreen";
+import { AuthenticateWithRedirectCallback } from "@clerk/clerk-react";
 import { Dashboard } from "./components/Dashboard";
 import { BookingsPage } from "./components/bookings/BookingsPage";
 import { UserManagementPage } from "./components/users/UserManagementPage";
@@ -70,6 +71,7 @@ export const router = createBrowserRouter([
       { path: "login", Component: LoginScreen },
       { path: "register", Component: VendorRegistration },
       { path: "pending", Component: PendingApprovalScreen },
+      { path: "sso-callback", Component: AuthenticateWithRedirectCallback },
 
       // Protected routes
       {

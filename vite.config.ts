@@ -33,4 +33,17 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  server: {
+    proxy: {
+      // Forward /api/* from localhost:5173 → EC2 backend
+      // Browser sees same-origin requests (no CORS), Vite handles forwarding
+      '/api': {
+        target: 'http://13.212.151.179:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 })
+
