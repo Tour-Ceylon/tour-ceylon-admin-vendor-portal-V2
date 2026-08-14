@@ -4,6 +4,7 @@ import { ProtectedLayout } from "./layouts/ProtectedLayout";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { VendorRegistration } from "./components/auth/VendorRegistration";
 import { PendingApprovalScreen } from "./components/auth/PendingApprovalScreen";
+import { AuthenticateWithRedirectCallback } from "@clerk/clerk-react";
 import { Dashboard } from "./components/Dashboard";
 import { BookingsPage } from "./components/bookings/BookingsPage";
 import { UserManagementPage } from "./components/users/UserManagementPage";
@@ -21,6 +22,7 @@ import { Reservations } from "./components/hotel/Reservations";
 import { SeasonalPricing } from "./components/hotel/SeasonalPricing";
 import { PropertySettings } from "./components/hotel/PropertySettings";
 import { Policies } from "./components/hotel/Policies";
+import { HotelOperationsLayout } from "./components/hotel/HotelOperationsLayout";
 import { FinanceDashboard } from "./components/finance/FinanceDashboard";
 import { PaymentsPage } from "./components/finance/PaymentsPage";
 import { PayoutsPage } from "./components/finance/PayoutsPage";
@@ -69,6 +71,7 @@ export const router = createBrowserRouter([
       { path: "login", Component: LoginScreen },
       { path: "register", Component: VendorRegistration },
       { path: "pending", Component: PendingApprovalScreen },
+      { path: "sso-callback", Component: AuthenticateWithRedirectCallback },
 
       // Protected routes
       {
@@ -115,13 +118,19 @@ export const router = createBrowserRouter([
           { path: "pricing", Component: PricingManagement },
 
           // Hotel Operations (Stay vendors)
-          { path: "hotel/dashboard", Component: HotelDashboard },
-          { path: "hotel/availability", Component: AvailabilityCalendar },
-          { path: "hotel/rooms", Component: RoomInventory },
-          { path: "hotel/reservations", Component: Reservations },
-          { path: "hotel/pricing", Component: SeasonalPricing },
-          { path: "hotel/settings", Component: PropertySettings },
-          { path: "hotel/policies", Component: Policies },
+          {
+            path: "hotel",
+            Component: HotelOperationsLayout,
+            children: [
+              { path: "dashboard", Component: HotelDashboard },
+              { path: "availability", Component: AvailabilityCalendar },
+              { path: "rooms", Component: RoomInventory },
+              { path: "reservations", Component: Reservations },
+              { path: "pricing", Component: SeasonalPricing },
+              { path: "settings", Component: PropertySettings },
+              { path: "policies", Component: Policies },
+            ],
+          },
 
           // Finance Module (Admin only)
           { path: "finance", Component: FinanceDashboard },

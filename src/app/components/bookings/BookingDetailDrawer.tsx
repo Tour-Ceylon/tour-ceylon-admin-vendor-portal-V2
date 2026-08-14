@@ -22,6 +22,8 @@ import {
   Wallet,
   Navigation,
   Luggage,
+  Loader2,
+  Globe,
 } from "lucide-react";
 
 interface Customer {
@@ -52,6 +54,10 @@ interface Booking {
 interface BookingDetailDrawerProps {
   booking: Booking;
   onClose: () => void;
+  /** Called when admin selects a new inquiry status */
+  onStatusUpdate?: (status: string) => void;
+  /** True while a status update API call is in flight */
+  isUpdating?: boolean;
 }
 
 // Timeline data
@@ -112,7 +118,7 @@ const TRANSPORT_DETAILS = {
   route: "Southern Expressway (E01)",
 };
 
-export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerProps) {
+export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating }: BookingDetailDrawerProps) {
   const isTransport = booking.type === "Transfer";
 
   return (
@@ -195,7 +201,9 @@ export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerPro
           {/* Quick Actions */}
           <div className="grid grid-cols-2 gap-3">
             <button
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all"
+              onClick={() => onStatusUpdate?.("quoted")}
+              disabled={isUpdating}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
                 background: "rgba(34, 197, 94, 0.1)",
                 color: "#4ade80",
@@ -203,11 +211,13 @@ export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerPro
                 fontWeight: 500,
               }}
             >
-              <CheckCircle size={14} />
-              Confirm Booking
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              Send Quote
             </button>
             <button
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all"
+              onClick={() => onStatusUpdate?.("cancelled")}
+              disabled={isUpdating}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
                 background: "rgba(239, 68, 68, 0.1)",
                 color: "#f87171",
@@ -215,11 +225,13 @@ export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerPro
                 fontWeight: 500,
               }}
             >
-              <XCircle size={14} />
-              Cancel Booking
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              Cancel
             </button>
             <button
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all"
+              onClick={() => onStatusUpdate?.("contacted")}
+              disabled={isUpdating}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
                 background: "var(--active-overlay)",
                 color: "var(--accent-navy-light)",
@@ -227,11 +239,13 @@ export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerPro
                 fontWeight: 500,
               }}
             >
-              <Send size={14} />
-              Contact Customer
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              Contacted Customer
             </button>
             <button
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all"
+              onClick={() => onStatusUpdate?.("converted_to_booking")}
+              disabled={isUpdating}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
                 background: "var(--input-background)",
                 color: "var(--text-secondary)",
@@ -239,8 +253,8 @@ export function BookingDetailDrawer({ booking, onClose }: BookingDetailDrawerPro
                 fontWeight: 500,
               }}
             >
-              <MessageSquare size={14} />
-              Contact Vendor
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+              Mark Converted
             </button>
           </div>
 

@@ -1,656 +1,961 @@
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
+  BedDouble,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
-  X,
   Lock,
-  Unlock,
-  DollarSign,
-  BedDouble,
-  Users,
-  CalendarDays,
-  AlertCircle,
-  CheckCircle,
-  Wrench,
-  Edit3,
   Plus,
+  RefreshCw,
+  Unlock,
+  X,
 } from "lucide-react";
+import {
+  createRoomBlock,
+  getStayCalendar,
+  getStayInventory,
+  listStayBookings,
+  listStayRoomBlocks,
+  releaseRoomBlock,
+  type StayBookingResponse,
+  type StayCalendarEntry,
+  type StayInventoryResponse,
+  type StayRoomBlockResponse,
+  type StayRoomUnit,
+} from "../api/stayVendorApi";
+import { EmptyState } from "../common/EmptyState";
+import { DashboardSkeleton } from "../common/SkeletonLoader";
+import { StayHotelPropertyGate, StayHotelPropertySwitcher, useStayHotel } from "./StayHotelContext";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type CellStatus = "available" | "low" | "sold-out" | "blocked";
+type RoomUnitAvailabilityStatus = "available" | "blocked" | "booked";
 
-type CellStatus = "available" | "low" | "sold-out" | "blocked" | "maintenance";
-
-interface DayCell {
-  price: number;
-  available: number;
-  booked: number;
-  blocked: boolean;
-  maintenance: boolean;
-  minStay?: number;
-}
-
-interface RoomType {
+interface RoomUnitStatusEntry {
   id: string;
-  name: string;
-  total: number;
-  color: string;
+  roomNumber: string;
+  roomName?: string | null;
+  status: RoomUnitAvailabilityStatus;
+  detail: string;
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
+function formatIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
 
-const ROOM_TYPES: RoomType[] = [
-  { id: "deluxe", name: "Deluxe Room", total: 10, color: "#3b82f6" },
-  { id: "villa", name: "Ocean Villa", total: 3, color: "#10b981" },
-  { id: "suite", name: "Suite", total: 5, color: "#8b5cf6" },
-  { id: "standard", name: "Standard Room", total: 15, color: "#f59e0b" },
-  { id: "family", name: "Family Room", total: 6, color: "#ec4899" },
-];
-
-function generateMonthData(year: number, month: number): Record<string, Record<string, DayCell>> {
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const data: Record<string, Record<string, DayCell>> = {};
-
-  ROOM_TYPES.forEach((rt) => {
-    data[rt.id] = {};
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const rand = Math.random();
-      const booked = Math.floor(Math.random() * (rt.total + 1));
-      const blocked = rand > 0.92;
-      const maintenance = rand > 0.96 && !blocked;
-      const available = blocked || maintenance ? 0 : Math.max(0, rt.total - booked);
-      const basePrices: Record<string, number> = {
-        deluxe: 120,
-        villa: 380,
-        suite: 280,
-        standard: 75,
-        family: 165,
-      };
-      const weekend = new Date(year, month, d).getDay() % 6 === 0;
-      data[rt.id][dateKey] = {
-        price: Math.round(basePrices[rt.id] * (weekend ? 1.25 : 1) * (0.9 + Math.random() * 0.3)),
-        available,
-        booked: blocked || maintenance ? 0 : booked,
-        blocked,
-        maintenance,
-        minStay: Math.random() > 0.8 ? 2 : 1,
-      };
-    }
+function formatDisplayDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
-
-  return data;
 }
 
-// ─── Cell Component ───────────────────────────────────────────────────────────
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
 
-function getCellStatus(cell: DayCell, total: number): CellStatus {
-  if (cell.maintenance) return "maintenance";
-  if (cell.blocked) return "blocked";
-  if (cell.available === 0) return "sold-out";
-  if (cell.available <= Math.ceil(total * 0.2)) return "low";
+function endOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function getMonthDays(date: Date) {
+  const first = startOfMonth(date);
+  const last = endOfMonth(date);
+  const days: Array<Date | null> = [];
+  for (let index = 0; index < first.getDay(); index += 1) {
+    days.push(null);
+  }
+  for (let day = 1; day <= last.getDate(); day += 1) {
+    days.push(new Date(date.getFullYear(), date.getMonth(), day));
+  }
+  return days;
+}
+
+function enumerateDates(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  while (current <= end) {
+    dates.push(formatIsoDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+function exclusiveEndDateToInclusive(endDate: string) {
+  const end = new Date(`${endDate}T00:00:00`);
+  end.setDate(end.getDate() - 1);
+  return formatIsoDate(end);
+}
+
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return formatIsoDate(date);
+}
+
+function datesOverlap(startA: string, endAExclusive: string, startB: string, endBExclusive: string) {
+  return startA < endBExclusive && endAExclusive > startB;
+}
+
+function statusFromEntry(entry: StayCalendarEntry): CellStatus {
+  if (entry.totalUnits > 0 && entry.blockedUnits >= entry.totalUnits) return "blocked";
+  if (entry.availableUnits === 0) return "sold-out";
+  if (entry.totalUnits > 0 && entry.availableUnits / entry.totalUnits <= 0.2) return "low";
   return "available";
 }
 
-const STATUS_STYLES: Record<CellStatus, { bg: string; border: string; text: string; sub: string }> = {
-  available:    { bg: "rgba(59,130,246,0.08)",  border: "rgba(59,130,246,0.2)",  text: "#93c5fd", sub: "#60a5fa" },
-  low:          { bg: "rgba(249,115,22,0.1)",   border: "rgba(249,115,22,0.25)", text: "#fb923c", sub: "#f97316" },
-  "sold-out":   { bg: "rgba(239,68,68,0.1)",    border: "rgba(239,68,68,0.25)",  text: "#f87171", sub: "#ef4444" },
-  blocked:      { bg: "rgba(100,116,139,0.08)", border: "rgba(100,116,139,0.15)",text: "#94a3b8", sub: "#64748b" },
-  maintenance:  { bg: "rgba(251,191,36,0.08)",  border: "rgba(251,191,36,0.2)",  text: "#fbbf24", sub: "#f59e0b" },
+const STATUS_STYLES: Record<CellStatus, { bg: string; border: string; text: string }> = {
+  available: { bg: "rgba(34,197,94,0.08)", border: "rgba(34,197,94,0.2)", text: "#4ade80" },
+  low: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.25)", text: "#fbbf24" },
+  "sold-out": { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.25)", text: "#f87171" },
+  blocked: { bg: "rgba(100,116,139,0.1)", border: "rgba(100,116,139,0.25)", text: "#94a3b8" },
 };
 
-// ─── Date Side Panel ──────────────────────────────────────────────────────────
-
-interface DatePanelProps {
-  date: string;
-  roomType: RoomType;
-  cell: DayCell;
+function BlockModal({
+  roomUnits,
+  getRoomUnitStatusForRange,
+  initialDate,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  roomUnits: StayRoomUnit[];
+  getRoomUnitStatusForRange: (roomUnit: StayRoomUnit, startDate: string, endDateInclusive: string) => RoomUnitStatusEntry;
+  initialDate: string;
   onClose: () => void;
-  onUpdate: (date: string, rtId: string, updates: Partial<DayCell>) => void;
-}
+  onSubmit: (payload: { roomUnitId: string; startDate: string; endDate: string; reason: string; blockType: string }) => void;
+  submitting: boolean;
+}) {
+  const [roomUnitId, setRoomUnitId] = useState("");
+  const [startDate, setStartDate] = useState(initialDate);
+  const [endDate, setEndDate] = useState(initialDate);
+  const [reason, setReason] = useState("");
+  const [blockType, setBlockType] = useState("manual");
 
-function DatePanel({ date, roomType, cell, onClose, onUpdate }: DatePanelProps) {
-  const [price, setPrice] = useState(cell.price.toString());
-  const [available, setAvailable] = useState(cell.available.toString());
-  const [minStay, setMinStay] = useState((cell.minStay ?? 1).toString());
-  const status = getCellStatus(cell, roomType.total);
-
-  const d = new Date(date);
-  const formatted = d.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const occupancy = roomType.total > 0 ? Math.round((cell.booked / roomType.total) * 100) : 0;
-
-  const handleSave = () => {
-    onUpdate(date, roomType.id, {
-      price: parseInt(price) || cell.price,
-      available: parseInt(available) ?? cell.available,
-      minStay: parseInt(minStay) || 1,
-    });
-    onClose();
-  };
-
-  return (
-    <div
-      className="fixed right-0 top-0 h-full w-[340px] flex flex-col z-50 shadow-2xl"
-      style={{
-        background: "var(--bg-panel)",
-        borderLeft: "1px solid var(--border-light)",
-        boxShadow: "-8px 0 32px rgba(0,0,0,0.4)",
-      }}
-    >
-      {/* Header */}
-      <div className="px-5 py-4 flex items-start justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
-        <div>
-          <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--accent-navy)" }}>
-            {roomType.name}
-          </p>
-          <p className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-            {formatted}
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-          style={{ background: "var(--bg-card)", color: "var(--text-tertiary)" }}
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      {/* Status badge */}
-      <div className="px-5 py-3" style={{ borderBottom: "1px solid var(--border-light)" }}>
-        <span
-          className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full"
-          style={{
-            background: STATUS_STYLES[status].bg,
-            border: `1px solid ${STATUS_STYLES[status].border}`,
-            color: STATUS_STYLES[status].text,
-          }}
-        >
-          {status === "available" && <CheckCircle size={11} />}
-          {status === "low" && <AlertCircle size={11} />}
-          {status === "sold-out" && <BedDouble size={11} />}
-          {status === "blocked" && <Lock size={11} />}
-          {status === "maintenance" && <Wrench size={11} />}
-          {status.replace("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-        </span>
-      </div>
-
-      {/* Stats */}
-      <div className="p-5 grid grid-cols-2 gap-3">
-        {[
-          { label: "Available", value: cell.available, icon: BedDouble, color: "#3b82f6" },
-          { label: "Booked", value: cell.booked, icon: Users, color: "#10b981" },
-          { label: "Occupancy", value: `${occupancy}%`, icon: CalendarDays, color: "#8b5cf6" },
-          { label: "Nightly Rate", value: `$${cell.price}`, icon: DollarSign, color: "#f59e0b" },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="rounded-lg p-3"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}
-          >
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <s.icon size={12} style={{ color: s.color }} />
-              <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{s.label}</span>
-            </div>
-            <p className="text-[18px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Edit fields */}
-      <div className="px-5 space-y-3 flex-1">
-        <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
-          Quick Update
-        </p>
-
-        {[
-          { label: "Nightly Price ($)", value: price, set: setPrice, prefix: "$" },
-          { label: "Available Rooms", value: available, set: setAvailable, prefix: "" },
-          { label: "Min. Stay (nights)", value: minStay, set: setMinStay, prefix: "" },
-        ].map((f) => (
-          <div key={f.label}>
-            <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>
-              {f.label}
-            </label>
-            <input
-              type="number"
-              value={f.value}
-              onChange={(e) => f.set(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-[13px] outline-none transition-all"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--accent-navy)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border-light)")}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Actions */}
-      <div className="p-5 space-y-2" style={{ borderTop: "1px solid var(--border-light)" }}>
-        <button
-          onClick={handleSave}
-          className="w-full py-2.5 rounded-lg text-[13px] transition-all"
-          style={{
-            background: "var(--accent-navy)",
-            color: "white",
-            fontWeight: 600,
-            boxShadow: "0 0 12px var(--border-accent)",
-          }}
-        >
-          Save Changes
-        </button>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => { onUpdate(date, roomType.id, { blocked: !cell.blocked }); onClose(); }}
-            className="py-2 rounded-lg text-[12px] flex items-center justify-center gap-1.5 transition-all"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            {cell.blocked ? <Unlock size={12} /> : <Lock size={12} />}
-            {cell.blocked ? "Unblock" : "Block"}
-          </button>
-          <button
-            onClick={() => { onUpdate(date, roomType.id, { maintenance: !cell.maintenance }); onClose(); }}
-            className="py-2 rounded-lg text-[12px] flex items-center justify-center gap-1.5 transition-all"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            <Wrench size={12} />
-            {cell.maintenance ? "Clear Maint." : "Maintenance"}
-          </button>
-        </div>
-      </div>
-    </div>
+  const roomUnitOptions = useMemo(
+    () =>
+      roomUnits
+        .map((roomUnit) => getRoomUnitStatusForRange(roomUnit, startDate, endDate))
+        .filter((entry) => entry.status === "available"),
+    [endDate, getRoomUnitStatusForRange, roomUnits, startDate],
   );
-}
 
-// ─── Bulk Update Modal ─────────────────────────────────────────────────────────
-
-function BulkModal({ onClose, onApply }: { onClose: () => void; onApply: (data: any) => void }) {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [price, setPrice] = useState("");
-  const [rooms, setRooms] = useState("");
-  const [action, setAction] = useState<"price" | "block" | "open">("price");
+  useEffect(() => {
+    if (roomUnitOptions.length === 0) {
+      setRoomUnitId("");
+      return;
+    }
+    if (!roomUnitOptions.some((entry) => entry.id === roomUnitId)) {
+      setRoomUnitId(roomUnitOptions[0]?.id ?? "");
+    }
+  }, [roomUnitId, roomUnitOptions]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.65)" }}>
       <div
-        className="w-[400px] rounded-2xl p-6"
-        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
+        className="w-full max-w-md rounded-2xl p-6"
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-lg)" }}
       >
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-[15px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>Bulk Update</h3>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--bg-card)", color: "var(--text-tertiary)" }}>
-            <X size={14} />
+          <div>
+            <h3 className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+              Create Room Block
+            </h3>
+            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Blocks apply to one room unit across a date range.
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--input-background)" }}>
+            <X size={14} style={{ color: "var(--text-secondary)" }} />
           </button>
-        </div>
-
-        {/* Action selector */}
-        <div className="flex gap-2 mb-5">
-          {(["price", "block", "open"] as const).map((a) => (
-            <button
-              key={a}
-              onClick={() => setAction(a)}
-              className="flex-1 py-2 rounded-lg text-[12px] capitalize transition-all"
-              style={{
-                background: action === a ? "var(--accent-navy)" : "var(--bg-card)",
-                color: action === a ? "white" : "var(--text-secondary)",
-                border: `1px solid ${action === a ? "transparent" : "var(--border-light)"}`,
-                fontWeight: action === a ? 600 : 400,
-              }}
-            >
-              {a === "block" ? "Block Dates" : a === "open" ? "Open Dates" : "Set Price"}
-            </button>
-          ))}
         </div>
 
         <div className="space-y-3">
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
+              Room unit
+            </label>
+            <select
+              value={roomUnitId}
+              onChange={(event) => setRoomUnitId(event.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-[13px]"
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+            >
+              {roomUnitOptions.map((roomUnit) => (
+                <option key={roomUnit.id} value={roomUnit.id}>
+                  {roomUnit.roomNumber}
+                  {roomUnit.roomName ? ` • ${roomUnit.roomName}` : ""}
+                </option>
+              ))}
+            </select>
+            {roomUnitOptions.length === 0 && (
+              <p className="text-[11px] mt-2" style={{ color: "#f87171" }}>
+                No room units are available for the selected date range.
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Start Date</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+              <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
+                Start date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => {
+                  setStartDate(event.target.value);
+                  if (event.target.value > endDate) setEndDate(event.target.value);
+                }}
+                className="w-full px-3 py-2 rounded-lg text-[13px]"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+              />
             </div>
             <div>
-              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>End Date</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+              <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
+                End date
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                min={startDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-[13px]"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+              />
             </div>
           </div>
-          {action === "price" && (
-            <>
-              <div>
-                <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Nightly Price ($)</label>
-                <input type="number" placeholder="e.g. 180" value={price} onChange={(e) => setPrice(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
-              </div>
-              <div>
-                <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Available Rooms</label>
-                <input type="number" placeholder="e.g. 3" value={rooms} onChange={(e) => setRooms(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-[12px] outline-none"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
-              </div>
-            </>
-          )}
+
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
+              Block type
+            </label>
+            <select
+              value={blockType}
+              onChange={(event) => setBlockType(event.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-[13px]"
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+            >
+              <option value="manual">Manual</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
+              Reason
+            </label>
+            <textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg text-[13px]"
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+              placeholder="Optional note for maintenance, owner hold, or manual closure"
+            />
+          </div>
         </div>
 
-        <button
-          onClick={() => { onApply({ startDate, endDate, price, rooms, action }); onClose(); }}
-          className="w-full mt-5 py-2.5 rounded-lg text-[13px]"
-          style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 12px var(--border-accent)" }}
-        >
-          Apply to All Room Types
-        </button>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-[13px]"
+            style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+          >
+            Cancel
+          </button>
+          <button
+            disabled={submitting || !roomUnitId || !startDate || !endDate || roomUnitOptions.length === 0}
+            onClick={() => onSubmit({ roomUnitId, startDate, endDate, reason, blockType })}
+            className="px-4 py-2 rounded-lg text-[13px] disabled:opacity-50"
+            style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
+          >
+            {submitting ? "Blocking..." : "Create Block"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Main Calendar ─────────────────────────────────────────────────────────────
+function AvailabilityCalendarContent() {
+  const { selectedProperty } = useStayHotel();
+  const [inventory, setInventory] = useState<StayInventoryResponse | null>(null);
+  const [roomTypeId, setRoomTypeId] = useState<string>("");
+  const [monthDate, setMonthDate] = useState(() => new Date());
+  const [calendarEntries, setCalendarEntries] = useState<StayCalendarEntry[]>([]);
+  const [bookings, setBookings] = useState<StayBookingResponse[]>([]);
+  const [roomBlocks, setRoomBlocks] = useState<StayRoomBlockResponse[]>([]);
+  const [loadingInventory, setLoadingInventory] = useState(true);
+  const [loadingCalendar, setLoadingCalendar] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [submittingBlock, setSubmittingBlock] = useState(false);
 
-export function AvailabilityCalendar() {
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
-  const [calData, setCalData] = useState(() => generateMonthData(year, month));
-  const [selectedCell, setSelectedCell] = useState<{ date: string; rtId: string } | null>(null);
-  const [showBulk, setShowBulk] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selectedProperty) return;
+    let cancelled = false;
 
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const DAYS = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
-  const monthName = new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-
-  const navigateMonth = (dir: -1 | 1) => {
-    let m = month + dir;
-    let y = year;
-    if (m < 0) { m = 11; y--; }
-    if (m > 11) { m = 0; y++; }
-    setMonth(m);
-    setYear(y);
-    setCalData(generateMonthData(y, m));
-    setSelectedCell(null);
-  };
-
-  const handleCellClick = (date: string, rtId: string) => {
-    if (selectedCell?.date === date && selectedCell?.rtId === rtId) {
-      setSelectedCell(null);
-    } else {
-      setSelectedCell({ date, rtId });
+    async function loadInventory() {
+      setLoadingInventory(true);
+      setError(null);
+      try {
+        const [response, bookingsResponse] = await Promise.all([
+          getStayInventory(selectedProperty.id),
+          listStayBookings(selectedProperty.id),
+        ]);
+        if (cancelled) return;
+        setInventory(response);
+        setBookings(bookingsResponse.bookings || []);
+        const defaultRoomType = response.roomTypes[0]?.id ?? "";
+        setRoomTypeId((current) => {
+          if (current && response.roomTypes.some((roomType) => roomType.id === current)) return current;
+          return defaultRoomType;
+        });
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err?.message || "Unable to load stay inventory.");
+      } finally {
+        if (!cancelled) setLoadingInventory(false);
+      }
     }
+
+    void loadInventory();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProperty?.id]);
+
+  useEffect(() => {
+    if (!selectedProperty || !roomTypeId) {
+      setRoomBlocks([]);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadRoomBlocks() {
+      try {
+        const response = await listStayRoomBlocks(selectedProperty.id, { roomTypeId });
+        if (cancelled) return;
+        setRoomBlocks(response.blocks || []);
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err?.message || "Unable to load room blocks.");
+      }
+    }
+
+    void loadRoomBlocks();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProperty?.id, roomTypeId, monthDate]);
+
+  useEffect(() => {
+    if (!selectedProperty || !roomTypeId) {
+      setCalendarEntries([]);
+      setLoadingCalendar(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadCalendar() {
+      setLoadingCalendar(true);
+      setError(null);
+      try {
+        const response = await getStayCalendar(
+          selectedProperty.id,
+          formatIsoDate(startOfMonth(monthDate)),
+          formatIsoDate(endOfMonth(monthDate)),
+          roomTypeId,
+        );
+        if (cancelled) return;
+        setCalendarEntries(response.entries || []);
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err?.message || "Unable to load room-type availability.");
+      } finally {
+        if (!cancelled) setLoadingCalendar(false);
+      }
+    }
+
+    void loadCalendar();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProperty?.id, roomTypeId, monthDate]);
+
+  const roomType = useMemo(
+    () => inventory?.roomTypes.find((entry) => entry.id === roomTypeId) ?? null,
+    [inventory, roomTypeId],
+  );
+
+  const roomUnitsForType = useMemo(
+    () => inventory?.roomUnits.filter((roomUnit) => roomType?.roomUnits?.some((entry) => entry.id === roomUnit.id)) ?? [],
+    [inventory, roomType],
+  );
+
+  const entryByDate = useMemo(() => {
+    const map = new Map<string, StayCalendarEntry>();
+    for (const entry of calendarEntries) {
+      map.set(entry.date, entry);
+    }
+    return map;
+  }, [calendarEntries]);
+
+  const selectedEntry = selectedDate ? entryByDate.get(selectedDate) ?? null : null;
+
+  const activeRoomBlocks = useMemo(
+    () => roomBlocks.filter((block) => block.status.toLowerCase() === "active"),
+    [roomBlocks],
+  );
+
+  const overlappingSelectedBlocks = useMemo(() => {
+    if (!selectedDate) return [];
+    return activeRoomBlocks.filter((block) => block.startDate <= selectedDate && block.endDate > selectedDate);
+  }, [activeRoomBlocks, selectedDate]);
+
+  const bookingRoomOverlaps = useMemo(() => {
+    const overlaps = new Map<string, StayBookingResponse["rooms"][number]>();
+    if (!selectedDate) return overlaps;
+    const selectedDateExclusive = addDays(selectedDate, 1);
+    for (const booking of bookings) {
+      for (const room of booking.rooms) {
+        if (room.roomTypeId !== roomTypeId) continue;
+        if (datesOverlap(room.checkInDate, room.checkOutDate, selectedDate, selectedDateExclusive)) {
+          overlaps.set(room.roomUnitId, room);
+        }
+      }
+    }
+    return overlaps;
+  }, [bookings, roomTypeId, selectedDate]);
+
+  const getRoomUnitStatusForRange = useMemo(
+    () => (roomUnit: StayRoomUnit, startDate: string, endDateInclusive: string): RoomUnitStatusEntry => {
+      const requestedEndExclusive = addDays(endDateInclusive, 1);
+      const normalizedStatus = String(roomUnit.status || "").toLowerCase();
+      const blockedByBaseStatus = normalizedStatus === "blocked" || normalizedStatus === "maintenance" || normalizedStatus === "inactive";
+      const matchingBlock = activeRoomBlocks.find((block) =>
+        block.roomUnitId === roomUnit.id &&
+        datesOverlap(block.startDate, block.endDate, startDate, requestedEndExclusive),
+      );
+      if (blockedByBaseStatus || matchingBlock) {
+        return {
+          id: roomUnit.id,
+          roomNumber: roomUnit.roomNumber,
+          roomName: roomUnit.roomName,
+          status: "blocked",
+          detail: matchingBlock ? "Blocked in selected range" : "Room unit marked blocked",
+        };
+      }
+
+      const matchingBooking = bookings.find((booking) =>
+        booking.rooms.some((room) =>
+          room.roomUnitId === roomUnit.id &&
+          room.roomTypeId === roomTypeId &&
+          datesOverlap(room.checkInDate, room.checkOutDate, startDate, requestedEndExclusive),
+        ),
+      );
+      if (matchingBooking) {
+        return {
+          id: roomUnit.id,
+          roomNumber: roomUnit.roomNumber,
+          roomName: roomUnit.roomName,
+          status: "booked",
+          detail: "Booked in selected range",
+        };
+      }
+
+      return {
+        id: roomUnit.id,
+        roomNumber: roomUnit.roomNumber,
+        roomName: roomUnit.roomName,
+        status: "available",
+        detail: "Available for selected range",
+      };
+    },
+    [activeRoomBlocks, bookings, roomTypeId],
+  );
+
+  const selectedDayRoomUnitStatuses = useMemo(() => {
+    if (!selectedDate) return [];
+    return roomUnitsForType
+      .map((roomUnit) => getRoomUnitStatusForRange(roomUnit, selectedDate, selectedDate))
+      .sort((left, right) => left.roomNumber.localeCompare(right.roomNumber));
+  }, [getRoomUnitStatusForRange, roomUnitsForType, selectedDate]);
+
+  const ROOM_STATUS_STYLES: Record<RoomUnitAvailabilityStatus, { bg: string; border: string; text: string }> = {
+    available: { bg: "rgba(34,197,94,0.08)", border: "rgba(34,197,94,0.2)", text: "#4ade80" },
+    blocked: { bg: "rgba(100,116,139,0.1)", border: "rgba(100,116,139,0.25)", text: "#94a3b8" },
+    booked: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.25)", text: "#f87171" },
   };
 
-  const handleUpdate = (date: string, rtId: string, updates: Partial<DayCell>) => {
-    setCalData((prev) => ({
-      ...prev,
-      [rtId]: {
-        ...prev[rtId],
-        [date]: { ...prev[rtId][date], ...updates },
-      },
-    }));
-  };
+  function applyBlockDelta(
+    entries: StayCalendarEntry[],
+    startDate: string,
+    endDate: string,
+    blockedUnitDelta: number,
+  ) {
+    const affectedDates = new Set(enumerateDates(startDate, endDate));
+    return entries.map((entry) => {
+      if (!affectedDates.has(entry.date)) return entry;
+      const nextBlockedUnits = Math.max(0, entry.blockedUnits + blockedUnitDelta);
+      return {
+        ...entry,
+        blockedUnits: nextBlockedUnits,
+        availableUnits: Math.max(0, entry.totalUnits - entry.bookedUnits - nextBlockedUnits),
+      };
+    });
+  }
 
-  const selectedRoomType = selectedCell ? ROOM_TYPES.find((r) => r.id === selectedCell.rtId)! : null;
-  const selectedCellData = selectedCell ? calData[selectedCell.rtId]?.[selectedCell.date] : null;
+  async function reloadCurrentCalendar() {
+    if (!selectedProperty || !roomTypeId) return;
+    setLoadingCalendar(true);
+    try {
+      const refreshed = await getStayCalendar(
+        selectedProperty.id,
+        formatIsoDate(startOfMonth(monthDate)),
+        formatIsoDate(endOfMonth(monthDate)),
+        roomTypeId,
+      );
+      setCalendarEntries(refreshed.entries || []);
+    } catch (err: any) {
+      setError(err?.message || "Unable to reload room-type availability.");
+    } finally {
+      setLoadingCalendar(false);
+    }
+  }
 
-  const CELL_W = 72;
-  const LABEL_W = 160;
+  async function reloadRoomBlocks() {
+    if (!selectedProperty || !roomTypeId) return;
+    try {
+      const refreshed = await listStayRoomBlocks(selectedProperty.id, { roomTypeId });
+      setRoomBlocks(refreshed.blocks || []);
+    } catch (err: any) {
+      setError(err?.message || "Unable to reload room blocks.");
+    }
+  }
+
+  async function handleBlockSubmit(payload: { roomUnitId: string; startDate: string; endDate: string; reason: string; blockType: string }) {
+    if (!selectedProperty || !roomTypeId) return;
+    setSubmittingBlock(true);
+    try {
+      await createRoomBlock(selectedProperty.id, payload);
+      setCalendarEntries((current) =>
+        applyBlockDelta(current, payload.startDate, exclusiveEndDateToInclusive(payload.endDate), 1),
+      );
+      await reloadRoomBlocks();
+      setShowBlockModal(false);
+    } catch (err: any) {
+      setError(err?.message || "Unable to create room block.");
+      await reloadCurrentCalendar();
+    } finally {
+      setSubmittingBlock(false);
+    }
+  }
+
+  async function handleReleaseBlock(blockId: string) {
+    if (!selectedProperty || !roomTypeId) return;
+    const existingBlock = roomBlocks.find((block) => block.id === blockId);
+    try {
+      await releaseRoomBlock(selectedProperty.id, blockId);
+      if (existingBlock) {
+        const inclusiveEndDate = exclusiveEndDateToInclusive(existingBlock.endDate);
+        setCalendarEntries((current) => applyBlockDelta(current, existingBlock.startDate, inclusiveEndDate, -1));
+      }
+      await reloadRoomBlocks();
+    } catch (err: any) {
+      setError(err?.message || "Unable to release this room block.");
+      await reloadCurrentCalendar();
+    }
+  }
+
+  if (loadingInventory) {
+    return <DashboardSkeleton />;
+  }
+
+  if (error && !inventory) {
+    return (
+      <EmptyState
+        icon={RefreshCw}
+        title="Unable to load availability"
+        description={error}
+      />
+    );
+  }
+
+  if ((inventory?.roomTypes.length ?? 0) === 0) {
+    return (
+      <EmptyState
+        icon={BedDouble}
+        title="No room types configured"
+        description="Add room types and room units first. The stay calendar needs a room-type inventory before it can display nightly availability."
+      />
+    );
+  }
+
+  const monthLabel = monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   return (
-    <div className="p-6 space-y-4 max-w-[1800px]">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="p-6 space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <CalendarDays size={15} style={{ color: "var(--accent-navy)" }} />
+            <CalendarDays size={16} style={{ color: "var(--accent-navy)" }} />
             <span className="text-[11px] uppercase tracking-widest" style={{ color: "var(--accent-navy)" }}>
               Availability Calendar
             </span>
           </div>
-          <h1 className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            Jetwing Yala — Inventory
+          <h1 className="text-[22px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            {selectedProperty?.name}
           </h1>
+          <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+            Room-type availability is loaded from the new stay inventory service.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowBulk(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] transition-all"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+        <div className="flex items-center gap-3 flex-wrap">
+          <StayHotelPropertySwitcher />
+          <select
+            value={roomTypeId}
+            onChange={(event) => setRoomTypeId(event.target.value)}
+            className="px-3 py-2 rounded-lg text-[12px]"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
           >
-            <Edit3 size={13} />
-            Bulk Update
-          </button>
+            {(inventory?.roomTypes ?? []).map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
           <button
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px]"
-            style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600, boxShadow: "0 0 10px var(--border-accent)" }}
+            onClick={() => setShowBlockModal(true)}
+            className="px-4 py-2 rounded-lg text-[12px] flex items-center gap-2"
+            style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--accent-navy-light)", fontWeight: 600 }}
           >
             <Plus size={13} />
-            Add Room Type
+            Block Room
           </button>
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 flex-wrap">
-        {([
-          ["available", "Available", "#3b82f6"],
-          ["low", "Low Inventory", "#f97316"],
-          ["sold-out", "Sold Out", "#ef4444"],
-          ["blocked", "Blocked", "#64748b"],
-          ["maintenance", "Maintenance", "#f59e0b"],
-        ] as const).map(([key, label, color]) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ background: color, opacity: 0.7 }} />
-            <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar container */}
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}
-      >
-        {/* Month navigation */}
+      {error && (
         <div
-          className="flex items-center justify-between px-5 py-3"
-          style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-panel)" }}
+          className="rounded-xl px-4 py-3 text-[13px]"
+          style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}
         >
-          <button
-            onClick={() => navigateMonth(-1)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {monthName}
-          </span>
-          <button
-            onClick={() => navigateMonth(1)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
-          >
-            <ChevronRight size={14} />
-          </button>
+          {error}
         </div>
+      )}
 
-        {/* Scrollable grid */}
-        <div className="overflow-x-auto" ref={scrollRef}>
-          <div style={{ minWidth: `${LABEL_W + CELL_W * daysInMonth}px` }}>
-            {/* Date header row */}
-            <div
-              className="flex"
-              style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-panel)", position: "sticky", top: 0, zIndex: 10 }}
-            >
-              {/* Room type label col */}
-              <div
-                className="shrink-0 flex items-center px-4"
-                style={{ width: LABEL_W, background: "var(--bg-panel)", borderRight: "1px solid var(--border-light)", position: "sticky", left: 0, zIndex: 20 }}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6">
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+        >
+          <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
+            <div>
+              <h2 className="text-[15px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                {roomType?.name}
+              </h2>
+              <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                {monthLabel}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
               >
-                <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
-                  Room Type
-                </span>
-              </div>
-              {DAYS.map((d) => {
-                const dayOfWeek = new Date(year, month, d).getDay();
-                const isToday =
-                  d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                return (
-                  <div
-                    key={d}
-                    className="shrink-0 flex flex-col items-center justify-center py-2"
-                    style={{
-                      width: CELL_W,
-                      borderRight: "1px solid var(--border-light)",
-                      background: isToday ? "rgba(59,130,246,0.1)" : isWeekend ? "rgba(255,255,255,0.02)" : "transparent",
-                    }}
-                  >
-                    <span
-                      className="text-[10px]"
-                      style={{ color: isToday ? "#93c5fd" : isWeekend ? "#f59e0b" : "var(--text-tertiary)" }}
-                    >
-                      {DAY_NAMES[dayOfWeek]}
-                    </span>
-                    <span
-                      className="text-[13px]"
-                      style={{ color: isToday ? "#93c5fd" : "var(--text-secondary)", fontWeight: isToday ? 700 : 500 }}
-                    >
-                      {d}
-                    </span>
-                    {isToday && (
-                      <div className="w-1 h-1 rounded-full mt-0.5" style={{ background: "#3b82f6" }} />
-                    )}
-                  </div>
-                );
-              })}
+                <ChevronLeft size={14} style={{ color: "var(--text-secondary)" }} />
+              </button>
+              <button
+                onClick={() => setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+              >
+                <ChevronRight size={14} style={{ color: "var(--text-secondary)" }} />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-5">
+            <div className="grid grid-cols-7 gap-2 mb-3">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <div key={day} className="text-center text-[11px]" style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>
+                  {day}
+                </div>
+              ))}
             </div>
 
-            {/* Room type rows */}
-            {ROOM_TYPES.map((rt, rtIdx) => (
-              <div
-                key={rt.id}
-                className="flex"
-                style={{ borderBottom: rtIdx < ROOM_TYPES.length - 1 ? "1px solid var(--border-light)" : "none" }}
-              >
-                {/* Room label - sticky */}
-                <div
-                  className="shrink-0 flex items-center gap-2.5 px-4 py-3"
-                  style={{
-                    width: LABEL_W,
-                    background: "var(--bg-card)",
-                    borderRight: "1px solid var(--border-light)",
-                    position: "sticky",
-                    left: 0,
-                    zIndex: 5,
-                  }}
-                >
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: rt.color }} />
-                  <div>
-                    <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>{rt.name}</p>
-                    <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{rt.total} units</p>
-                  </div>
-                </div>
+            {loadingCalendar ? (
+              <DashboardSkeleton />
+            ) : calendarEntries.length === 0 ? (
+              <div className="py-12 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+                No availability data returned for this month.
+              </div>
+            ) : (
+              <div className="grid grid-cols-7 gap-2">
+                {getMonthDays(monthDate).map((dateValue, index) => {
+                  if (!dateValue) {
+                    return <div key={`empty-${index}`} className="aspect-square" />;
+                  }
 
-                {/* Day cells */}
-                {DAYS.map((d) => {
-                  const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                  const cell = calData[rt.id]?.[dateKey];
-                  if (!cell) return <div key={d} style={{ width: CELL_W, borderRight: "1px solid var(--border-light)" }} />;
-
-                  const status = getCellStatus(cell, rt.total);
-                  const styles = STATUS_STYLES[status];
-                  const isSelected = selectedCell?.date === dateKey && selectedCell?.rtId === rt.id;
-                  const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+                  const iso = formatIsoDate(dateValue);
+                  const entry = entryByDate.get(iso);
+                  const status = entry ? statusFromEntry(entry) : "available";
+                  const statusStyle = STATUS_STYLES[status];
+                  const isSelected = selectedDate === iso;
 
                   return (
                     <button
-                      key={d}
-                      onClick={() => handleCellClick(dateKey, rt.id)}
-                      className="shrink-0 p-1.5 transition-all text-left"
+                      key={iso}
+                      onClick={() => setSelectedDate(iso)}
+                      className="aspect-square rounded-xl p-2 text-left flex flex-col justify-between"
                       style={{
-                        width: CELL_W,
-                        borderRight: "1px solid var(--border-light)",
-                        background: isSelected
-                          ? `${rt.color}20`
-                          : isToday
-                          ? "rgba(59,130,246,0.05)"
-                          : styles.bg,
-                        border: isSelected ? `1px solid ${rt.color}60` : undefined,
-                        outline: "none",
+                        background: statusStyle.bg,
+                        border: `1px solid ${isSelected ? "var(--accent-navy-light)" : statusStyle.border}`,
+                        color: statusStyle.text,
                       }}
                     >
-                      {status === "blocked" ? (
-                        <div className="flex flex-col items-center justify-center h-full py-1">
-                          <Lock size={11} style={{ color: styles.text, opacity: 0.7 }} />
-                          <span className="text-[9px] mt-0.5" style={{ color: styles.sub }}>Blocked</span>
+                      <span className="text-[12px]" style={{ fontWeight: 700 }}>
+                        {dateValue.getDate()}
+                      </span>
+                      <div>
+                        <div className="text-[11px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                          {entry ? `${entry.availableUnits}/${entry.totalUnits}` : "—"}
                         </div>
-                      ) : status === "maintenance" ? (
-                        <div className="flex flex-col items-center justify-center h-full py-1">
-                          <Wrench size={11} style={{ color: styles.text, opacity: 0.7 }} />
-                          <span className="text-[9px] mt-0.5" style={{ color: styles.sub }}>Maint.</span>
+                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                          {status.replace("-", " ")}
                         </div>
-                      ) : (
-                        <div className="space-y-0.5">
-                          <p className="text-[11px]" style={{ color: styles.text, fontWeight: 600 }}>
-                            ${cell.price}
-                          </p>
-                          <p className="text-[9px]" style={{ color: styles.sub }}>
-                            {status === "sold-out" ? "Sold out" : `${cell.available} avail`}
-                          </p>
-                          {cell.booked > 0 && (
-                            <p className="text-[9px]" style={{ color: "var(--text-tertiary)" }}>
-                              {cell.booked} booked
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      </div>
                     </button>
                   );
                 })}
               </div>
-            ))}
+            )}
+
+            <div className="flex items-center gap-4 flex-wrap mt-5 pt-5" style={{ borderTop: "1px solid var(--border-light)" }}>
+              {(Object.entries(STATUS_STYLES) as [CellStatus, { bg: string; border: string; text: string }][]).map(([status, style]) => (
+                <div key={status} className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ background: style.bg, border: `1px solid ${style.border}` }} />
+                  <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {status.replace("-", " ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+        >
+          <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border-light)" }}>
+            <h2 className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+              {selectedEntry ? "Selected Day" : "Calendar Notes"}
+            </h2>
+          </div>
+          <div className="p-5 space-y-4">
+            {selectedEntry ? (
+              <>
+                <div>
+                  <p className="text-[12px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    {formatDisplayDate(selectedEntry.date)}
+                  </p>
+                  <p className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                    {roomType?.name}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: "Available", value: selectedEntry.availableUnits },
+                    { label: "Booked", value: selectedEntry.bookedUnits },
+                    { label: "Blocked", value: selectedEntry.blockedUnits },
+                    { label: "Total", value: selectedEntry.totalUnits },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-lg p-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        {item.label}
+                      </p>
+                      <p className="text-[18px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                        {item.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-lg p-3" style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.18)" }}>
+                  <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                    Unsupported quick edits like nightly price, min-stay, and day-level maintenance have been intentionally removed because the phase-3 stay vendor API does not expose those controls yet.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowBlockModal(true)}
+                  className="w-full px-4 py-2 rounded-lg text-[12px] flex items-center justify-center gap-2"
+                  style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
+                >
+                  <Lock size={13} />
+                  Block A Room For This Date
+                </button>
+
+                {overlappingSelectedBlocks.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                      Local active blocks on this date
+                    </p>
+                    {overlappingSelectedBlocks.map((block) => (
+                      <div key={block.id} className="rounded-lg p-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                              {roomUnitsForType.find((roomUnit) => roomUnit.id === block.roomUnitId)?.roomNumber ?? block.roomUnitId}
+                            </p>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                              {block.blockType} • {formatDisplayDate(block.startDate)} to {formatDisplayDate(block.endDate)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => void handleReleaseBlock(block.id)}
+                            className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-1"
+                            style={{ background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.2)" }}
+                          >
+                            <Unlock size={11} />
+                            Release
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                    Room unit status
+                  </p>
+                  {selectedDayRoomUnitStatuses.length === 0 ? (
+                    <div className="rounded-lg p-3 text-[12px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-tertiary)" }}>
+                      No room units found for this room type.
+                    </div>
+                  ) : (
+                    selectedDayRoomUnitStatuses.map((roomUnit) => {
+                      const style = ROOM_STATUS_STYLES[roomUnit.status];
+                      const bookedRoom = bookingRoomOverlaps.get(roomUnit.id);
+                      return (
+                        <div key={roomUnit.id} className="rounded-lg p-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                                {roomUnit.roomNumber}
+                                {roomUnit.roomName ? ` • ${roomUnit.roomName}` : ""}
+                              </p>
+                              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                {roomUnit.detail}
+                                {roomUnit.status === "booked" && bookedRoom ? ` • ${bookedRoom.guests} guest${bookedRoom.guests === 1 ? "" : "s"}` : ""}
+                              </p>
+                            </div>
+                            <span
+                              className="px-2 py-1 rounded-full text-[10px]"
+                              style={{ background: style.bg, border: `1px solid ${style.border}`, color: style.text, fontWeight: 700 }}
+                            >
+                              {roomUnit.status === "booked" ? "Booked" : roomUnit.status === "blocked" ? "Blocked" : "Available"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+                  Select a day to inspect nightly totals from the backend calendar cache.
+                </p>
+                <div className="rounded-lg p-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                  <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                    This calendar is scoped to one room type at a time.
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>
+                    The backend calendar response does not return `roomTypeId` per entry, so aggregated multi-room-type editing is intentionally out of scope for this pass.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Date side panel */}
-      {selectedCell && selectedRoomType && selectedCellData && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setSelectedCell(null)}
-            style={{ background: "rgba(0,0,0,0.3)" }}
-          />
-          <DatePanel
-            date={selectedCell.date}
-            roomType={selectedRoomType}
-            cell={selectedCellData}
-            onClose={() => setSelectedCell(null)}
-            onUpdate={handleUpdate}
-          />
-        </>
-      )}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+      >
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
+          <h2 className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+            Local Active Blocks
+          </h2>
+          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            Active blocks from the backend
+          </span>
+        </div>
+        <div className="p-5">
+          {activeRoomBlocks.length === 0 ? (
+            <div className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+              No active blocks found for {roomType?.name}.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeRoomBlocks.map((block) => (
+                <div key={block.id} className="rounded-lg p-4 flex items-center justify-between gap-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                  <div>
+                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      {roomUnitsForType.find((roomUnit) => roomUnit.id === block.roomUnitId)?.roomNumber ?? block.roomUnitId}
+                    </p>
+                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                      {formatDisplayDate(block.startDate)} to {formatDisplayDate(block.endDate)} • {block.blockType}
+                      {block.reason ? ` • ${block.reason}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void handleReleaseBlock(block.id)}
+                    className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-1"
+                    style={{ background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.2)" }}
+                  >
+                    <Unlock size={11} />
+                    Release
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
-      {/* Bulk modal */}
-      {showBulk && (
-        <BulkModal
-          onClose={() => setShowBulk(false)}
-          onApply={(data) => {
-            // Apply bulk update to all room types for the date range
-            console.log("Bulk update:", data);
-          }}
+      {showBlockModal && roomUnitsForType.length > 0 && (
+        <BlockModal
+          roomUnits={roomUnitsForType}
+          getRoomUnitStatusForRange={getRoomUnitStatusForRange}
+          initialDate={selectedDate ?? formatIsoDate(startOfMonth(monthDate))}
+          onClose={() => setShowBlockModal(false)}
+          onSubmit={(payload) => void handleBlockSubmit(payload)}
+          submitting={submittingBlock}
         />
       )}
     </div>
+  );
+}
+
+export function AvailabilityCalendar() {
+  return (
+    <StayHotelPropertyGate loadingFallback={<DashboardSkeleton />}>
+      <AvailabilityCalendarContent />
+    </StayHotelPropertyGate>
   );
 }

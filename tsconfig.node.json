@@ -1,12 +1,10 @@
 {
   "compilerOptions": {
     "composite": true,
-    "skipLibCheck": true,
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noEmit": true
+    "types": ["node"]
   },
-  "include": ["vite.config.ts", "postcss.config.mjs"]
+  "include": ["vite.config.ts"]
 }
