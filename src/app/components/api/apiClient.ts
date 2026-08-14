@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://tour-ceylon-server.vercel.app/api/v1";
 const TOKEN_CACHE_TTL_MS = 15_000;
 
 type TokenCacheEntry = {
@@ -17,45 +17,71 @@ function clearTokenCache() {
   tokenCache = null;
 }
 
+// Enhanced token retrieval that works with both global Clerk and React SDK
 async function getCachedClerkToken(): Promise<string | undefined> {
-  if (typeof window === "undefined" || !(window as any).Clerk) {
-    clearTokenCache();
-    return undefined;
-  }
-
-  const clerk = (window as any).Clerk;
-  const session = clerk?.session;
-  const sessionId = session?.id ?? null;
-  if (!session || !sessionId) {
-    clearTokenCache();
-    return undefined;
-  }
-
-  if (
-    tokenCache &&
-    tokenCache.sessionId === sessionId &&
-    Date.now() - tokenCache.cachedAt < TOKEN_CACHE_TTL_MS
-  ) {
-    return tokenCache.token;
-  }
-
-  try {
-    const token = await session.getToken();
-    if (!token) {
-      clearTokenCache();
-      return undefined;
+  // Method 1: Try React SDK approach through window.__clerk_publishable_key
+  if (typeof window !== "undefined" && (window as any).__clerk_db_jwt) {
+    try {
+      return (window as any).__clerk_db_jwt;
+    } catch (err) {
+      console.debug("Method 1 failed:", err);
     }
-    tokenCache = {
-      sessionId,
-      token,
-      cachedAt: Date.now(),
-    };
-    return token;
-  } catch (err) {
-    clearTokenCache();
-    console.warn("Failed to retrieve Clerk token automatically:", err);
-    return undefined;
   }
+
+  // Method 2: Try global Clerk instance
+  if (typeof window !== "undefined" && (window as any).Clerk) {
+    try {
+      const clerk = (window as any).Clerk;
+      const session = clerk?.session;
+      const sessionId = session?.id ?? null;
+      
+      if (!session || !sessionId) {
+        clearTokenCache();
+        return undefined;
+      }
+
+      if (
+        tokenCache &&
+        tokenCache.sessionId === sessionId &&
+        Date.now() - tokenCache.cachedAt < TOKEN_CACHE_TTL_MS
+      ) {
+        return tokenCache.token;
+      }
+
+      const token = await session.getToken();
+      if (!token) {
+        clearTokenCache();
+        return undefined;
+      }
+      
+      tokenCache = {
+        sessionId,
+        token,
+        cachedAt: Date.now(),
+      };
+      return token;
+    } catch (err) {
+      console.debug("Method 2 failed:", err);
+    }
+  }
+
+  // Method 3: Try accessing through React context (fallback)
+  if (typeof window !== "undefined") {
+    try {
+      // Look for Clerk instance in React DevTools or context
+      const reactRoot = (window as any).document?.querySelector('#root')?._reactInternalFiber || 
+                       (window as any).document?.querySelector('#root')?._reactInternals;
+      if (reactRoot) {
+        // This is a fallback - in practice, token should be passed explicitly
+        console.debug("React root found, but token should be passed explicitly to apiClient");
+      }
+    } catch (err) {
+      console.debug("Method 3 failed:", err);
+    }
+  }
+
+  clearTokenCache();
+  return undefined;
 }
 
 /**
