@@ -1486,6 +1486,8 @@ function StayEditPanel({
 export function ListingEditor({ mode }: ListingEditorProps) {
   const navigate = useNavigate();
   const params = useParams();
+  const { effectiveUser } = useAuth();
+  const isAdmin = effectiveUser?.role === "admin";
   const listingId = params.id || null;
   const [category, setCategory] = useState<Category | null>(() => (mode === "create" ? null : "Stay"));
   const [activeTab, setActiveTab] = useState<TabId>("basic");
@@ -1652,6 +1654,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             lng,
             subcategory: useListingDraftStore.getState().subcategory ?? null,
             categoryData: useListingDraftStore.getState().categoryData ?? {},
+            isAdmin,
           }),
         ),
       });
@@ -1959,11 +1962,14 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             Cancel
           </button>
           <button
-            onClick={() => navigate("/listings")}
+            onClick={saveStayListing}
+            disabled={saving}
             className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
             style={{
               background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
               color: "white",
+              opacity: saving ? 0.65 : 1,
+              cursor: saving ? "not-allowed" : "pointer",
               boxShadow: "0 0 16px var(--border-accent)",
               border: "1px solid var(--border-accent)",
               fontWeight: 500,

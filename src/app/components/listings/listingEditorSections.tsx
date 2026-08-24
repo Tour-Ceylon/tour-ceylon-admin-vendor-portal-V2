@@ -25,11 +25,32 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
 const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
-const ROOM_TYPE_OPTIONS = ["Bedroom", "Living Room", "Other Room"];
+const ROOM_TYPE_OPTIONS = [
+    "Deluxe Room",
+    "Standard Room",
+    "Superior Room",
+    "Master Bedroom",
+    "Executive Suite",
+    "Junior Suite",
+    "Family Suite",
+    "Presidential Suite",
+    "King Room",
+    "Queen Room",
+    "Twin Room",
+    "Single Room",
+    "Studio Apartment",
+    "Private Villa",
+    "Luxury Bungalow",
+    "Ocean View Room",
+    "Garden View Room",
+    "Dormitory / Bunk Room",
+    "Living Room",
+    "Other Room",
+];
 
 export function normalizeStayRoomType(value?: string | null) {
     const normalized = String(value ?? "").trim();
-    if (!normalized || normalized === "BedRoom") return "Bedroom";
+    if (!normalized || normalized === "BedRoom" || normalized === "Bedroom") return "Standard Room";
     return normalized;
 }
 const DEFAULT_HOUSE_RULES = {
@@ -1229,7 +1250,7 @@ export function RoomsSection() {
     const addRoom = () => {
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
-            type: "Bedroom",
+            type: "Deluxe Room",
             count: "1",
             beds: "0",
             hasBeds: false,
@@ -1310,8 +1331,27 @@ export function RoomsSection() {
                                 <div key={room.id} className="p-3 rounded-lg" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
                                     <div className="grid grid-cols-2 gap-4 mb-2">
                                         <div>
-                                            <FieldLabel required>Type</FieldLabel>
-                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={ROOM_TYPE_OPTIONS} />
+                                            <FieldLabel required>Room Type / Name</FieldLabel>
+                                            <div className="space-y-1.5">
+                                                <SelectField
+                                                    value={ROOM_TYPE_OPTIONS.includes(room.type) ? room.type : "Custom"}
+                                                    onChange={(v) => {
+                                                        if (v === "Custom") {
+                                                            updateRoom(room.id, { type: "Custom Room" });
+                                                        } else {
+                                                            updateRoom(room.id, { type: v });
+                                                        }
+                                                    }}
+                                                    options={[...ROOM_TYPE_OPTIONS, "Custom"]}
+                                                />
+                                                {(!ROOM_TYPE_OPTIONS.includes(room.type) || room.type === "Custom Room") && (
+                                                    <FormInput
+                                                        value={room.type === "Custom Room" ? "" : room.type}
+                                                        onChange={(v) => updateRoom(room.id, { type: v || "Custom Room" })}
+                                                        placeholder="Type custom room name (e.g. Royal Water Villa)..."
+                                                    />
+                                                )}
+                                            </div>
                                         </div>
                                         <div>
                                             <FieldLabel required>Count</FieldLabel>
