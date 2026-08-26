@@ -17,6 +17,7 @@ import {
   CheckSquare,
   Filter,
   Trash2,
+  CalendarDays,
 } from "lucide-react";
 
 type Category = "All" | "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
@@ -816,6 +817,24 @@ export function ListingsPage() {
                 <div className={`flex items-center gap-1 transition-opacity ${openActionId === listing.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
                   <button
                     type="button"
+                    title="Manage Calendar & Bookings"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/listings/${listing.id}/manage`);
+                    }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                    style={{ color: "var(--accent-navy-light)" }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "transparent";
+                    }}
+                  >
+                    <CalendarDays size={13} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={(e) => e.stopPropagation()}
                     className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
                     style={{ color: "var(--text-secondary)" }}
@@ -876,7 +895,7 @@ export function ListingsPage() {
                     </button>
                     {openActionId === listing.id && (
                       <div
-                        className="absolute right-0 top-8 z-30 w-32 rounded-lg p-1"
+                        className="absolute right-0 top-8 z-30 w-44 rounded-lg p-1 space-y-0.5"
                         onClick={(e) => e.stopPropagation()}
                         style={{
                           background: "var(--bg-panel)",
@@ -886,9 +905,27 @@ export function ListingsPage() {
                       >
                         <button
                           type="button"
+                          onClick={() => {
+                            setOpenActionId(null);
+                            navigate(`/listings/${listing.id}/manage`);
+                          }}
+                          className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-all"
+                          style={{ color: "var(--text-primary)" }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.background = "transparent";
+                          }}
+                        >
+                          <CalendarDays size={13} style={{ color: "var(--accent-navy-light)" }} />
+                          Manage Calendar
+                        </button>
+                        <button
+                          type="button"
                           disabled={deletingListingId === listing.id}
                           onClick={() => deleteListing(listing)}
-                          className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] transition-all disabled:opacity-50"
+                          className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-all disabled:opacity-50"
                           style={{ color: "#ef4444" }}
                           onMouseEnter={(e) => {
                             (e.currentTarget as HTMLElement).style.background = "rgba(239, 68, 68, 0.08)";

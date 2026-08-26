@@ -9,6 +9,7 @@ import { BookingsPage } from "./components/bookings/BookingsPage";
 import { UserManagementPage } from "./components/users/UserManagementPage";
 import { ListingsPage } from "./components/ListingsPage";
 import { ListingEditor } from "./components/ListingEditor";
+import { SingleListingManager } from "./components/listings/SingleListingManager";
 import { ListingReviewPage } from "./components/listings/ListingReviewPage";
 import { VendorManagement } from "./components/VendorManagement";
 import { AdminManagement } from "./components/AdminManagement";
@@ -98,6 +99,7 @@ export const router = createBrowserRouter([
           { path: "listings", Component: ListingsPage },
           { path: "listings/create", Component: () => <ListingEditor mode="create" /> },
           { path: "listings/:id/edit", Component: () => <ListingEditor mode="edit" /> },
+          { path: "listings/:id/manage", Component: SingleListingManager },
 
           // Listing Review & Approval (Admin only)
           { path: "reviews", Component: ListingReviewPage },

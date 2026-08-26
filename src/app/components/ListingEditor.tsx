@@ -389,6 +389,7 @@ function buildStayApplicationPayload({
   const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => {
     const roomType = normalizeStayRoomType(room.type);
     return {
+    id: room.id && isUuid(room.id) ? room.id : undefined,
     name: roomType,
     description: "",
     count: Number(room.count) || 1,
@@ -1518,6 +1519,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editLoading, setEditLoading] = useState(mode === "edit");
   const [editError, setEditError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1634,13 +1636,11 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   };
 
   const saveStayListing = async () => {
-    if (!listingId || category !== "Stay") {
-      navigate("/listings");
-      return;
-    }
+    if (!listingId) return;
 
     setSaving(true);
     setEditError(null);
+    setSaveSuccess(false);
     try {
       await apiFetch(`/vendor/stays/${listingId}`, {
         method: "PUT",
@@ -1658,7 +1658,8 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           }),
         ),
       });
-      navigate("/listings");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 5000);
     } catch (error: any) {
       setEditError(error?.message || "Unable to save this stay listing.");
     } finally {
@@ -1726,6 +1727,19 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           setDescription={setDescriptionPersist}
         />
 
+        {saveSuccess && (
+          <div className="px-6 py-2 bg-emerald-500/10 border-t border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center justify-between">
+            <span>✓ All changes saved successfully!</span>
+            <button onClick={() => setSaveSuccess(false)} className="text-emerald-400 hover:underline">Dismiss</button>
+          </div>
+        )}
+        {editError && (
+          <div className="px-6 py-2 bg-rose-500/10 border-t border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center justify-between">
+            <span>⚠️ {editError}</span>
+            <button onClick={() => setEditError(null)} className="text-rose-400 hover:underline">Dismiss</button>
+          </div>
+        )}
+
         <div
           className="flex items-center justify-between px-6 py-3 shrink-0"
           style={{
@@ -1735,7 +1749,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           }}
         >
           <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-            Stay listing edit
+            Stay listing editor
           </span>
           <div className="flex items-center gap-3">
             <button
@@ -1760,7 +1774,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
               }}
             >
               <Check size={12} />
-              Done
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>

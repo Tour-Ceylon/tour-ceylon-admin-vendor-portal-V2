@@ -1351,6 +1351,14 @@ export function RoomsSection() {
                                                         placeholder="Type custom room name (e.g. Royal Water Villa)..."
                                                     />
                                                 )}
+                                                {rooms.some((r) => r.id !== room.id && r.type.trim().toLowerCase() === room.type.trim().toLowerCase() && room.type.trim().length > 0 && room.type !== "Custom Room" && room.type !== "Custom") && (
+                                                    <div className="p-2 rounded-lg text-[11px] font-semibold mt-1.5 flex items-start gap-1.5" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444" }}>
+                                                        <span className="text-xs shrink-0">⚠️</span>
+                                                        <span>
+                                                            <strong>Room type already exists!</strong> If you are adding more rooms of this type, please increase the <strong>Count</strong> field. If creating a sub-variant, use a unique name (e.g., <em>{room.type} - Type 2</em>).
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
