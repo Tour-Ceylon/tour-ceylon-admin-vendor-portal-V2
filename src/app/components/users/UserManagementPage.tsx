@@ -557,7 +557,16 @@ export function UserManagementPage() {
       </div>
 
       {detailDrawerOpen && selectedUser && (
-        <UserDetailDrawer user={{ ...selectedUser, role: ROLE_CONFIG[selectedUser.role].label }} onClose={() => setDetailDrawerOpen(false)} />
+        <UserDetailDrawer
+          user={{ ...selectedUser, role: ROLE_CONFIG[selectedUser.role].label }}
+          driverUserId={selectedUser.role === "DRIVER" ? selectedUser.id : undefined}
+          vendorDocuments={
+            selectedUser.role === "VENDOR"
+              ? ((selectedUser.raw.business_profile?.documents as Array<{ url: string; name: string }>) ?? [])
+              : undefined
+          }
+          onClose={() => setDetailDrawerOpen(false)}
+        />
       )}
 
       <FilterModal

@@ -56,8 +56,11 @@ interface AuthContextType {
   viewAsVendor: boolean;
   toggleViewAsVendor: () => void;
   logout: () => Promise<void>;
-  register: (data: VendorRegistrationData) => Promise<void>;
-  registerDriver: (data: DriverRegistrationData) => Promise<void>;
+  register: (data: VendorRegistrationData) => Promise<{ id: string } | undefined>;
+  /** Send driver signup as multipart FormData (files included). */
+  registerDriver: (formData: FormData) => Promise<void>;
+  /** Upload vendor business documents after registration. */
+  registerVendorDocuments: (userId: string, files: File[]) => Promise<void>;
 }
 
 export interface VendorRegistrationData {
@@ -257,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       setUser(pendingUser);
       setError(null);
+      return { id: responseUser?.id || pendingUser.id };
     } catch (err: any) {
       console.error("Vendor registration failed:", err);
       throw err;
@@ -265,45 +269,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const registerDriver = async (data: DriverRegistrationData) => {
+  /**
+   * Upload vendor business documents after registration.
+   * Calls POST /users/{userId}/documents with the provided files as FormData.
+   */
+  const registerVendorDocuments = async (userId: string, files: File[]): Promise<void> => {
+    if (!files.length) return;
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    await apiFetch(`/users/${userId}/documents`, {
+      method: "POST",
+      body: formData,
+    });
+  };
+
+  /**
+   * Submit the driver signup form as multipart FormData.
+   * The caller (DriverRegistration component) builds the FormData — this
+   * function simply posts it and updates local auth state.
+   */
+  const registerDriver = async (formData: FormData): Promise<void> => {
     setLoading(true);
     try {
+      // Inject clerk_user_id if the user is already signed in
+      if (userId && !formData.has("clerk_user_id")) {
+        formData.append("clerk_user_id", userId);
+      }
+
       const responseDriver = await apiFetch("/auth/driver/signup", {
         method: "POST",
-        body: JSON.stringify({
-          full_name: data.fullName,
-          nic_number: data.nicNumber,
-          email: data.email,
-          phone: data.phone,
-          password: data.password,
-          clerk_user_id: userId || null,
-          country: "Sri Lanka",
-          vehicle_model_preset_id: data.vehicleModelPresetId || null,
-          vehicle_make: data.vehicleMake,
-          vehicle_model: data.vehicleModel,
-          vehicle_plate_number: data.vehiclePlateNumber,
-          seats: data.seats,
-          luggage_capacities: data.luggageCapacities,
-          license_number: data.licenseNumber,
-          license_photo_url: data.licensePhotoUrl,
-          nic_photo_url: data.nicPhotoUrl,
-          vehicle_registration_doc_url: data.vehicleRegistrationDocUrl,
-          insurance_doc_url: data.insuranceDocUrl,
-          police_clearance_doc_url: data.policeClearanceDocUrl,
-        }),
+        body: formData, // apiFetch skips Content-Type for FormData
       });
 
       const pendingDriverUser: User = {
-        id: responseDriver?.id || responseDriver?.user_id || userId || `driver_${Date.now()}`,
+        id: responseDriver?.user_id || responseDriver?.id || userId || `driver_${Date.now()}`,
         clerkUserId: userId || "",
-        email: data.email,
-        name: data.fullName,
+        email: (formData.get("email") as string) || "",
+        name: (formData.get("full_name") as string) || "Driver",
         role: "driver",
         isActive: true,
         vendorStatus: "pending",
-        company: `${data.vehicleMake} ${data.vehicleModel} (${data.vehiclePlateNumber})`,
-        nicNumber: data.nicNumber,
-        vehiclePlateNumber: data.vehiclePlateNumber,
+        company: [
+          formData.get("vehicle_make"),
+          formData.get("vehicle_model"),
+          formData.get("vehicle_plate_number") ? `(${formData.get("vehicle_plate_number")})` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        nicNumber: (formData.get("nic_number") as string) || undefined,
+        vehiclePlateNumber: (formData.get("vehicle_plate_number") as string) || undefined,
       };
       setUser(pendingDriverUser);
       setError(null);
@@ -328,6 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         register,
         registerDriver,
+        registerVendorDocuments,
       }}
     >
       {children}

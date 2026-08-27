@@ -13,8 +13,9 @@ import {
   ChevronDown,
   X,
 } from "lucide-react";
-import { useAuth, DriverRegistrationData, DriverLuggageCapacityInput } from "../../contexts/AuthContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { apiFetch } from "../api/apiClient";
+
 
 interface LuggageSizeType {
   id: string;
@@ -350,33 +351,40 @@ export function DriverRegistration({ onBackToRoleSelect }: DriverRegistrationPro
 
     try {
       // Build luggage capacity array
-      const capacities: DriverLuggageCapacityInput[] = luggageTypes.map((tier) => ({
+      const capacities = luggageTypes.map((tier) => ({
         luggage_size_type_id: tier.id,
         quantity: luggageQuantities[tier.id] || 0,
       }));
 
-      // Document URLs - in mock/simulation, generate descriptive object URLs or fallback URIs
-      const driverData: DriverRegistrationData = {
-        fullName: fullName.trim(),
-        nicNumber: nicNumber.trim().toUpperCase(),
-        email: email.trim(),
-        phone: phone.trim(),
-        password: password || undefined,
-        vehicleModelPresetId: isCustomVehicle ? null : selectedPresetId || null,
-        vehicleMake: vehicleMake.trim(),
-        vehicleModel: vehicleModel.trim(),
-        vehiclePlateNumber: vehiclePlateNumber.trim().toUpperCase(),
-        seats: numericSeats,
-        luggageCapacities: capacities,
-        licenseNumber: nicNumber.trim().toUpperCase(),
-        licensePhotoUrl: documents.license.file ? `uploads/drivers/license_${Date.now()}_${documents.license.file.name}` : undefined,
-        nicPhotoUrl: documents.nic.file ? `uploads/drivers/nic_${Date.now()}_${documents.nic.file.name}` : undefined,
-        vehicleRegistrationDocUrl: documents.vehicleReg.file ? `uploads/drivers/cr_${Date.now()}_${documents.vehicleReg.file.name}` : undefined,
-        insuranceDocUrl: documents.insurance.file ? `uploads/drivers/insurance_${Date.now()}_${documents.insurance.file.name}` : undefined,
-        policeClearanceDocUrl: documents.policeClearance.file ? `uploads/drivers/police_${Date.now()}_${documents.policeClearance.file.name}` : undefined,
-      };
+      // Build multipart FormData — files are appended directly so the backend
+      // uploads them to Cloudinary and stores the real secure_url.
+      const formData = new FormData();
 
-      await registerDriver(driverData);
+      // Scalar fields
+      formData.append("full_name", fullName.trim());
+      formData.append("nic_number", nicNumber.trim().toUpperCase());
+      formData.append("email", email.trim());
+      formData.append("phone", phone.trim());
+      if (password) formData.append("password", password);
+      formData.append("country", "Sri Lanka");
+      if (!isCustomVehicle && selectedPresetId) {
+        formData.append("vehicle_model_preset_id", selectedPresetId);
+      }
+      formData.append("vehicle_make", vehicleMake.trim());
+      formData.append("vehicle_model", vehicleModel.trim());
+      formData.append("vehicle_plate_number", vehiclePlateNumber.trim().toUpperCase());
+      formData.append("seats", String(numericSeats));
+      formData.append("luggage_capacities", JSON.stringify(capacities));
+      if (nicNumber) formData.append("license_number", nicNumber.trim().toUpperCase());
+
+      // Document files — append the actual File objects
+      if (documents.license.file)      formData.append("license_photo",           documents.license.file);
+      if (documents.nic.file)          formData.append("nic_photo",               documents.nic.file);
+      if (documents.vehicleReg.file)   formData.append("vehicle_registration_doc", documents.vehicleReg.file);
+      if (documents.insurance.file)    formData.append("insurance_doc",           documents.insurance.file);
+      if (documents.policeClearance.file) formData.append("police_clearance_doc", documents.policeClearance.file);
+
+      await registerDriver(formData);
       navigate("/pending");
     } catch (err: any) {
       console.error("Driver registration submission failed:", err);

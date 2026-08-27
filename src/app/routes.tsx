@@ -75,7 +75,9 @@ export const router = createBrowserRouter([
       { path: "register/vendor", Component: VendorRegistration },
       { path: "register/driver", Component: DriverRegistration },
       { path: "pending", Component: PendingApprovalScreen },
+      // SSO callback — Clerk redirects here after Google OAuth
       { path: "sso-callback", Component: AuthenticateWithRedirectCallback },
+    
 
       // Protected routes
       {
