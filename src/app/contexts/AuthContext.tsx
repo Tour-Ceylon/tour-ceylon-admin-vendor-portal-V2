@@ -116,8 +116,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // 1. Call backend /users/me or /users/sync endpoint to resolve local DB record
-        // The backend automatically auto-provisions or resolves the local user record using get_current_user
-        const backendUser = await apiFetch("/users/me", { token });
+        let backendUser;
+        try {
+          backendUser = await apiFetch("/users/me", { token });
+        } catch (fetchErr: any) {
+          if (session && (fetchErr?.message?.includes("expired") || fetchErr?.message?.includes("token") || fetchErr?.message?.includes("Authentication"))) {
+            console.warn("Token expired or invalid, retrying with fresh Clerk token...");
+            const freshToken = await session.getToken({ skipCache: true });
+            if (freshToken) {
+              backendUser = await apiFetch("/users/me", { token: freshToken });
+            } else {
+              throw fetchErr;
+            }
+          } else {
+            throw fetchErr;
+          }
+        }
 
         if (!backendUser) {
           throw new Error("Unable to retrieve backend user profile.");

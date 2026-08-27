@@ -199,19 +199,33 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
           )}
 
           {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              onClick={() => onStatusUpdate?.("converted_to_booking")}
+              disabled={isUpdating}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
+              style={{
+                background: "rgba(34, 197, 94, 0.15)",
+                color: "#4ade80",
+                border: "1px solid rgba(34,197,94,0.4)",
+                fontWeight: 600,
+              }}
+            >
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              Accept & Confirm
+            </button>
             <button
               onClick={() => onStatusUpdate?.("quoted")}
               disabled={isUpdating}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
-                background: "rgba(34, 197, 94, 0.1)",
-                color: "#4ade80",
-                border: "1px solid rgba(34,197,94,0.3)",
+                background: "rgba(59, 130, 246, 0.15)",
+                color: "#60a5fa",
+                border: "1px solid rgba(59,130,246,0.4)",
                 fontWeight: 500,
               }}
             >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
               Send Quote
             </button>
             <button
@@ -219,42 +233,14 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               disabled={isUpdating}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
               style={{
-                background: "rgba(239, 68, 68, 0.1)",
+                background: "rgba(239, 68, 68, 0.15)",
                 color: "#f87171",
-                border: "1px solid rgba(239,68,68,0.3)",
+                border: "1px solid rgba(239,68,68,0.4)",
                 fontWeight: 500,
               }}
             >
               {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
-              Cancel
-            </button>
-            <button
-              onClick={() => onStatusUpdate?.("contacted")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "var(--active-overlay)",
-                color: "var(--accent-navy-light)",
-                border: "1px solid var(--border-accent)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              Contacted Customer
-            </button>
-            <button
-              onClick={() => onStatusUpdate?.("converted_to_booking")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "var(--input-background)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-light)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-              Mark Converted
+              Decline / Cancel
             </button>
           </div>
 

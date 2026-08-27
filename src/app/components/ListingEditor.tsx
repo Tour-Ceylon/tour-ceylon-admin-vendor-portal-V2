@@ -334,6 +334,7 @@ function hydrateStayDraft(property: StayPropertyResponse) {
     lat: property.latitude != null ? String(property.latitude) : "",
     lng: property.longitude != null ? String(property.longitude) : "",
     categoryData: {
+      paymentPolicy: property.payment_policy || (policies as any).paymentPolicy || "pay_at_property",
       propertyDetails: {
         propertyName: property.name,
         propertyLocation: property.address || property.city || "",
@@ -435,6 +436,7 @@ function buildStayApplicationPayload({
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
     status: active ? (isAdmin ? "approved" : "submitted") : "draft",
+    paymentPolicy: categoryData.paymentPolicy || "pay_at_property",
     contact: {
       languages: propertyDetails.languages ?? [],
     },
@@ -445,6 +447,7 @@ function buildStayApplicationPayload({
       ratePlans: categoryData.ratePlans ?? {},
       breakfastIncluded: propertyDetails.breakfastIncluded ?? false,
       parking: propertyDetails.parking ?? false,
+      paymentPolicy: categoryData.paymentPolicy || "pay_at_property",
     },
     media: [
       ...(images.cover ? [{ url: images.cover, role: "cover" }] : []),

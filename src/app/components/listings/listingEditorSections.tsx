@@ -708,11 +708,14 @@ function StayDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const [rooms, setRooms] = useState<RoomType[]>(() => (draftCategoryData.roomTypes ?? []) as RoomType[]);
+    const [paymentPolicy, setPaymentPolicy] = useState<"pay_at_property" | "full_online_payment">(
+        draftCategoryData.paymentPolicy ?? "pay_at_property"
+    );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
+        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms]);
+    }, [rooms, paymentPolicy]);
 
     const addRoom = () => {
         const newRoom: RoomType = {
@@ -875,6 +878,65 @@ function StayDetails() {
                     <div>
                         <FieldLabel>Check-out Notes</FieldLabel>
                         <FormTextarea value="Late check-out available until 15:00 for an additional charge, subject to availability." onChange={() => { }} rows={2} />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Payment & Booking Policy">
+                <div className="space-y-4">
+                    <div>
+                        <FieldLabel required>Payment Method Selection</FieldLabel>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div
+                                onClick={() => setPaymentPolicy("pay_at_property")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "pay_at_property"
+                                        ? "border-emerald-500 bg-emerald-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy"
+                                        checked={paymentPolicy === "pay_at_property"}
+                                        onChange={() => setPaymentPolicy("pay_at_property")}
+                                        className="accent-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-emerald-400">Pay at Property (On-Spot)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Guests pay directly in cash or card upon check-in. Confirmation email will specify check-in payment details.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                onClick={() => setPaymentPolicy("full_online_payment")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "full_online_payment"
+                                        ? "border-blue-500 bg-blue-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy"
+                                        checked={paymentPolicy === "full_online_payment"}
+                                        onChange={() => setPaymentPolicy("full_online_payment")}
+                                        className="accent-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-blue-400">Full Online Payment (Automated)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Platform collects full payment online upfront, deducts commission, and automatically processes payout to your account.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </SectionCard>
@@ -1242,10 +1304,14 @@ export function RoomsSection() {
         })),
     );
 
+    const [paymentPolicy, setPaymentPolicy] = useState<"pay_at_property" | "full_online_payment">(
+        draftCategoryData.paymentPolicy ?? "pay_at_property"
+    );
+
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
+        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms]);
+    }, [rooms, paymentPolicy]);
 
     const addRoom = () => {
         const newRoom: RoomType = {
@@ -1572,6 +1638,65 @@ export function RoomsSection() {
                             );
                         })
                     )}
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Payment & Booking Policy">
+                <div className="space-y-4">
+                    <div>
+                        <FieldLabel required>Payment Method Selection</FieldLabel>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div
+                                onClick={() => setPaymentPolicy("pay_at_property")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "pay_at_property"
+                                        ? "border-emerald-500 bg-emerald-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy_rooms"
+                                        checked={paymentPolicy === "pay_at_property"}
+                                        onChange={() => setPaymentPolicy("pay_at_property")}
+                                        className="accent-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-emerald-400">Pay at Property (On-Spot)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Guests pay directly in cash or card upon check-in. Confirmation email will specify check-in payment details.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                onClick={() => setPaymentPolicy("full_online_payment")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "full_online_payment"
+                                        ? "border-blue-500 bg-blue-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy_rooms"
+                                        checked={paymentPolicy === "full_online_payment"}
+                                        onChange={() => setPaymentPolicy("full_online_payment")}
+                                        className="accent-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-blue-400">Full Online Payment (Automated)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Platform collects full payment online upfront, deducts commission, and automatically processes payout to your account.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </SectionCard>
         </div>
