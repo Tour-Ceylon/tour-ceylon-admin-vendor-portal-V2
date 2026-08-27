@@ -100,7 +100,15 @@ export async function apiFetch<T = any>(
     let errorMessage = "An error occurred during the API request.";
     try {
       const errorData = await response.json();
-      errorMessage = errorData.detail || errorData.message || errorMessage;
+      if (Array.isArray(errorData.detail)) {
+        errorMessage = errorData.detail.map((d: any) => `${d.loc ? d.loc.join('.') + ': ' : ''}${d.msg || JSON.stringify(d)}`).join("; ");
+      } else if (typeof errorData.detail === "string") {
+        errorMessage = errorData.detail;
+      } else if (typeof errorData.detail === "object" && errorData.detail !== null) {
+        errorMessage = JSON.stringify(errorData.detail);
+      } else if (errorData.message) {
+        errorMessage = errorData.message;
+      }
     } catch {
       // JSON parsing failed, use statusText
       errorMessage = response.statusText || errorMessage;

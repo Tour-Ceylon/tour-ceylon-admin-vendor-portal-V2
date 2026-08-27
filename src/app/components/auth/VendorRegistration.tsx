@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Compass, ArrowLeft, Upload, Building2, Globe, Anchor, Car } from "lucide-react";
+import { Compass, ArrowLeft, Upload, Building2, Globe, Anchor } from "lucide-react";
 import { useAuth, VendorRegistrationData, Category } from "../../contexts/AuthContext";
 
 const CATEGORIES: { id: Category; label: string; icon: React.ComponentType<any> }[] = [
@@ -8,10 +8,13 @@ const CATEGORIES: { id: Category; label: string; icon: React.ComponentType<any> 
   { id: "Tour", label: "Tour", icon: Compass },
   { id: "Safari", label: "Safari", icon: Globe },
   { id: "Experience", label: "Experience", icon: Anchor },
-  { id: "Transfer", label: "Transfer", icon: Car },
 ];
 
-export function VendorRegistration() {
+interface VendorRegistrationProps {
+  onBackToRoleSelect?: () => void;
+}
+
+export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationProps = {}) {
   const { register } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -20,6 +23,7 @@ export function VendorRegistration() {
     vendorName: "",
     email: "",
     phone: "",
+    password: "",
     country: "Sri Lanka",
     businessDescription: "",
     categories: [],
@@ -66,10 +70,10 @@ export function VendorRegistration() {
             <Compass size={32} className="text-white" />
           </div>
           <h1 className="text-[24px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            Vendor Application
+            Vendor Partner Application
           </h1>
           <p className="text-[13px] mt-1" style={{ color: "var(--text-tertiary)" }}>
-            Join Voyage as a verified travel service provider
+            Join Tour Ceylon as a verified travel service provider (Stays, Tours, Safaris & Experiences)
           </p>
         </div>
 
@@ -109,7 +113,7 @@ export function VendorRegistration() {
                 </div>
                 <div>
                   <label className="block text-[12px] mb-1.5" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                    Vendor Name *
+                    Vendor Contact Name *
                   </label>
                   <input
                     type="text"
@@ -145,6 +149,25 @@ export function VendorRegistration() {
                 </div>
                 <div>
                   <label className="block text-[12px] mb-1.5" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                    Password (for portal login) *
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.password || ""}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="Minimum 8 characters"
+                    minLength={8}
+                    required
+                    className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none"
+                    style={{
+                      background: "var(--input-background)",
+                      border: "1px solid var(--border-light)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] mb-1.5" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
                     Phone *
                   </label>
                   <input
@@ -161,7 +184,7 @@ export function VendorRegistration() {
                     }}
                   />
                 </div>
-                <div>
+                <div className="col-span-2">
                   <label className="block text-[12px] mb-1.5" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
                     Country *
                   </label>
@@ -206,7 +229,7 @@ export function VendorRegistration() {
               <label className="block text-[12px] mb-2" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
                 Select Categories to Apply For *
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {CATEGORIES.map(({ id, label, icon: Icon }) => {
                   const isSelected = formData.categories.includes(id);
                   return (
@@ -267,7 +290,13 @@ export function VendorRegistration() {
             <div className="flex gap-3 pt-4">
               <button
                 type="button"
-                onClick={() => navigate("/login")}
+                onClick={() => {
+                  if (onBackToRoleSelect) {
+                    onBackToRoleSelect();
+                  } else {
+                    navigate("/login");
+                  }
+                }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] transition-all"
                 style={{
                   color: "var(--text-secondary)",
@@ -275,7 +304,7 @@ export function VendorRegistration() {
                 }}
               >
                 <ArrowLeft size={14} />
-                Back to Login
+                {onBackToRoleSelect ? "Change Role" : "Back to Login"}
               </button>
               <button
                 type="submit"

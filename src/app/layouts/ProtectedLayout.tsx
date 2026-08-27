@@ -122,8 +122,8 @@ export function ProtectedLayout() {
     );
   }
 
-  // 3b. Pending Vendor Routing
-  if (effectiveUser?.role === "vendor" && effectiveUser?.vendorStatus === "pending") {
+  // 3b. Pending Vendor & Driver Routing
+  if ((effectiveUser?.role === "vendor" || effectiveUser?.role === "driver") && effectiveUser?.vendorStatus === "pending") {
     return <Navigate to="/pending" replace />;
   }
 

@@ -193,7 +193,7 @@ export function UserDetailDrawer({ user, onClose }: UserDetailDrawerProps) {
           </div>
 
           {/* Vendor Info */}
-          {user.role === "vendor" && user.company && (
+          {user.role.toUpperCase() === "VENDOR" && user.company && (
             <div
               className="rounded-xl p-5"
               style={{
@@ -240,8 +240,51 @@ export function UserDetailDrawer({ user, onClose }: UserDetailDrawerProps) {
             </div>
           )}
 
+          {/* Driver Info */}
+          {user.role.toUpperCase() === "DRIVER" && (
+            <div
+              className="rounded-xl p-5"
+              style={{
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border-light)",
+                boxShadow: "var(--shadow-md)",
+              }}
+            >
+              <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                Driver Information
+              </h3>
+              <div className="space-y-3">
+                {user.company && (
+                  <div>
+                    <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                      Vehicle / Reference
+                    </p>
+                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                      {user.company}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    Category
+                  </p>
+                  <span
+                    className="text-[11px] px-2.5 py-1 rounded inline-block"
+                    style={{
+                      background: "rgba(59, 130, 246, 0.15)",
+                      color: "#60a5fa",
+                      border: "1px solid rgba(59, 130, 246, 0.3)",
+                    }}
+                  >
+                    Transfer & Chauffeur
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Admin Info */}
-          {user.role === "admin" && user.adminRole && (
+          {user.role.toUpperCase() === "ADMIN" && user.adminRole && (
             <div
               className="rounded-xl p-5"
               style={{
@@ -264,8 +307,8 @@ export function UserDetailDrawer({ user, onClose }: UserDetailDrawerProps) {
             </div>
           )}
 
-          {/* Customer Stats */}
-          {user.role === "customer" && user.totalBookings !== undefined && (
+          {/* Tourist Stats */}
+          {user.role.toUpperCase() === "TOURIST" && user.totalBookings !== undefined && (
             <div
               className="rounded-xl p-5"
               style={{

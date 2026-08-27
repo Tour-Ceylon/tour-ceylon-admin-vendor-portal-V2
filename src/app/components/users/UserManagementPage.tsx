@@ -22,9 +22,9 @@ import { useCommonActions } from "../../hooks/useCommonActions";
 import { FilterModal } from "../shared/FilterModal";
 import { apiFetch } from "../api/apiClient";
 
-type UserRole = "tourist" | "vendor" | "admin" | "support";
+type UserRole = "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST";
 type UserStatus = "active" | "pending" | "suspended" | "incomplete_profile";
-type FilterRole = "all" | "tourist" | "vendor_applicants" | "vendor" | "admin" | "support" | "suspended";
+type FilterRole = "all" | "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST" | "vendor_applicants" | "suspended";
 
 interface ApiUser {
   id: string;
@@ -74,7 +74,7 @@ interface UiUser {
 
 interface UserSearchRequest {
   email?: string;
-  role?: Exclude<UserRole, "tourist"> | UserRole;
+  role?: string;
   is_active?: boolean;
   vendor_status?: string;
   page: number;
@@ -97,25 +97,27 @@ const DROPDOWN_STATUS_CONFIG: Record<DropdownStatusValue, { bg: string; text: st
 };
 
 const ROLE_CONFIG: Record<UserRole, { bg: string; text: string; border: string; label: string }> = {
-  tourist: { bg: "rgba(59, 130, 246, 0.12)", text: "#60a5fa", border: "rgba(59,130,246,0.25)", label: "customer" },
-  vendor: { bg: "rgba(168, 85, 247, 0.12)", text: "#a78bfa", border: "rgba(168,85,247,0.25)", label: "vendor" },
-  admin: { bg: "rgba(239, 68, 68, 0.12)", text: "#f87171", border: "rgba(239,68,68,0.25)", label: "admin" },
-  support: { bg: "rgba(8, 145, 178, 0.12)", text: "#22d3ee", border: "rgba(8,145,178,0.25)", label: "support" },
+  VENDOR: { bg: "rgba(168, 85, 247, 0.12)", text: "#a78bfa", border: "rgba(168,85,247,0.25)", label: "VENDOR" },
+  ADMIN: { bg: "rgba(239, 68, 68, 0.12)", text: "#f87171", border: "rgba(239,68,68,0.25)", label: "ADMIN" },
+  DRIVER: { bg: "rgba(59, 130, 246, 0.12)", text: "#60a5fa", border: "rgba(59,130,246,0.25)", label: "DRIVER" },
+  TOURIST: { bg: "rgba(34, 197, 94, 0.12)", text: "#4ade80", border: "rgba(34,197,94,0.25)", label: "TOURIST" },
 };
 
 function normalizeRole(role: string): UserRole {
-  const value = role.toLowerCase();
-  if (value === "customer") return "tourist";
-  if (value === "vendor" || value === "admin" || value === "support" || value === "tourist") return value;
-  return "tourist";
+  const value = String(role || "").trim().toUpperCase();
+  if (value === "VENDOR") return "VENDOR";
+  if (value === "ADMIN") return "ADMIN";
+  if (value === "DRIVER") return "DRIVER";
+  if (value === "TOURIST" || value === "CUSTOMER" || value === "CLIENT") return "TOURIST";
+  return "TOURIST";
 }
 
 function userStatus(user: ApiUser): UserStatus {
   if (!user.is_active) return "suspended";
   const vs = user.vendor_status || user.vendorStatus;
   const role = normalizeRole(String(user.role));
-  if (role === "vendor" && vs === "suspended") return "suspended";
-  if (role === "vendor" && vs === "pending") return "pending";
+  if ((role === "VENDOR" || role === "DRIVER") && vs === "suspended") return "suspended";
+  if ((role === "VENDOR" || role === "DRIVER") && vs === "pending") return "pending";
   if (!user.full_name && !user.name) return "incomplete_profile";
   return "active";
 }
@@ -143,7 +145,7 @@ function mapUser(user: ApiUser): UiUser {
     lastLogin: formatDate(user.updated_at),
     company: user.company_name || user.company || undefined,
     vendorCategories: categories,
-    adminRole: role === "admin" ? "Admin" : role === "support" ? "Support" : undefined,
+    adminRole: role === "ADMIN" ? "Admin" : undefined,
     totalBookings: 0,
     totalSpent: 0,
     raw: user,
@@ -182,11 +184,11 @@ export function UserManagementPage() {
         payload.email = trimmedSearch;
       }
 
-      if (roleFilter === "tourist" || roleFilter === "vendor" || roleFilter === "admin" || roleFilter === "support") {
+      if (roleFilter === "TOURIST" || roleFilter === "VENDOR" || roleFilter === "ADMIN" || roleFilter === "DRIVER") {
         payload.role = roleFilter;
       }
       if (roleFilter === "vendor_applicants") {
-        payload.role = "vendor";
+        payload.role = "VENDOR";
         payload.vendor_status = "pending";
       }
       if (roleFilter === "suspended") {
@@ -216,29 +218,30 @@ export function UserManagementPage() {
   const stats = useMemo(
     () => ({
       totalUsers: users.length,
-      customers: users.filter((user) => user.role === "tourist").length,
-      vendors: users.filter((user) => user.role === "vendor").length,
-      admins: users.filter((user) => user.role === "admin" || user.role === "support").length,
+      vendors: users.filter((user) => user.role === "VENDOR").length,
+      drivers: users.filter((user) => user.role === "DRIVER").length,
+      tourists: users.filter((user) => user.role === "TOURIST").length,
+      admins: users.filter((user) => user.role === "ADMIN").length,
     }),
     [users]
   );
 
   const filterTabs = [
     { id: "all" as const, label: "All Users", count: users.length },
-    { id: "tourist" as const, label: "Customers", count: users.filter((user) => user.role === "tourist").length },
-    { id: "vendor_applicants" as const, label: "Vendor Applicants", count: users.filter((user) => user.role === "vendor" && user.status === "pending").length },
-    { id: "vendor" as const, label: "Approved Vendors", count: users.filter((user) => user.role === "vendor" && user.status === "active").length },
-    { id: "admin" as const, label: "Admins", count: users.filter((user) => user.role === "admin").length },
-    { id: "support" as const, label: "Support", count: users.filter((user) => user.role === "support").length },
+    { id: "VENDOR" as const, label: "Vendors", count: users.filter((user) => user.role === "VENDOR" && user.status === "active").length },
+    { id: "DRIVER" as const, label: "Drivers", count: users.filter((user) => user.role === "DRIVER").length },
+    { id: "TOURIST" as const, label: "Tourists", count: users.filter((user) => user.role === "TOURIST").length },
+    { id: "ADMIN" as const, label: "Admins", count: users.filter((user) => user.role === "ADMIN").length },
+    { id: "vendor_applicants" as const, label: "Vendor Applicants", count: users.filter((user) => user.role === "VENDOR" && user.status === "pending").length },
     { id: "suspended" as const, label: "Suspended", count: users.filter((user) => user.status === "suspended").length },
   ];
 
   const filteredUsers = users.filter((user) => {
     let matchRole = false;
     if (filterRole === "all") matchRole = true;
-    else if (filterRole === "vendor_applicants") matchRole = user.role === "vendor" && user.status === "pending";
+    else if (filterRole === "vendor_applicants") matchRole = user.role === "VENDOR" && user.status === "pending";
     else if (filterRole === "suspended") matchRole = user.status === "suspended";
-    else if (filterRole === "vendor") matchRole = user.role === "vendor" && user.status === "active";
+    else if (filterRole === "VENDOR") matchRole = user.role === "VENDOR" && user.status === "active";
     else matchRole = user.role === filterRole;
 
     const query = search.trim().toLowerCase();
@@ -289,12 +292,12 @@ export function UserManagementPage() {
   const changeRole = async (user: UiUser, role: UserRole) => {
     const payload: Record<string, any> = {
       role: apiRole(role),
-      vendor_status: role === "vendor" ? user.raw.vendor_status || "pending" : user.raw.vendor_status,
+      vendor_status: role === "VENDOR" || role === "DRIVER" ? user.raw.vendor_status || "pending" : user.raw.vendor_status,
     };
-    if (role === "vendor") {
+    if (role === "VENDOR") {
       const currentCats = user.vendorCategories || [];
       if (currentCats.length === 0) {
-        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience", "Transfer"];
+        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience"];
       }
     }
     await updateUser(user, payload);
@@ -306,10 +309,10 @@ export function UserManagementPage() {
       vendor_status: status,
       is_active: status !== "suspended" 
     };
-    if (status === "approved" && user.role === "vendor") {
+    if (status === "approved" && user.role === "VENDOR") {
       const currentCats = user.vendorCategories || [];
       if (currentCats.length === 0) {
-        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience", "Transfer"];
+        payload.approved_categories = ["Stay", "Tour", "Safari", "Experience"];
       }
     }
     await updateUser(user, payload);
@@ -322,7 +325,7 @@ export function UserManagementPage() {
       await apiFetch(`/users/${user.id}/${user.raw.is_active ? "deactivate" : "activate"}`, {
         method: "PATCH",
       });
-      await loadUsers();
+      await loadUsers(search, filterRole);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to change user status.");
     } finally {
@@ -350,9 +353,9 @@ export function UserManagementPage() {
 
       <div className="grid grid-cols-4 gap-4">
         <StatCard icon={<Users size={18} style={{ color: "#3b82f6" }} />} label="Total Users" value={stats.totalUsers} bg="rgba(59,130,246,0.15)" />
-        <StatCard icon={<User size={18} style={{ color: "#22c55e" }} />} label="Customers" value={stats.customers} bg="rgba(34,197,94,0.15)" />
         <StatCard icon={<Building2 size={18} style={{ color: "#a78bfa" }} />} label="Vendors" value={stats.vendors} bg="rgba(168,85,247,0.15)" />
-        <StatCard icon={<Shield size={18} style={{ color: "#ef4444" }} />} label="Admins & Support" value={stats.admins} bg="rgba(239,68,68,0.15)" />
+        <StatCard icon={<User size={18} style={{ color: "#60a5fa" }} />} label="Drivers" value={stats.drivers} bg="rgba(59,130,246,0.15)" />
+        <StatCard icon={<Shield size={18} style={{ color: "#ef4444" }} />} label="Admins" value={stats.admins} bg="rgba(239,68,68,0.15)" />
       </div>
 
       <div className="flex items-center gap-3">
@@ -440,7 +443,7 @@ export function UserManagementPage() {
           filteredUsers.map((user, i) => {
             const isSelected = selectedUsers.has(user.id);
             const statusConfig = STATUS_CONFIG[user.status];
-            const roleConfig = ROLE_CONFIG[user.role];
+            const roleConfig = ROLE_CONFIG[user.role] || ROLE_CONFIG.TOURIST;
             const busy = isUpdating === user.id;
 
             return (
@@ -469,22 +472,22 @@ export function UserManagementPage() {
                   disabled={busy}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => changeRole(user, e.target.value as UserRole)}
-                  className="h-8 rounded-lg px-2 text-[11px] outline-none"
+                  className="h-8 rounded-lg px-2 text-[11px] outline-none cursor-pointer"
                   style={{ background: roleConfig.bg, color: roleConfig.text, border: `1px solid ${roleConfig.border}`, fontWeight: 700 }}
                 >
-                  <option value="tourist">customer</option>
-                  <option value="vendor">vendor</option>
-                  <option value="admin">admin</option>
-                  <option value="support">support</option>
+                  <option value="VENDOR">VENDOR</option>
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="DRIVER">DRIVER</option>
+                  <option value="TOURIST">TOURIST</option>
                 </select>
 
                 {/* STATUS — all users get the same 3-option dropdown */}
                 <div onClick={(e) => e.stopPropagation()}>
                   {(() => {
-                    // Treat null/empty as "approved" for non-vendors, or "pending" for vendors
+                    // Treat null/empty as "approved" for non-vendors, or "pending" for vendors/drivers
                     let rawVs = (user.raw.vendor_status || user.raw.vendorStatus) as string;
                     if (!rawVs) {
-                      rawVs = user.role === "vendor" ? "pending" : "approved";
+                      rawVs = (user.role === "VENDOR" || user.role === "DRIVER") ? "pending" : "approved";
                     }
                     if (user.raw.is_active === false) rawVs = "suspended";
 

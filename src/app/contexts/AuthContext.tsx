@@ -2,9 +2,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useAuth as useClerkAuth, useUser as useClerkUser } from "@clerk/clerk-react";
 import { apiFetch } from "../components/api/apiClient";
 
-export type UserRole = "admin" | "vendor" | "customer/client";
+export type UserRole = "admin" | "vendor" | "driver" | "customer/client";
 export type VendorStatus = "pending" | "approved" | "rejected" | "suspended";
-export type Category = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
+export type Category = "Stay" | "Tour" | "Safari" | "Experience";
 
 export interface User {
   id: string;
@@ -16,6 +16,33 @@ export interface User {
   vendorStatus?: VendorStatus;
   approvedCategories?: Category[];
   company?: string;
+  nicNumber?: string;
+  vehiclePlateNumber?: string;
+}
+
+export interface DriverLuggageCapacityInput {
+  luggage_size_type_id: string;
+  quantity: number;
+}
+
+export interface DriverRegistrationData {
+  fullName: string;
+  nicNumber: string;
+  email: string;
+  phone: string;
+  password?: string;
+  vehicleModelPresetId?: string | null;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehiclePlateNumber: string;
+  seats: number;
+  luggageCapacities: DriverLuggageCapacityInput[];
+  licenseNumber?: string;
+  licensePhotoUrl?: string;
+  nicPhotoUrl?: string;
+  vehicleRegistrationDocUrl?: string;
+  insuranceDocUrl?: string;
+  policeClearanceDocUrl?: string;
 }
 
 interface AuthContextType {
@@ -30,6 +57,7 @@ interface AuthContextType {
   toggleViewAsVendor: () => void;
   logout: () => Promise<void>;
   register: (data: VendorRegistrationData) => Promise<void>;
+  registerDriver: (data: DriverRegistrationData) => Promise<void>;
 }
 
 export interface VendorRegistrationData {
@@ -37,6 +65,7 @@ export interface VendorRegistrationData {
   vendorName: string;
   email: string;
   phone: string;
+  password?: string;
   country: string;
   businessDescription: string;
   categories: Category[];
@@ -74,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           vendorStatus: "approved",
           approvedCategories: user.approvedCategories?.length
             ? user.approvedCategories
-            : ["Stay", "Tour", "Safari", "Experience", "Transfer"],
+            : ["Stay", "Tour", "Safari", "Experience"],
           company: user.company || "Voyage Operations",
         }
       : user;
@@ -100,52 +129,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         // 1. Call backend /users/me or /users/sync endpoint to resolve local DB record
-        // The backend automatically auto-provisions or resolves the local user record using get_current_user
         const backendUser = await apiFetch("/users/me");
 
         if (!backendUser) {
           throw new Error("Unable to retrieve backend user profile.");
         }
 
-        // 2. Resolve Role (admin / vendor / customer/client)
-        // Map backend enums ("admin", "vendor", "tourist", "support") to frontend roles
+        // 2. Resolve Role (admin / vendor / driver / customer/client)
         let role: UserRole = "customer/client";
-        if (backendUser.role === "admin" || backendUser.role === "support") {
+        const backendRole = String(backendUser.role || "").toUpperCase();
+        if (backendRole === "ADMIN") {
           role = "admin";
-        } else if (backendUser.role === "vendor") {
+        } else if (backendRole === "VENDOR") {
           role = "vendor";
+        } else if (backendRole === "DRIVER") {
+          role = "driver";
         }
 
-        // Block customer/client role from entering the admin/vendor portal
+        // Block customer/client/TOURIST role from entering the admin/vendor portal
         if (role === "customer/client") {
           throw new Error("Customer accounts are not authorized to access the management portal.");
         }
 
-        // 3. Resolve Vendor Status & Approved Categories
-        // Read status, categories, and company details from backendUser (DB source of truth),
-        // with fallback to Clerk public metadata.
         const clerkMetadata = clerkUser.publicMetadata || {};
 
-        // IMPORTANT: Do NOT default vendor_status to "approved" when it is null.
-        // A null vendor_status on a vendor account should be treated as "pending" —
-        // only use "approved" as default for non-vendor roles (admin/support) which
-        // don't use vendor_status in the UI gate logic.
         const rawVendorStatus =
           backendUser.vendorStatus ||
           backendUser.vendor_status ||
           (clerkMetadata.vendorStatus as VendorStatus | undefined);
         const vendorStatus: VendorStatus =
-          rawVendorStatus || (role === "vendor" ? "pending" : "approved");
+          rawVendorStatus || (role === "vendor" || role === "driver" ? "pending" : "approved");
 
         const approvedCategories: Category[] =
           backendUser.approvedCategories ||
           backendUser.approved_categories ||
           (clerkMetadata.approvedCategories as Category[] | undefined) ||
-          (role !== "vendor" ? ["Stay", "Tour", "Safari", "Experience", "Transfer"] : []);
+          (role === "admin" ? ["Stay", "Tour", "Safari", "Experience"] : []);
 
         const company =
           (backendUser.company || backendUser.company_name || clerkMetadata.company as string) ||
-          "Voyage Operations";
+          (role === "driver" ? "Independent Driver" : "Voyage Operations");
 
         // is_active comes from the SoftDeleteMixin column on the User model
         const isActive: boolean = backendUser.is_active !== false;
@@ -160,6 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           vendorStatus,
           approvedCategories,
           company,
+          nicNumber: backendUser.driver_profile?.nic_number,
+          vehiclePlateNumber: backendUser.driver_profile?.vehicle_plate_number,
         };
 
         setUser(normalizedUser);
@@ -193,21 +218,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let responseUser;
       if (isSignedIn) {
-        // If already signed in to Clerk, call the apply-vendor endpoint to update/apply for vendor role
         responseUser = await apiFetch("/users/apply-vendor", {
           method: "POST",
           body: JSON.stringify(data),
         });
       } else {
-        // Otherwise, create a new pending vendor user profile
         responseUser = await apiFetch("/users/", {
           method: "POST",
           body: JSON.stringify({
-            clerk_user_id: null,
+            clerk_user_id: userId || null,
             email: data.email,
             full_name: data.vendorName,
+            password: data.password,
             country: data.country,
-            role: "vendor",
+            role: "VENDOR",
             is_active: true,
             vendor_status: "pending",
             company_name: data.businessName,
@@ -220,7 +244,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // After registering/applying, set user in state to simulate immediate transition or updated profile
       const pendingUser: User = {
         id: responseUser?.id || userId || `vendor_${Date.now()}`,
         clerkUserId: userId || "",
@@ -233,9 +256,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         company: data.businessName,
       };
       setUser(pendingUser);
-      setError(null); // Clear any access denied errors so the pending approval screen renders correctly
+      setError(null);
     } catch (err: any) {
       console.error("Vendor registration failed:", err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerDriver = async (data: DriverRegistrationData) => {
+    setLoading(true);
+    try {
+      const responseDriver = await apiFetch("/auth/driver/signup", {
+        method: "POST",
+        body: JSON.stringify({
+          full_name: data.fullName,
+          nic_number: data.nicNumber,
+          email: data.email,
+          phone: data.phone,
+          password: data.password,
+          clerk_user_id: userId || null,
+          country: "Sri Lanka",
+          vehicle_model_preset_id: data.vehicleModelPresetId || null,
+          vehicle_make: data.vehicleMake,
+          vehicle_model: data.vehicleModel,
+          vehicle_plate_number: data.vehiclePlateNumber,
+          seats: data.seats,
+          luggage_capacities: data.luggageCapacities,
+          license_number: data.licenseNumber,
+          license_photo_url: data.licensePhotoUrl,
+          nic_photo_url: data.nicPhotoUrl,
+          vehicle_registration_doc_url: data.vehicleRegistrationDocUrl,
+          insurance_doc_url: data.insuranceDocUrl,
+          police_clearance_doc_url: data.policeClearanceDocUrl,
+        }),
+      });
+
+      const pendingDriverUser: User = {
+        id: responseDriver?.id || responseDriver?.user_id || userId || `driver_${Date.now()}`,
+        clerkUserId: userId || "",
+        email: data.email,
+        name: data.fullName,
+        role: "driver",
+        isActive: true,
+        vendorStatus: "pending",
+        company: `${data.vehicleMake} ${data.vehicleModel} (${data.vehiclePlateNumber})`,
+        nicNumber: data.nicNumber,
+        vehiclePlateNumber: data.vehiclePlateNumber,
+      };
+      setUser(pendingDriverUser);
+      setError(null);
+    } catch (err: any) {
+      console.error("Driver registration failed:", err);
       throw err;
     } finally {
       setLoading(false);
@@ -254,6 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         toggleViewAsVendor,
         logout,
         register,
+        registerDriver,
       }}
     >
       {children}

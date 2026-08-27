@@ -1,10 +1,12 @@
 import { useNavigate } from "react-router";
-import { Compass, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
+import { Compass, Car, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export function PendingApprovalScreen() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const isDriver = user?.role === "driver";
 
   const handleLogout = () => {
     logout();
@@ -13,17 +15,17 @@ export function PendingApprovalScreen() {
 
   const steps = [
     {
-      label: "Application Submitted",
+      label: "Application & Documents Submitted",
       status: "completed",
-      date: "May 18, 2026",
+      date: "Completed",
     },
     {
-      label: "Under Review",
+      label: isDriver ? "Driver & Vehicle Verification" : "Business Document Review",
       status: "current",
       date: "In Progress",
     },
     {
-      label: "Approved",
+      label: isDriver ? "Driver Account Activation" : "Vendor Portal Approved",
       status: "pending",
       date: "Pending",
     },
@@ -40,17 +42,23 @@ export function PendingApprovalScreen() {
           <div
             className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4"
             style={{
-              background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-              boxShadow: "0 0 24px var(--border-accent)",
+              background: isDriver
+                ? "linear-gradient(135deg, #1e3a8a, #3b82f6)"
+                : "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+              boxShadow: isDriver
+                ? "0 0 24px rgba(59, 130, 246, 0.3)"
+                : "0 0 24px var(--border-accent)",
             }}
           >
-            <Compass size={32} className="text-white" />
+            {isDriver ? <Car size={32} className="text-white" /> : <Compass size={32} className="text-white" />}
           </div>
           <h1 className="text-[24px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            Application Under Review
+            {isDriver ? "Driver Application Under Review" : "Vendor Application Under Review"}
           </h1>
           <p className="text-[13px] mt-1" style={{ color: "var(--text-tertiary)" }}>
-            Your vendor application is being reviewed by our team
+            {isDriver
+              ? "Your transfer driver profile & vehicle verification documents are being reviewed"
+              : "Your vendor application is being reviewed by our team"}
           </p>
         </div>
 
@@ -74,10 +82,10 @@ export function PendingApprovalScreen() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Business Name
+                  {isDriver ? "Driver Partner" : "Business Name"}
                 </p>
                 <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                  {user?.company || "N/A"}
+                  {isDriver ? user?.name : user?.company || "N/A"}
                 </p>
               </div>
               <div>
@@ -90,10 +98,10 @@ export function PendingApprovalScreen() {
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Application ID
+                  {isDriver ? "Vehicle / Reference" : "Application ID"}
                 </p>
                 <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                  {user?.id}
+                  {isDriver ? user?.company || user?.vehiclePlateNumber || "Registered Vehicle" : user?.id}
                 </p>
               </div>
               <div>
@@ -103,7 +111,7 @@ export function PendingApprovalScreen() {
                 <div className="flex items-center gap-2">
                   <Clock size={14} style={{ color: "var(--warning)" }} />
                   <span className="text-[13px]" style={{ color: "var(--warning)", fontWeight: 500 }}>
-                    Pending Review
+                    Pending Verification
                   </span>
                 </div>
               </div>
@@ -115,7 +123,6 @@ export function PendingApprovalScreen() {
             {steps.map((step, index) => {
               const isCompleted = step.status === "completed";
               const isCurrent = step.status === "current";
-              const isPending = step.status === "pending";
 
               return (
                 <div key={index} className="flex items-center gap-4">
@@ -159,16 +166,6 @@ export function PendingApprovalScreen() {
                       {step.date}
                     </p>
                   </div>
-
-                  {/* Connector */}
-                  {index < steps.length - 1 && (
-                    <div
-                      className="absolute left-5 w-0.5 h-8 mt-12"
-                      style={{
-                        background: isCompleted ? "var(--success)" : "var(--border-light)",
-                      }}
-                    />
-                  )}
                 </div>
               );
             })}
@@ -186,12 +183,20 @@ export function PendingApprovalScreen() {
               What happens next?
             </h3>
             <ul className="space-y-2">
-              {[
-                "Our team will review your application within 2-3 business days",
-                "You'll receive an email notification once the review is complete",
-                "Upon approval, you'll gain access to your vendor dashboard",
-                "You can start creating and managing your listings immediately",
-              ].map((item, i) => (
+              {(isDriver
+                ? [
+                    "Our verification team will inspect your Driving License, NIC, and Vehicle CR documents",
+                    "We will verify your police clearance and insurance validity within 1-2 business days",
+                    "You will receive an email and SMS alert as soon as your driver account is approved",
+                    "Once approved, you will begin receiving transfer trip allocations and booking requests",
+                  ]
+                : [
+                    "Our team will review your application within 2-3 business days",
+                    "You'll receive an email notification once the review is complete",
+                    "Upon approval, you'll gain access to your vendor dashboard",
+                    "You can start creating and managing your listings immediately",
+                  ]
+              ).map((item, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-[12px] mt-0.5" style={{ color: "var(--accent-navy-light)" }}>
                     •

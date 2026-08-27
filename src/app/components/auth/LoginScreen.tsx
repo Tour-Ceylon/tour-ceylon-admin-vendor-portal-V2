@@ -116,16 +116,16 @@ export function LoginScreen() {
           />
         </div>
 
-        {/* Vendor Registration Link */}
+        {/* Registration Link */}
         <div className="mt-6 text-center">
           <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-            Applying as a new travel provider?{" "}
+            Applying as a new travel or transfer partner?{" "}
             <button
               onClick={() => navigate("/register")}
               className="transition-all hover:underline"
               style={{ color: "var(--accent-navy-light)", fontWeight: 600 }}
             >
-              Apply as Vendor
+              Apply as Vendor or Driver
             </button>
           </p>
         </div>

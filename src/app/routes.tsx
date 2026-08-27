@@ -2,7 +2,9 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { RootLayout } from "./layouts/RootLayout";
 import { ProtectedLayout } from "./layouts/ProtectedLayout";
 import { LoginScreen } from "./components/auth/LoginScreen";
+import { RegistrationFlow } from "./components/auth/RegistrationFlow";
 import { VendorRegistration } from "./components/auth/VendorRegistration";
+import { DriverRegistration } from "./components/auth/DriverRegistration";
 import { PendingApprovalScreen } from "./components/auth/PendingApprovalScreen";
 import { AuthenticateWithRedirectCallback } from "@clerk/clerk-react";
 import { Dashboard } from "./components/Dashboard";
@@ -69,7 +71,9 @@ export const router = createBrowserRouter([
     children: [
       // Public routes
       { path: "login", Component: LoginScreen },
-      { path: "register", Component: VendorRegistration },
+      { path: "register", Component: RegistrationFlow },
+      { path: "register/vendor", Component: VendorRegistration },
+      { path: "register/driver", Component: DriverRegistration },
       { path: "pending", Component: PendingApprovalScreen },
       { path: "sso-callback", Component: AuthenticateWithRedirectCallback },
 
