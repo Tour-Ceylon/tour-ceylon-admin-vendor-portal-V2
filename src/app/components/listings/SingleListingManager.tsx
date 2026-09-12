@@ -36,6 +36,8 @@ import {
     UserCheck,
     AlertCircle,
     FastForward,
+    Car,
+    Users,
 } from "lucide-react";
 import { EmptyState } from "../common/EmptyState";
 import { DashboardSkeleton } from "../common/SkeletonLoader";
@@ -126,6 +128,644 @@ const STATUS_STYLES: Record<CellStatus, { bg: string; border: string; text: stri
     blocked: { bg: "rgba(100,116,139,0.15)", border: "rgba(100,116,139,0.3)", text: "#94a3b8", badge: "Blocked / Blackout" },
 };
 
+function SafariListingManager({
+    listing,
+    listingId,
+    isAdmin,
+    navigate,
+}: {
+    listing: any;
+    listingId: string | undefined;
+    isAdmin: boolean;
+    navigate: (path: string) => void;
+}) {
+    const listingName = listing?.name || listing?.title || listing?.safariDetail?.nationalPark ? `${listing?.safariDetail?.nationalPark || "Safari"} Game Drive` : "Yala National Park Safari";
+    const nationalPark = listing?.safariDetail?.nationalPark || listing?.destination?.name || listing?.address || "Yala National Park";
+    const status = listing?.status || "Active";
+
+    const [monthDate, setMonthDate] = useState(() => new Date());
+    const [statusFilter, setStatusFilter] = useState<BookingStatusFilter>("ALL");
+    const [selectedSlot, setSelectedSlot] = useState<"ALL" | "Morning" | "Afternoon" | "Full Day">("ALL");
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [blackoutDates, setBlackoutDates] = useState<Record<string, string>>({
+        "2026-09-12": "Park Maintenance Blackout",
+        "2026-09-20": "Heavy Monsoon Rain Closure",
+    });
+    const [showBlockModal, setShowBlockModal] = useState(false);
+    const [blockReason, setBlockReason] = useState("");
+    const [blockDateStr, setBlockDateStr] = useState("");
+
+    const realVariants = listing?.variants || listing?.safariDetail?.variants || [];
+    const rawPackages = listing?.safariDetail?.jeep_packages || listing?.categoryData?.safariPackages || [];
+
+    const safariPackages = useMemo(() => {
+        if (realVariants.length > 0) {
+            return realVariants.map((v: any, idx: number) => ({
+                id: v.id || `var_${idx + 1}`,
+                name: v.name || `Safari Package ${idx + 1}`,
+                slot: v.booking_unit === "per_person" || v.unit === "Per Person" ? "Shared Seat Game Drive" : "Private 4x4 Jeep Drive",
+                price: v.pricing?.amount ? `$${v.pricing.amount} ${v.pricing.currency || "USD"}` : v.price ? `$${v.price}` : "$150 USD",
+                capacity: v.capacity_max ? `${v.capacity_max} Passengers` : "6 Passengers",
+                includesParkFees: true,
+                description: v.name?.toLowerCase().includes("morning") ? "Morning game drive for optimum wildlife activity." : v.name?.toLowerCase().includes("afternoon") ? "Afternoon golden hour safari." : "Game drive expedition.",
+            }));
+        }
+        if (rawPackages.length > 0) {
+            return rawPackages.map((pkg: any, idx: number) => ({
+                id: pkg.id || `pkg_${idx + 1}`,
+                name: pkg.name || `Safari Package ${idx + 1}`,
+                slot: pkg.type === "shared_seat" ? "Shared Seat Game Drive" : "Private 4x4 Jeep Drive",
+                price: pkg.price ? `$${pkg.price} ${pkg.currency || "USD"}` : "$150 USD",
+                capacity: pkg.capacityMax ? `${pkg.capacityMax} Passengers` : "6 Passengers",
+                includesParkFees: true,
+                description: "Safari game drive package.",
+            }));
+        }
+        return [
+            {
+                id: "pkg_default_1",
+                name: listing?.title || "Standard 4x4 Jeep Safari",
+                slot: "Morning / Afternoon Drive",
+                price: "$150 USD",
+                capacity: "6 Passengers",
+                includesParkFees: true,
+                description: "Safari game drive.",
+            },
+        ];
+    }, [realVariants, rawPackages, listing?.title]);
+
+    const wildlifeHighlights = listing?.safariDetail?.wildlife_highlights || listing?.categoryData?.wildlifeHighlights || listing?.safariDetail?.wildlifeHighlights || [
+        "Sri Lankan Leopard",
+        "Asian Elephant",
+        "Sloth Bear",
+        "Mugger Crocodile",
+        "Sri Lanka Jungle Fowl",
+        "Painted Stork",
+    ];
+
+    const [safariBookings, setSafariBookings] = useState([
+        {
+            id: "BK-SAF-101",
+            guestName: "Alexander Wright",
+            email: "alex.wright@example.com",
+            phone: "+1 555-0192",
+            package: "Morning Private 4x4 Jeep",
+            slot: "Morning (06:00 AM)",
+            date: "2026-09-06",
+            passengers: 4,
+            price: "$150 USD",
+            paymentMethod: "Pay at Property",
+            status: "CONFIRMED",
+        },
+        {
+            id: "BK-SAF-102",
+            guestName: "Elena Rostova",
+            email: "elena.r@example.com",
+            phone: "+44 7700 900077",
+            package: "VIP Full Day Expedition Jeep",
+            slot: "Full Day (06:00 AM)",
+            date: "2026-09-08",
+            passengers: 2,
+            price: "$280 USD",
+            paymentMethod: "Full Online Payment",
+            status: "PENDING",
+        },
+        {
+            id: "BK-SAF-103",
+            guestName: "Marcus Vance",
+            email: "marcus.v@example.com",
+            phone: "+61 400 123 456",
+            package: "Afternoon Private 4x4 Jeep",
+            slot: "Afternoon (02:30 PM)",
+            date: "2026-09-10",
+            passengers: 6,
+            price: "$140 USD",
+            paymentMethod: "Pay at Property",
+            status: "CONFIRMED",
+        },
+    ]);
+
+    const counts = useMemo(() => {
+        let pending = 0;
+        let confirmed = 0;
+        let rejected = 0;
+        for (const b of safariBookings) {
+            if (b.status === "PENDING") pending += 1;
+            else if (b.status === "CONFIRMED") confirmed += 1;
+            else if (b.status === "REJECTED" || b.status === "CANCELLED") rejected += 1;
+        }
+        return { pending, confirmed, rejected, total: safariBookings.length };
+    }, [safariBookings]);
+
+    const filteredBookings = useMemo(() => {
+        return safariBookings.filter((b) => {
+            if (statusFilter !== "ALL" && b.status !== statusFilter) return false;
+            if (selectedSlot !== "ALL" && !b.slot.startsWith(selectedSlot)) return false;
+            return true;
+        });
+    }, [safariBookings, statusFilter, selectedSlot]);
+
+    const handleAddBlackout = () => {
+        if (!blockDateStr) return;
+        setBlackoutDates((prev) => ({ ...prev, [blockDateStr]: blockReason || "Vendor Blackout" }));
+        setShowBlockModal(false);
+        setBlockReason("");
+        setBlockDateStr("");
+    };
+
+    const handleRemoveBlackout = (dateKey: string) => {
+        setBlackoutDates((prev) => {
+            const next = { ...prev };
+            delete next[dateKey];
+            return next;
+        });
+    };
+
+    const monthLabel = monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+    return (
+        <div className="p-6 space-y-6">
+            {/* Header & Navigation */}
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <button
+                        onClick={() => navigate("/listings")}
+                        className="inline-flex items-center gap-1.5 text-[12px] mb-2 hover:underline"
+                        style={{ color: "var(--text-secondary)" }}
+                    >
+                        <ArrowLeft size={14} /> Back to All Listings
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-[22px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                            {listingName}
+                        </h1>
+                        <span
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                            style={{ background: "rgba(5,150,105,0.15)", color: "#34d399", border: "1px solid rgba(5,150,105,0.3)" }}
+                        >
+                            Safari Listing
+                        </span>
+                        <span
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                            style={{ background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)" }}
+                        >
+                            {status}
+                        </span>
+                    </div>
+                    <p className="text-[12px] flex items-center gap-1.5 mt-1" style={{ color: "var(--text-secondary)" }}>
+                        <MapPin size={13} style={{ color: "#34d399" }} /> {nationalPark}, Sri Lanka
+                    </p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => navigate(`/listings/${listingId || "safari-1"}/edit`)}
+                        className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
+                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                    >
+                        <Edit3 size={14} /> Edit Safari
+                    </button>
+                    <a
+                        href={`http://localhost:3000/browse`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
+                        style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--accent-navy-light)", fontWeight: 600 }}
+                    >
+                        <ExternalLink size={14} /> View Client Page
+                    </a>
+                </div>
+            </div>
+
+            {/* Overview Metrics Cards */}
+            <div>
+                <h2 className="text-[14px] mb-3 font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Safari Booking Status & Reservations Overview
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button
+                        onClick={() => setStatusFilter("ALL")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "ALL" ? "var(--active-overlay)" : "var(--bg-panel)",
+                            border: statusFilter === "ALL" ? "2px solid var(--accent-navy)" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "var(--text-secondary)" }}>Total Reservations</span>
+                            <Filter size={16} style={{ color: "var(--accent-navy-light)" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "var(--text-primary)" }}>{counts.total}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>All safari game drive bookings</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("PENDING")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "PENDING" ? "rgba(245,158,11,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "PENDING" ? "2px solid #f59e0b" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#fbbf24" }}>Pending Requests</span>
+                            <Clock size={16} style={{ color: "#f59e0b" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#fbbf24" }}>{counts.pending}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Awaiting guide & jeep confirmation</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("CONFIRMED")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "CONFIRMED" ? "rgba(34,197,94,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "CONFIRMED" ? "2px solid #22c55e" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#4ade80" }}>Confirmed Drives</span>
+                            <CheckCircle2 size={16} style={{ color: "#22c55e" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#4ade80" }}>{counts.confirmed}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Active & ready game drives</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("REJECTED")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "REJECTED" ? "rgba(239,68,68,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "REJECTED" ? "2px solid #ef4444" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#f87171" }}>Cancelled / Declined</span>
+                            <XCircle size={16} style={{ color: "#ef4444" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#f87171" }}>{counts.rejected}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Cancelled safari drives</p>
+                    </button>
+                </div>
+            </div>
+
+            {/* Safari Details & Jeep Packages Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Configured Packages */}
+                <div
+                    className="lg:col-span-2 rounded-xl p-5"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+                >
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-700/30">
+                        <div>
+                            <h2 className="text-[15px] font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+                                <Car size={18} className="text-emerald-400" />
+                                Configured Safari Jeep Packages
+                            </h2>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Available game drive options shown to client visitors</p>
+                        </div>
+                        <button
+                            onClick={() => navigate(`/listings/${listingId || "safari-1"}/edit`)}
+                            className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20"
+                        >
+                            + Manage Packages
+                        </button>
+                    </div>
+
+                    <div className="space-y-3">
+                        {safariPackages.map((pkg) => (
+                            <div
+                                key={pkg.id}
+                                className="p-4 rounded-xl space-y-2"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+                            >
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-[14px] font-bold" style={{ color: "var(--text-primary)" }}>{pkg.name}</h3>
+                                        {pkg.includesParkFees && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                                ✓ Includes Park Entrance Fees
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="text-[16px] font-extrabold text-emerald-400">{pkg.price}</span>
+                                </div>
+                                <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{pkg.description}</p>
+                                <div className="flex items-center gap-4 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                    <span className="flex items-center gap-1"><Users size={13} /> {pkg.capacity}</span>
+                                    <span>•</span>
+                                    <span className="flex items-center gap-1"><Clock size={13} /> {pkg.slot}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Park & Wildlife Highlights Card */}
+                <div
+                    className="rounded-xl p-5 space-y-4"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+                >
+                    <div>
+                        <h2 className="text-[15px] font-bold mb-1" style={{ color: "var(--text-primary)" }}>Wildlife Species Highlights</h2>
+                        <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Key species targeted in {nationalPark}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {wildlifeHighlights.map((animal: string) => (
+                            <span
+                                key={animal}
+                                className="px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                                style={{ background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.3)" }}
+                            >
+                                🐾 {animal}
+                            </span>
+                        ))}
+                    </div>
+                    <div className="pt-3 border-t border-slate-700/30 space-y-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                        <div className="flex justify-between">
+                            <span style={{ color: "var(--text-tertiary)" }}>Best Season:</span>
+                            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>Feb – Jul & Sep – Dec</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span style={{ color: "var(--text-tertiary)" }}>Naturalist Guide:</span>
+                            <span className="font-semibold text-emerald-400">Included (Certified)</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span style={{ color: "var(--text-tertiary)" }}>Vehicle Type:</span>
+                            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>Modified 4x4 Open Jeep</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Game Drive Availability & Blackout Calendar */}
+            <div
+                className="rounded-xl overflow-hidden"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+            >
+                <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                    <div className="flex items-center gap-3">
+                        <CalendarDays size={18} style={{ color: "#34d399" }} />
+                        <div>
+                            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                                Game Drive Schedule & Blackout Dates
+                            </h2>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                Manage daily jeep slots or stop safari bookings for maintenance / park closure
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <select
+                            value={selectedSlot}
+                            onChange={(e) => setSelectedSlot(e.target.value as any)}
+                            className="px-3 py-1.5 rounded-lg text-[12px]"
+                            style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                        >
+                            <option value="ALL">All Drive Slots</option>
+                            <option value="Morning">Morning (06:00 AM)</option>
+                            <option value="Afternoon">Afternoon (02:30 PM)</option>
+                            <option value="Full Day">Full Day (06:00 AM)</option>
+                        </select>
+                        <button
+                            onClick={() => setShowBlockModal(true)}
+                            className="px-3.5 py-1.5 rounded-lg text-[12px] flex items-center gap-1.5 font-semibold"
+                            style={{ background: "var(--accent-navy)", color: "white", boxShadow: "0 0 10px var(--border-accent)" }}
+                        >
+                            <Lock size={13} /> Stop Date / Blackout Slot
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-[14px] font-bold" style={{ color: "var(--text-primary)" }}>{monthLabel}</h3>
+                        <div className="flex gap-1.5">
+                            <button
+                                onClick={() => setMonthDate((curr) => new Date(curr.getFullYear(), curr.getMonth() - 1, 1))}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+                            >
+                                <ChevronLeft size={15} style={{ color: "var(--text-secondary)" }} />
+                            </button>
+                            <button
+                                onClick={() => setMonthDate(new Date())}
+                                className="px-3 py-1 rounded-lg text-[11px] font-semibold"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                            >
+                                Today
+                            </button>
+                            <button
+                                onClick={() => setMonthDate((curr) => new Date(curr.getFullYear(), curr.getMonth() + 1, 1))}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+                            >
+                                <ChevronRight size={15} style={{ color: "var(--text-secondary)" }} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2 mb-2 text-center text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                            <div key={d}>{d}</div>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2">
+                        {getMonthDays(monthDate).map((dateVal, idx) => {
+                            if (!dateVal) return <div key={`empty-${idx}`} className="aspect-square" />;
+
+                            const iso = formatIsoDate(dateVal);
+                            const blackoutReason = blackoutDates[iso];
+                            const isSelected = selectedDate === iso;
+
+                            return (
+                                <button
+                                    key={iso}
+                                    onClick={() => setSelectedDate(iso)}
+                                    className="aspect-square rounded-xl p-2 text-left flex flex-col justify-between transition-all relative overflow-hidden"
+                                    style={{
+                                        background: blackoutReason ? "rgba(100,116,139,0.15)" : "rgba(34,197,94,0.06)",
+                                        border: isSelected
+                                            ? "2px solid var(--accent-navy)"
+                                            : blackoutReason
+                                            ? "1px solid rgba(100,116,139,0.3)"
+                                            : "1px solid rgba(34,197,94,0.2)",
+                                    }}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+                                            {dateVal.getDate()}
+                                        </span>
+                                        {blackoutReason && <Lock size={10} style={{ color: "#94a3b8" }} />}
+                                    </div>
+
+                                    <div>
+                                        <div className="text-[11px] font-bold" style={{ color: blackoutReason ? "#94a3b8" : "#4ade80" }}>
+                                            {blackoutReason ? "Blocked" : "Available"}
+                                        </div>
+                                        <div className="text-[9px] truncate opacity-80" style={{ color: blackoutReason ? "#94a3b8" : "#4ade80" }}>
+                                            {blackoutReason ? blackoutReason.slice(0, 12) + "..." : "Jeep Slots Open"}
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Active Blackouts List */}
+                    <div className="mt-4 pt-4 border-t border-slate-700/30">
+                        <h4 className="text-[12px] font-bold mb-2" style={{ color: "var(--text-primary)" }}>Active Date & Slot Blackouts</h4>
+                        {Object.keys(blackoutDates).length === 0 ? (
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>No manual blackout dates set.</p>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {Object.entries(blackoutDates).map(([dStr, rNote]) => (
+                                    <div
+                                        key={dStr}
+                                        className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-2"
+                                        style={{ background: "rgba(100,116,139,0.15)", border: "1px solid rgba(100,116,139,0.3)", color: "#cbd5e1" }}
+                                    >
+                                        <span className="font-bold">{dStr}:</span>
+                                        <span>"{rNote}"</span>
+                                        <button
+                                            onClick={() => handleRemoveBlackout(dStr)}
+                                            className="text-rose-400 hover:text-rose-300 font-bold ml-1"
+                                            title="Unblock date"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Safari Reservations List */}
+            <div
+                className="rounded-xl overflow-hidden"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+            >
+                <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                    <h2 className="text-[15px] font-bold" style={{ color: "var(--text-primary)" }}>
+                        Safari Passenger Reservations ({filteredBookings.length})
+                    </h2>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[12px]">
+                        <thead>
+                            <tr style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border-light)", color: "var(--text-tertiary)" }}>
+                                <th className="px-4 py-3">Booking Ref</th>
+                                <th className="px-4 py-3">Guest Name</th>
+                                <th className="px-4 py-3">Jeep Package</th>
+                                <th className="px-4 py-3">Slot & Date</th>
+                                <th className="px-4 py-3">Passengers</th>
+                                <th className="px-4 py-3">Total Rate</th>
+                                <th className="px-4 py-3">Payment</th>
+                                <th className="px-4 py-3">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredBookings.map((b) => (
+                                <tr key={b.id} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                                    <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>{b.id}</td>
+                                    <td className="px-4 py-3">
+                                        <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{b.guestName}</div>
+                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.email}</div>
+                                    </td>
+                                    <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>{b.package}</td>
+                                    <td className="px-4 py-3">
+                                        <div className="font-semibold text-emerald-400">{b.date}</div>
+                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.slot}</div>
+                                    </td>
+                                    <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>{b.passengers} Guests</td>
+                                    <td className="px-4 py-3 font-bold text-emerald-400">{b.price}</td>
+                                    <td className="px-4 py-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>{b.paymentMethod}</td>
+                                    <td className="px-4 py-3">
+                                        <span
+                                            className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                                            style={
+                                                b.status === "CONFIRMED"
+                                                    ? { background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)" }
+                                                    : b.status === "PENDING"
+                                                    ? { background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.25)" }
+                                                    : { background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }
+                                            }
+                                        >
+                                            {b.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Blackout Modal */}
+            {showBlockModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div
+                        className="w-full max-w-md rounded-2xl p-6 space-y-4"
+                        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}
+                    >
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-[16px] font-bold" style={{ color: "var(--text-primary)" }}>Stop Safari Date / Blackout Slot</h3>
+                            <button onClick={() => setShowBlockModal(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Select Date</label>
+                                <input
+                                    type="date"
+                                    value={blockDateStr}
+                                    onChange={(e) => setBlockDateStr(e.target.value)}
+                                    className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                    style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Blackout Reason</label>
+                                <input
+                                    type="text"
+                                    value={blockReason}
+                                    onChange={(e) => setBlockReason(e.target.value)}
+                                    placeholder="e.g. Park maintenance, heavy rain..."
+                                    className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                    style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                onClick={() => setShowBlockModal(false)}
+                                className="px-4 py-2 rounded-lg text-[12px]"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddBlackout}
+                                className="px-4 py-2 rounded-lg text-[12px] font-semibold"
+                                style={{ background: "var(--accent-navy)", color: "white" }}
+                            >
+                                Apply Blackout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function SingleListingManager() {
     const navigate = useNavigate();
     const { id: listingId } = useParams();
@@ -155,15 +795,19 @@ export function SingleListingManager() {
         async function loadListing() {
             setLoadingListing(true);
             try {
-                const endpoint = isAdmin ? `/admin/listings/${listingId}` : `/vendor/stays/${listingId}`;
-                const data = await apiFetch<any>(endpoint);
+                const data = await apiFetch<any>(`/admin/listings/${listingId}`);
                 if (!cancelled) setListing(data);
             } catch (err: any) {
                 try {
-                    const fallbackData = await apiFetch<any>(`/vendor/stays/${listingId}`);
+                    const fallbackData = await apiFetch<any>(`/listings/${listingId}`);
                     if (!cancelled) setListing(fallbackData);
-                } catch (fallbackErr) {
-                    if (!cancelled) console.warn("Listing detail resolution deferred to inventory");
+                } catch {
+                    try {
+                        const stayData = await apiFetch<any>(`/vendor/stays/${listingId}`);
+                        if (!cancelled) setListing(stayData);
+                    } catch (fallbackErr) {
+                        if (!cancelled) console.warn("Listing detail resolution deferred to inventory");
+                    }
                 }
             } finally {
                 if (!cancelled) setLoadingListing(false);
@@ -369,6 +1013,18 @@ export function SingleListingManager() {
         } catch (err: any) {
             setError(err?.message || "Failed to release room block.");
         }
+    }
+
+    const isSafariCategory =
+        listing?.category?.toLowerCase() === "safari" ||
+        listing?.listing_type?.toLowerCase() === "safari" ||
+        listing?.listingType?.toLowerCase() === "safari" ||
+        Boolean(listing?.safariDetail) ||
+        listingId === "safari-1" ||
+        listingId === "lst_001";
+
+    if (isSafariCategory) {
+        return <SafariListingManager listing={listing} listingId={listingId} isAdmin={isAdmin} navigate={navigate} />;
     }
 
     if (loadingListing && !inventory) {

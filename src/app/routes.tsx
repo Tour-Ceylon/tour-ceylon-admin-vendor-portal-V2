@@ -105,7 +105,7 @@ export const router = createBrowserRouter([
           { path: "reviews", Component: ListingReviewPage },
 
           // Vendor Business Center
-          { path: "vendor/bookings", Component: VendorBookingCenter },
+          { path: "vendor/bookings", Component: BookingsPage },
           { path: "vendor/performance", Component: ListingPerformancePage },
           { path: "vendor/revenue", Component: VendorRevenueCenter },
           { path: "vendor/reviews", Component: VendorReviewsPage },
