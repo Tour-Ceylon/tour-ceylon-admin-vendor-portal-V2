@@ -103,9 +103,10 @@ const ROUTE_MAP: Record<string, string> = {
   commission: "/commission",
   transport: "/transport",
   "transport-requests": "/transport/requests",
+  "transport-drivers": "/transport/drivers",
   "transport-vehicles": "/transport/vehicles",
   "transport-pricing": "/transport/pricing",
-  drivers: "/drivers",
+  drivers: "/transport/drivers",
   activity: "/activity",
   "audit-logs": "/audit-logs",
   analytics: "/analytics",
@@ -208,6 +209,7 @@ export function Sidebar() {
     if (path === "/commission") return "commission";
     if (path === "/transport" && !path.startsWith("/transport/")) return "transport";
     if (path === "/transport/requests") return "transport-requests";
+    if (path === "/transport/drivers") return "transport-drivers";
     if (path === "/transport/vehicles") return "transport-vehicles";
     if (path === "/transport/pricing") return "transport-pricing";
     if (path === "/support" && !path.startsWith("/support/")) return "support";
@@ -306,8 +308,8 @@ export function Sidebar() {
         items: [
           { id: "transport", label: "Transport Dashboard", icon: LayoutDashboard },
           { id: "transport-requests", label: "Transfer Requests", icon: Car },
+          { id: "transport-drivers", label: "Drivers & Earnings", icon: Users },
           { id: "transport-vehicles", label: "Vehicle Categories", icon: Car },
-          { id: "transport-pricing", label: "Pricing Rules", icon: DollarSign },
         ],
       });
 

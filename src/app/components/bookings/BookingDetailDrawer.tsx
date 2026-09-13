@@ -27,6 +27,7 @@ import {
   Globe,
   Check,
 } from "lucide-react";
+import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
 
 interface Customer {
   name: string;
@@ -464,6 +465,110 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               </div>
             )}
           </div>
+
+          {/* Transport-Specific Details */}
+          {isTransport && (
+            <div
+              className="rounded-xl p-5"
+              style={{
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border-light)",
+                boxShadow: "var(--shadow-md)",
+              }}
+            >
+              <h3 className="text-[14px] mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                <Car size={16} style={{ color: "#8b5cf6" }} />
+                Transport Details
+              </h3>
+              <div className="space-y-4">
+                {/* Route */}
+                <div
+                  className="rounded-lg p-3"
+                  style={{
+                    background: "var(--input-background)",
+                    border: "1px solid var(--border-light)",
+                  }}
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="flex flex-col items-center gap-2">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ background: "#22c55e", boxShadow: "0 0 8px #22c55e" }}
+                      />
+                      <div className="w-0.5 h-8" style={{ background: "var(--border-medium)" }} />
+                      <MapPin size={12} style={{ color: "#ef4444" }} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                        Pickup
+                      </p>
+                      <p className="text-[13px] mb-3" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {TRANSPORT_DETAILS.pickup}
+                      </p>
+                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                        Destination
+                      </p>
+                      <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {TRANSPORT_DETAILS.destination}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
+                    <div>
+                      <p className="text-[10px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        Distance
+                      </p>
+                      <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                        {TRANSPORT_DETAILS.distance}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        Duration
+                      </p>
+                      <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                        {TRANSPORT_DETAILS.duration}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
+                        Pickup Time
+                      </p>
+                      <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                        {TRANSPORT_DETAILS.pickupTime}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Driver Assignment Section */}
+                <DriverAssignmentSection
+                  bookingId={booking._inquiryId || booking.id}
+                  assignmentStatus="unassigned"
+                />
+
+                {/* Vehicle & Passengers */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                      Vehicle
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                      {TRANSPORT_DETAILS.vehicle}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                      Luggage
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                      {TRANSPORT_DETAILS.luggage}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Payment Details */}
           <div

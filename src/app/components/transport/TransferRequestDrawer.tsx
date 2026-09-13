@@ -16,8 +16,10 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useState } from "react";
+import { DriverAssignmentSection } from "./DriverAssignmentSection";
+import { AdminAssignedDriverInfo, AdminTransportBooking } from "../api/adminTransportApi";
 
-interface TransferRequestData {
+export interface TransferRequestData {
   id: string;
   bookingId: string;
   customer: string;
@@ -34,18 +36,29 @@ interface TransferRequestData {
   duration: string;
   bookingStatus: string;
   paymentStatus: string;
+  assignmentStatus: string;
+  assignedAt?: string;
   createdDate: string;
   notes?: string;
+  driver?: AdminAssignedDriverInfo | null;
 }
 
 interface TransferRequestDrawerProps {
   request: TransferRequestData;
   onClose: () => void;
+  onRefresh?: () => void;
 }
 
-export function TransferRequestDrawer({ request, onClose }: TransferRequestDrawerProps) {
+export function TransferRequestDrawer({ request, onClose, onRefresh }: TransferRequestDrawerProps) {
   const [customFare, setCustomFare] = useState(request.estimatedFare);
   const [internalNotes, setInternalNotes] = useState(request.notes || "");
+  const [currentDriver, setCurrentDriver] = useState<AdminAssignedDriverInfo | null | undefined>(
+    request.driver
+  );
+  const [assignmentStatus, setAssignmentStatus] = useState<string>(
+    request.assignmentStatus || "unassigned"
+  );
+  const [assignedAt, setAssignedAt] = useState<string | undefined>(request.assignedAt);
 
   const handleConfirm = () => {
     console.log("Confirming request:", request.bookingId);
@@ -55,6 +68,13 @@ export function TransferRequestDrawer({ request, onClose }: TransferRequestDrawe
   const handleReject = () => {
     console.log("Rejecting request:", request.bookingId);
     onClose();
+  };
+
+  const handleDriverAssigned = (updated: AdminTransportBooking) => {
+    setCurrentDriver(updated.driver);
+    setAssignmentStatus(updated.assignment_status);
+    setAssignedAt(updated.assigned_at);
+    onRefresh?.();
   };
 
   // Calculate pricing breakdown
@@ -91,7 +111,7 @@ export function TransferRequestDrawer({ request, onClose }: TransferRequestDrawe
         >
           <div>
             <h2 className="text-[18px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-              Transfer Request Details
+              Transfer Booking Details
             </h2>
             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
               {request.bookingId}
@@ -112,6 +132,15 @@ export function TransferRequestDrawer({ request, onClose }: TransferRequestDrawe
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          {/* Driver Assignment Section */}
+          <DriverAssignmentSection
+            bookingId={request.id}
+            currentDriver={currentDriver}
+            assignmentStatus={assignmentStatus}
+            assignedAt={assignedAt}
+            onDriverAssigned={handleDriverAssigned}
+          />
+
           {/* Customer Details */}
           <div
             className="rounded-xl p-5"
@@ -370,29 +399,6 @@ export function TransferRequestDrawer({ request, onClose }: TransferRequestDrawe
                     LKR {customFare.toLocaleString()}
                   </p>
                 </div>
-              </div>
-            </div>
-
-            {/* Custom Fare Input */}
-            <div className="mt-4">
-              <label className="text-[11px] mb-2 block" style={{ color: "var(--text-tertiary)" }}>
-                Modify Fare (if needed)
-              </label>
-              <div
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
-                style={{
-                  background: "var(--input-background)",
-                  border: "1px solid var(--border-light)",
-                }}
-              >
-                <DollarSign size={14} style={{ color: "var(--text-tertiary)" }} />
-                <input
-                  type="number"
-                  value={customFare}
-                  onChange={(e) => setCustomFare(Number(e.target.value))}
-                  className="flex-1 bg-transparent text-[13px] outline-none"
-                  style={{ color: "var(--text-primary)" }}
-                />
               </div>
             </div>
           </div>
