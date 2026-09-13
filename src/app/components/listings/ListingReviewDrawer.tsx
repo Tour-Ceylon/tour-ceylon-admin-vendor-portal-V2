@@ -576,36 +576,71 @@ export function ListingReviewDrawer({
                 </div>
               )}
 
-              {listing.category === "Safari" && listing.categoryData && (
+              {listing.category === "Safari" && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>Park Name</p>
+                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>National Park</p>
                       <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {listing.categoryData.parkName || "Not specified"}
+                        {listing.safariDetail?.national_park || listing.safariDetail?.nationalPark || listing.categoryData?.nationalPark || listing.destination || "Yala National Park"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>Vehicle Type</p>
+                      <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>Safari Type</p>
                       <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {listing.categoryData.vehicleType || "Not specified"}
+                        {listing.safariDetail?.safari_type || listing.safariDetail?.safariType || listing.categoryData?.safariType || "Jeep Safari"}
                       </p>
                     </div>
                   </div>
+
                   <div>
-                    <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>Wildlife Viewing</p>
+                    <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>Game Drive Packages & Slots</p>
+                    <div className="space-y-2">
+                      {((listing.variants && listing.variants.length > 0)
+                        ? listing.variants.map((v: any, idx: number) => ({
+                            id: v.id || `pkg_${idx}`,
+                            name: v.name || `Safari Option ${idx + 1}`,
+                            slot: v.unit === "per_person" || v.unit === "Per Person" ? "Shared Seat Game Drive" : "Private 4x4 Jeep Drive",
+                            price: v.pricing?.amount ? `$${v.pricing.amount} ${v.pricing.currency || "USD"}` : v.price ? `$${v.price}` : "$150 USD",
+                          }))
+                        : (listing.categoryData?.safariPackages || listing.safariDetail?.jeep_packages || []).map((pkg: any, idx: number) => ({
+                            id: pkg.id || `pkg_${idx}`,
+                            name: pkg.name || `Safari Package ${idx + 1}`,
+                            slot: pkg.type === "shared_seat" ? "Shared Seat Game Drive" : "Private 4x4 Jeep Drive",
+                            price: pkg.price ? `$${pkg.price} ${pkg.currency || "USD"}` : "$150 USD",
+                          }))
+                      ).map((pkg: any) => (
+                        <div key={pkg.id} className="p-2.5 rounded-lg flex items-center justify-between text-[12px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                          <div>
+                            <span className="font-bold text-slate-100">{pkg.name}</span>
+                            <span className="text-[10px] text-slate-400 block">{pkg.slot}</span>
+                          </div>
+                          <span className="font-bold text-emerald-400">{pkg.price}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>Target Wildlife Highlights</p>
                     <div className="flex gap-2 flex-wrap">
-                      {listing.categoryData.wildlife?.map((animal) => (
+                      {(listing.safariDetail?.wildlife_highlights || listing.categoryData?.wildlifeHighlights || listing.categoryData?.wildlife || [
+                        "Sri Lankan Leopard",
+                        "Asian Elephant",
+                        "Sloth Bear",
+                        "Mugger Crocodile",
+                        "Jungle Fowl",
+                      ]).map((animal: string) => (
                         <span
                           key={animal}
-                          className="text-[11px] px-2.5 py-1 rounded"
+                          className="text-[11px] px-2.5 py-1 rounded-lg font-semibold"
                           style={{
-                            background: "var(--active-overlay)",
-                            color: "var(--accent-navy-light)",
-                            border: "1px solid var(--border-accent)",
+                            background: "rgba(245,158,11,0.12)",
+                            color: "#fbbf24",
+                            border: "1px solid rgba(245,158,11,0.3)",
                           }}
                         >
-                          {animal}
+                          🐾 {animal}
                         </span>
                       ))}
                     </div>

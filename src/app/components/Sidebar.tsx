@@ -246,48 +246,11 @@ export function Sidebar() {
   const buildNav = () => {
     const nav = [];
 
-    // Hotel-specific navigation for Stay-only vendors
-    if (isStayVendor) {
-      nav.push({
-        group: "Hotel Operations",
-        items: [
-          { id: "hotel-dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { id: "availability-calendar", label: "Availability", icon: CalendarDays },
-          { id: "room-inventory", label: "Room Inventory", icon: BedDouble },
-          { id: "reservations", label: "Reservations", icon: CalendarCheck },
-        ],
-      });
-      nav.push({
-        group: "Pricing",
-        items: [
-          { id: "pricing", label: "Pricing & Rates", icon: DollarSign },
-          { id: "seasonal-pricing", label: "Seasonal Pricing", icon: TrendingUp },
-        ],
-      });
-      nav.push({
-        group: "Property",
-        items: [
-          { id: "media", label: "Media", icon: Image },
-          { id: "property-settings", label: "Property Settings", icon: Settings },
-          { id: "policies", label: "Policies", icon: FileText },
-        ],
-      });
-      nav.push({
-        group: "Account",
-        items: [
-          { id: "profile", label: "Profile", icon: UserCircle },
-          { id: "notifications", label: "Notifications", icon: Bell },
-          { id: "help", label: "Help & Docs", icon: HelpCircle },
-        ],
-      });
-      return nav;
-    }
-
-    // Dashboard (all users) + Bookings for admins
-    const overviewItems = [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }];
-    if (isAdmin) {
-      overviewItems.push({ id: "bookings", label: "Bookings", icon: CalendarCheck });
-    }
+    // Dashboard + Bookings for all users
+    const overviewItems = [
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "bookings", label: "Bookings", icon: CalendarCheck },
+    ];
     
     nav.push({
       group: "Overview",
@@ -305,7 +268,7 @@ export function Sidebar() {
       otherListingsItems.push({ id: "safaris", label: "Safaris", icon: Globe });
       otherListingsItems.push({ id: "experiences", label: "Experiences", icon: Anchor });
     } else if (isVendor) {
-      if (approvedCategories.includes("Stay")) {
+      if (approvedCategories.includes("Stay") || approvedCategories.length === 0) {
         stayItems.push({ id: "stays", label: "Stay Listings", icon: Building2 });
       }
 
@@ -333,7 +296,7 @@ export function Sidebar() {
 
       if (otherListingsItems.length > 0) {
         nav.push({
-          group: "Other Listings",
+          group: "Listings",
           items: otherListingsItems,
         });
       }
@@ -389,16 +352,8 @@ export function Sidebar() {
     }
 
 
-    // Vendor-only: Business Center
-    if (isVendor && !isStayVendor) {
-      nav.push({
-        group: "Business",
-        items: [
-          { id: "vendor-bookings", label: "Booking Center", icon: CalendarCheck },
-          { id: "availability-calendar", label: "Availability", icon: CalendarRange },
-        ],
-      });
-
+    // Vendor-only: Business Center & Insights
+    if (isVendor) {
       nav.push({
         group: "Customer Relations",
         items: [
@@ -427,13 +382,11 @@ export function Sidebar() {
 
     if (isVendor) {
       settingsItems.push({ id: "profile", label: "Profile", icon: UserCircle });
-      if (!isStayVendor) {
-        settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
-        settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
-      }
+      settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
+      settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
     }
 
-    if (!isVendor || isStayVendor) {
+    if (!isVendor) {
       settingsItems.push({ id: "notifications", label: "Notifications", icon: Bell });
     }
 
@@ -457,8 +410,8 @@ export function Sidebar() {
     navigate("/login");
   };
 
-  // Hotel vendor badge in logo area
-  const logoSub = isStayVendor ? "Hotel Portal" : "Admin";
+  // Vendor badge in logo area
+  const logoSub = isVendor ? "Vendor Portal" : "Admin";
 
   return (
     <aside

@@ -48,11 +48,13 @@ function SectionCard({ title, children }: { title: string; children: ReactNode }
 
 function RoomTypeModal({
   roomType,
+  existingRoomTypes = [],
   onClose,
   onSubmit,
   submitting,
 }: {
   roomType?: StayRoomType | null;
+  existingRoomTypes?: StayRoomType[];
   onClose: () => void;
   onSubmit: (payload: { name: string; description: string; size: string; sizeUnit: string; maxGuests?: number; basePrice?: number; currency: string }) => void;
   submitting: boolean;
@@ -64,6 +66,10 @@ function RoomTypeModal({
   const [maxGuests, setMaxGuests] = useState(roomType?.maxGuests ?? "");
   const [basePrice, setBasePrice] = useState(String(roomType?.basePrice ?? ""));
   const [currency, setCurrency] = useState(roomType?.currency ?? "LKR");
+
+  const isDuplicate = existingRoomTypes.some(
+    (rt) => rt.id !== roomType?.id && rt.name.trim().toLowerCase() === name.trim().toLowerCase() && name.trim().length > 0
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.65)" }}>
@@ -80,6 +86,14 @@ function RoomTypeModal({
           <div className="md:col-span-2">
             <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Name</label>
             <input value={name} onChange={(event) => setName(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
+            {isDuplicate && (
+              <div className="p-2.5 rounded-lg text-[12px] font-semibold mt-2 flex items-start gap-1.5" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444" }}>
+                <span className="text-xs shrink-0">⚠️</span>
+                <span>
+                  <strong>Room type already exists!</strong> If you are adding more rooms of this type, increase room count in inventory. If creating a sub-variant, use a unique name (e.g., <em>{name} - Type 2</em>).
+                </span>
+              </div>
+            )}
           </div>
           <div className="md:col-span-2">
             <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Description</label>
@@ -558,6 +572,7 @@ function RoomInventoryContent() {
       {showRoomTypeModal && (
         <RoomTypeModal
           roomType={editingRoomType}
+          existingRoomTypes={inventory?.roomTypes ?? []}
           onClose={() => { setShowRoomTypeModal(false); setEditingRoomType(null); }}
           onSubmit={(payload) => void handleRoomTypeSubmit(payload)}
           submitting={saving}

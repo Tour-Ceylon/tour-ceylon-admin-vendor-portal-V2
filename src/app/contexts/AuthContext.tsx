@@ -131,6 +131,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
+        // Get the Clerk session token to pass to API calls
+        const session = (window as any).Clerk?.session;
+        let token: string | undefined;
+        
+        if (session) {
+          try {
+            token = await session.getToken();
+          } catch (tokenErr) {
+            console.error("Failed to get Clerk token:", tokenErr);
+          }
+        }
+        
+        if (!token) {
+          throw new Error("Unable to retrieve authentication token. Please try signing in again.");
+        }
+
         // 1. Call backend /users/me or /users/sync endpoint to resolve local DB record
         const backendUser = await apiFetch("/users/me");
 
@@ -151,7 +167,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Block customer/client/TOURIST role from entering the admin/vendor portal
         if (role === "customer/client") {
-          throw new Error("Customer accounts are not authorized to access the management portal.");
+          // Check if user has any elevated permissions in Clerk metadata that might allow access
+          const clerkMetadata = clerkUser.publicMetadata || {};
+          const hasElevatedAccess = clerkMetadata.isAdmin || clerkMetadata.isVendor || clerkMetadata.allowPortalAccess;
+          
+          if (!hasElevatedAccess) {
+            console.warn("Customer account denied access to management portal. Backend role:", backendUser.role, "| User ID:", userId);
+            throw new Error("Customer accounts are not authorized to access the management portal.");
+          } else {
+            // If has elevated access, treat as admin
+            role = "admin";
+            console.log("Customer account granted elevated access via Clerk metadata");
+          }
         }
 
         const clerkMetadata = clerkUser.publicMetadata || {};

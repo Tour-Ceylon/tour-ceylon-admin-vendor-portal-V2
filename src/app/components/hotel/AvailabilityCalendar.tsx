@@ -461,12 +461,14 @@ function AvailabilityCalendarContent() {
         ),
       );
       if (matchingBooking) {
+        const guestName = matchingBooking.guestName || "Customer";
+        const ref = matchingBooking.bookingReference || "BOOKING";
         return {
           id: roomUnit.id,
           roomNumber: roomUnit.roomNumber,
           roomName: roomUnit.roomName,
           status: "booked",
-          detail: "Booked in selected range",
+          detail: `Booked for ${guestName} (${ref})`,
         };
       }
 
