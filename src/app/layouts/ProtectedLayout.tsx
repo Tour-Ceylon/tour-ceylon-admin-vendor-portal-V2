@@ -79,8 +79,6 @@ export function ProtectedLayout() {
   }
 
   // 3a. Block deactivated accounts (any role)
-  // When admin uses the deactivate toggle, is_active becomes false.
-  // Deactivated users cannot access any protected page.
   if (user.isActive === false) {
     return (
       <div
@@ -123,13 +121,20 @@ export function ProtectedLayout() {
   }
 
   // 3b. Pending Vendor & Driver Routing
-  if ((effectiveUser?.role === "vendor" || effectiveUser?.role === "driver") && effectiveUser?.vendorStatus === "pending") {
+  if (
+    (effectiveUser?.role === "vendor" || effectiveUser?.role === "driver") &&
+    effectiveUser?.vendorStatus === "pending"
+  ) {
     return <Navigate to="/pending" replace />;
   }
 
-  // 4. Block Rejected / Suspended Vendors
-  if (effectiveUser?.role === "vendor" && (effectiveUser?.vendorStatus === "rejected" || effectiveUser?.vendorStatus === "suspended")) {
+  // 4. Block Rejected / Suspended Vendors & Drivers
+  if (
+    (effectiveUser?.role === "vendor" || effectiveUser?.role === "driver") &&
+    (effectiveUser?.vendorStatus === "rejected" || effectiveUser?.vendorStatus === "suspended")
+  ) {
     const isSuspended = effectiveUser?.vendorStatus === "suspended";
+    const roleLabel = effectiveUser?.role === "driver" ? "driver" : "vendor";
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
@@ -155,8 +160,8 @@ export function ProtectedLayout() {
           </h2>
           <p className="text-[13px] mb-6" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
             {isSuspended
-              ? "Your vendor portal access has been temporarily suspended. Please contact the Voyage operations desk for clarification."
-              : "Your vendor partnership application has been reviewed and rejected by the administration team."}
+              ? `Your ${roleLabel} portal access has been temporarily suspended. Please contact the Voyage operations desk for clarification.`
+              : `Your ${roleLabel} application has been reviewed and rejected by the administration team.`}
           </p>
           <button
             onClick={logout}
@@ -176,7 +181,21 @@ export function ProtectedLayout() {
     );
   }
 
-  // 5. Vendor Route Authorization Guard
+  // 5. Driver Experience Handling
+  // Approved drivers operate in their dedicated mobile-first DriverLayout experience
+  if (effectiveUser?.role === "driver") {
+    if (!location.pathname.startsWith("/driver")) {
+      return <Navigate to="/driver/home" replace />;
+    }
+    return <Outlet />;
+  }
+
+  // Non-drivers cannot access /driver routes
+  if (location.pathname.startsWith("/driver") && effectiveUser?.role !== "driver") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // 6. Vendor Route Authorization Guard
   // Prevent vendors from navigating to admin-only pages
   const isAdminPath =
     location.pathname.startsWith("/users") ||

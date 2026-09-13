@@ -25,6 +25,7 @@ import {
   Loader2,
   Globe,
 } from "lucide-react";
+import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
 
 interface Customer {
   name: string;
@@ -462,45 +463,11 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   </div>
                 </div>
 
-                {/* Driver Assignment */}
-                <div
-                  className="rounded-lg p-3"
-                  style={{
-                    background: "rgba(139, 92, 246, 0.08)",
-                    border: "1px solid rgba(139,92,246,0.25)",
-                  }}
-                >
-                  <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>
-                    Assigned Driver
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[13px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                        {TRANSPORT_DETAILS.driver.name}
-                      </p>
-                      <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                        {TRANSPORT_DETAILS.driver.phone}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[12px]" style={{ color: "#fbbf24", fontWeight: 600 }}>
-                        {TRANSPORT_DETAILS.driver.rating}
-                      </span>
-                      <span className="text-[16px]" style={{ color: "#fbbf24" }}>★</span>
-                    </div>
-                  </div>
-                  <button
-                    className="w-full mt-3 text-[11px] px-3 py-2 rounded-lg transition-all"
-                    style={{
-                      background: "rgba(139, 92, 246, 0.1)",
-                      color: "#a78bfa",
-                      border: "1px solid rgba(139,92,246,0.3)",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Change Driver
-                  </button>
-                </div>
+                {/* Driver Assignment Section */}
+                <DriverAssignmentSection
+                  bookingId={booking._inquiryId || booking.id}
+                  assignmentStatus="unassigned"
+                />
 
                 {/* Vehicle & Passengers */}
                 <div className="grid grid-cols-2 gap-3">

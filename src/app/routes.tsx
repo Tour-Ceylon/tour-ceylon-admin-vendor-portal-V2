@@ -34,6 +34,7 @@ import { TransportDashboard } from "./components/transport/TransportDashboard";
 import { TransferRequestsPage } from "./components/transport/TransferRequestsPage";
 import { VehicleCategoriesPage } from "./components/transport/VehicleCategoriesPage";
 import { TransportPricingPage } from "./components/transport/TransportPricingPage";
+import { AdminDriversPage } from "./components/transport/AdminDriversPage";
 import { SupportDashboard } from "./components/support/SupportDashboard";
 import { TicketsPage } from "./components/support/TicketsPage";
 import { RefundDisputePage } from "./components/support/RefundDisputePage";
@@ -64,6 +65,15 @@ import { APIIntegrationCenter } from "./components/api/APIIntegrationCenter";
 import { SystemArchitectureCenter } from "./components/architecture/SystemArchitectureCenter";
 import { PortalQAChecklist } from "./components/qa/PortalQAChecklist";
 
+// Driver Portal Components
+import { DriverLayout } from "./components/driver/DriverLayout";
+import { DriverHomeScreen } from "./components/driver/DriverHomeScreen";
+import { DriverInboxScreen } from "./components/driver/DriverInboxScreen";
+import { DriverTripsScreen } from "./components/driver/DriverTripsScreen";
+import { DriverTripDetailScreen } from "./components/driver/DriverTripDetailScreen";
+import { DriverHistoryScreen } from "./components/driver/DriverHistoryScreen";
+import { DriverEarningsScreen } from "./components/driver/DriverEarningsScreen";
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -77,7 +87,6 @@ export const router = createBrowserRouter([
       { path: "pending", Component: PendingApprovalScreen },
       // SSO callback — Clerk redirects here after Google OAuth
       { path: "sso-callback", Component: AuthenticateWithRedirectCallback },
-    
 
       // Protected routes
       {
@@ -87,6 +96,21 @@ export const router = createBrowserRouter([
           // Dashboard
           { index: true, Component: () => <Navigate to="/dashboard" replace /> },
           { path: "dashboard", Component: Dashboard },
+
+          // Driver Portal
+          {
+            path: "driver",
+            Component: DriverLayout,
+            children: [
+              { index: true, Component: () => <Navigate to="/driver/home" replace /> },
+              { path: "home", Component: DriverHomeScreen },
+              { path: "inbox", Component: DriverInboxScreen },
+              { path: "trips", Component: DriverTripsScreen },
+              { path: "trips/:bookingId", Component: DriverTripDetailScreen },
+              { path: "history", Component: DriverHistoryScreen },
+              { path: "earnings", Component: DriverEarningsScreen },
+            ],
+          },
 
           // Bookings
           { path: "bookings", Component: BookingsPage },
@@ -149,8 +173,9 @@ export const router = createBrowserRouter([
           // Transport Operations (Admin only)
           { path: "transport", Component: TransportDashboard },
           { path: "transport/requests", Component: TransferRequestsPage },
+          { path: "transport/drivers", Component: AdminDriversPage },
           { path: "transport/vehicles", Component: VehicleCategoriesPage },
-          { path: "transport/pricing", Component: TransportPricingPage },
+          { path: "transport/pricing", Component: () => <Navigate to="/transport/vehicles" replace /> },
 
           // Support Module (Admin only)
           { path: "support", Component: SupportDashboard },
