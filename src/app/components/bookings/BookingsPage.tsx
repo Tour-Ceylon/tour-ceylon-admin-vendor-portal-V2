@@ -236,13 +236,20 @@ const SAMPLE_BOOKINGS: Booking[] = [
 // Helper: convert an AdminBookingInquiryItem to the local Booking shape
 function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
   const firstItem = inq.cartItems?.[0];
-  const travelDate = firstItem?.travelDate
-    ? new Date(firstItem.travelDate).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "TBD";
+  const formatDisplayDate = (val?: string) => {
+    if (!val) return "TBD";
+    if (val.includes(" to ")) {
+      const [start, end] = val.split(" to ");
+      const s = new Date(start.trim());
+      const e = new Date(end.trim());
+      const sStr = !isNaN(s.getTime()) ? s.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : start.trim();
+      const eStr = !isNaN(e.getTime()) ? e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : end.trim();
+      return `${sStr} - ${eStr}`;
+    }
+    const d = new Date(val);
+    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : val;
+  };
+  const travelDate = formatDisplayDate(firstItem?.travelDate);
 
   return {
     id: inq.reference || inq.id,
