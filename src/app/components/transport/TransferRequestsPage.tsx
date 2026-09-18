@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Filter,
@@ -11,34 +11,20 @@ import {
   TrendingUp,
   Users,
   MapPin,
+  Car,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
-import { TransferRequestDrawer } from "./TransferRequestDrawer";
+import { TransferRequestDrawer, TransferRequestData } from "./TransferRequestDrawer";
+import {
+  AdminTransportBooking,
+  fetchAdminTransportBookings,
+} from "../api/adminTransportApi";
 
-type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "rejected";
-type PaymentStatus = "unpaid" | "paid" | "pay_later" | "refunded";
-
-interface TransferRequest {
-  id: string;
-  bookingId: string;
-  customer: string;
-  customerEmail: string;
-  pickup: string;
-  destination: string;
-  pickupDate: string;
-  pickupTime: string;
-  passengers: number;
-  luggage: number;
-  vehicleCategory: string;
-  estimatedFare: number;
-  distance: number;
-  duration: string;
-  bookingStatus: BookingStatus;
-  paymentStatus: PaymentStatus;
-  createdDate: string;
-  notes?: string;
-}
-
-const BOOKING_STATUS_CONFIG: Record<BookingStatus, { bg: string; text: string; dot: string }> = {
+const BOOKING_STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string }> = {
   pending: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", dot: "#f59e0b" },
   confirmed: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80", dot: "#22c55e" },
   completed: { bg: "rgba(100, 116, 139, 0.1)", text: "#94a3b8", dot: "#64748b" },
@@ -46,215 +32,160 @@ const BOOKING_STATUS_CONFIG: Record<BookingStatus, { bg: string; text: string; d
   rejected: { bg: "rgba(239, 68, 68, 0.1)", text: "#f87171", dot: "#ef4444" },
 };
 
-const PAYMENT_STATUS_CONFIG: Record<PaymentStatus, { bg: string; text: string }> = {
+const PAYMENT_STATUS_CONFIG: Record<string, { bg: string; text: string }> = {
   paid: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80" },
   unpaid: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24" },
   pay_later: { bg: "rgba(59, 130, 246, 0.1)", text: "#60a5fa" },
   refunded: { bg: "rgba(100, 116, 139, 0.1)", text: "#94a3b8" },
 };
 
-const SAMPLE_REQUESTS: TransferRequest[] = [
-  {
-    id: "1",
-    bookingId: "TR-8945",
-    customer: "Sarah Johnson",
-    customerEmail: "sarah.j@email.com",
-    pickup: "Bandaranaike International Airport (CMB)",
-    destination: "Shangri-La Colombo",
-    pickupDate: "2024-03-20",
-    pickupTime: "14:30",
-    passengers: 2,
-    luggage: 3,
-    vehicleCategory: "SUV",
-    estimatedFare: 4500,
-    distance: 32,
-    duration: "45 mins",
-    bookingStatus: "pending",
-    paymentStatus: "unpaid",
-    createdDate: "2024-03-18 10:30",
-  },
-  {
-    id: "2",
-    bookingId: "TR-8944",
-    customer: "Michael Chen",
-    customerEmail: "m.chen@email.com",
-    pickup: "Cinnamon Grand Colombo",
-    destination: "Kandy City Center",
-    pickupDate: "2024-03-21",
-    pickupTime: "09:00",
-    passengers: 4,
-    luggage: 5,
-    vehicleCategory: "Van",
-    estimatedFare: 8900,
-    distance: 115,
-    duration: "3 hours",
-    bookingStatus: "confirmed",
-    paymentStatus: "paid",
-    createdDate: "2024-03-17 14:20",
-  },
-  {
-    id: "3",
-    bookingId: "TR-8943",
-    customer: "Emma Wilson",
-    customerEmail: "emma.w@email.com",
-    pickup: "Galle Fort Hotel",
-    destination: "Mirissa Beach",
-    pickupDate: "2024-03-22",
-    pickupTime: "08:00",
-    passengers: 3,
-    luggage: 4,
-    vehicleCategory: "Standard Car",
-    estimatedFare: 3200,
-    distance: 28,
-    duration: "35 mins",
-    bookingStatus: "confirmed",
-    paymentStatus: "pay_later",
-    createdDate: "2024-03-16 11:15",
-  },
-  {
-    id: "4",
-    bookingId: "TR-8942",
-    customer: "David Brown",
-    customerEmail: "d.brown@email.com",
-    pickup: "CMB Airport",
-    destination: "Galle Face Hotel",
-    pickupDate: "2024-03-19",
-    pickupTime: "22:30",
-    passengers: 1,
-    luggage: 2,
-    vehicleCategory: "Standard Car",
-    estimatedFare: 4200,
-    distance: 34,
-    duration: "50 mins",
-    bookingStatus: "completed",
-    paymentStatus: "paid",
-    createdDate: "2024-03-15 08:45",
-  },
-  {
-    id: "5",
-    bookingId: "TR-8941",
-    customer: "Lisa Martinez",
-    customerEmail: "lisa.m@email.com",
-    pickup: "Heritance Kandalama",
-    destination: "Sigiriya Rock",
-    pickupDate: "2024-03-23",
-    pickupTime: "06:30",
-    passengers: 2,
-    luggage: 2,
-    vehicleCategory: "SUV",
-    estimatedFare: 2800,
-    distance: 18,
-    duration: "25 mins",
-    bookingStatus: "pending",
-    paymentStatus: "unpaid",
-    createdDate: "2024-03-18 16:10",
-  },
-  {
-    id: "6",
-    bookingId: "TR-8940",
-    customer: "James Taylor",
-    customerEmail: "j.taylor@email.com",
-    pickup: "Colombo Hotels",
-    destination: "CMB Airport",
-    pickupDate: "2024-03-20",
-    pickupTime: "05:00",
-    passengers: 2,
-    luggage: 4,
-    vehicleCategory: "Van",
-    estimatedFare: 4500,
-    distance: 32,
-    duration: "45 mins",
-    bookingStatus: "confirmed",
-    paymentStatus: "paid",
-    createdDate: "2024-03-14 12:30",
-  },
-  {
-    id: "7",
-    bookingId: "TR-8939",
-    customer: "Anna Garcia",
-    customerEmail: "anna.g@email.com",
-    pickup: "Kandy City",
-    destination: "Nuwara Eliya",
-    pickupDate: "2024-03-24",
-    pickupTime: "10:00",
-    passengers: 5,
-    luggage: 6,
-    vehicleCategory: "Luxury Van",
-    estimatedFare: 12500,
-    distance: 78,
-    duration: "2.5 hours",
-    bookingStatus: "pending",
-    paymentStatus: "unpaid",
-    createdDate: "2024-03-18 09:20",
-  },
-  {
-    id: "8",
-    bookingId: "TR-8938",
-    customer: "Robert Lee",
-    customerEmail: "r.lee@email.com",
-    pickup: "Mirissa Beach Resort",
-    destination: "Galle",
-    pickupDate: "2024-03-21",
-    pickupTime: "15:00",
-    passengers: 2,
-    luggage: 3,
-    vehicleCategory: "Standard Car",
-    estimatedFare: 3200,
-    distance: 28,
-    duration: "35 mins",
-    bookingStatus: "cancelled",
-    paymentStatus: "refunded",
-    createdDate: "2024-03-12 14:50",
-  },
-];
+const ASSIGNMENT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
+  unassigned: { label: "Unassigned", bg: "rgba(245, 158, 11, 0.12)", text: "#fbbf24", dot: "#f59e0b" },
+  assigned: { label: "Assigned", bg: "rgba(59, 130, 246, 0.12)", text: "#60a5fa", dot: "#3b82f6" },
+  acknowledged: { label: "Accepted", bg: "rgba(168, 85, 247, 0.12)", text: "#c084fc", dot: "#a855f7" },
+  en_route: { label: "En Route", bg: "rgba(14, 165, 233, 0.12)", text: "#38bdf8", dot: "#0ea5e9" },
+  arrived: { label: "Arrived", bg: "rgba(20, 184, 166, 0.12)", text: "#2dd4bf", dot: "#14b8a6" },
+  in_progress: { label: "In Progress", bg: "rgba(99, 102, 241, 0.12)", text: "#818cf8", dot: "#6366f1" },
+  completed: { label: "Completed", bg: "rgba(34, 197, 94, 0.12)", text: "#4ade80", dot: "#22c55e" },
+  declined: { label: "Declined", bg: "rgba(239, 68, 68, 0.12)", text: "#f87171", dot: "#ef4444" },
+};
+
+function formatBookingToRequestData(b: AdminTransportBooking): TransferRequestData {
+  return {
+    id: b.id,
+    bookingId: b.booking_reference,
+    customer: b.customer_name,
+    customerEmail: b.customer_email,
+    pickup: b.pickup_location,
+    destination: b.destination_location,
+    pickupDate: b.travel_date,
+    pickupTime: b.pickup_time ? b.pickup_time.substring(0, 5) : "",
+    passengers: b.passengers_count,
+    luggage: b.luggage_count,
+    vehicleCategory: b.vehicle_category?.name || "Standard",
+    estimatedFare: Number(b.total_price),
+    distance: Number(b.distance_km || 0),
+    duration: b.estimated_duration_minutes ? `${b.estimated_duration_minutes} mins` : "—",
+    bookingStatus: b.booking_status,
+    paymentStatus: b.payment_status,
+    assignmentStatus: b.assignment_status || "unassigned",
+    assignedAt: b.assigned_at,
+    createdDate: b.created_at ? new Date(b.created_at).toLocaleDateString() : "",
+    notes: b.internal_notes || b.special_requests,
+    driver: b.driver,
+  };
+}
 
 export function TransferRequestsPage() {
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [selectedRequest, setSelectedRequest] = useState<TransferRequest | null>(null);
+  const [filterTab, setFilterTab] = useState<string>("all");
+  const [selectedRequest, setSelectedRequest] = useState<TransferRequestData | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const statusTabs = [
-    { id: "all", label: "All", count: SAMPLE_REQUESTS.length },
-    { id: "pending", label: "Pending", count: SAMPLE_REQUESTS.filter(r => r.bookingStatus === "pending").length },
-    { id: "confirmed", label: "Confirmed", count: SAMPLE_REQUESTS.filter(r => r.bookingStatus === "confirmed").length },
-    { id: "completed", label: "Completed", count: SAMPLE_REQUESTS.filter(r => r.bookingStatus === "completed").length },
-    { id: "cancelled", label: "Cancelled", count: SAMPLE_REQUESTS.filter(r => r.bookingStatus === "cancelled").length },
-  ];
-
-  const filteredRequests = SAMPLE_REQUESTS.filter((request) => {
-    const matchStatus = filterStatus === "all" || request.bookingStatus === filterStatus;
-    const matchSearch = !search ||
-      request.bookingId.toLowerCase().includes(search.toLowerCase()) ||
-      request.customer.toLowerCase().includes(search.toLowerCase()) ||
-      request.pickup.toLowerCase().includes(search.toLowerCase()) ||
-      request.destination.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+  const [bookings, setBookings] = useState<AdminTransportBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [statsMeta, setStatsMeta] = useState({
+    total: 0,
+    unassigned_count: 0,
+    assigned_count: 0,
+    in_progress_count: 0,
+    completed_count: 0,
   });
 
-  const handleViewRequest = (request: TransferRequest) => {
-    setSelectedRequest(request);
+  const loadBookings = useCallback(async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      let assignmentStatusParam: string | undefined = undefined;
+      let bookingStatusParam: string | undefined = undefined;
+
+      if (filterTab === "unassigned") {
+        assignmentStatusParam = "unassigned";
+      } else if (filterTab === "assigned") {
+        assignmentStatusParam = "assigned";
+      } else if (filterTab === "in_progress") {
+        assignmentStatusParam = "in_progress";
+      } else if (filterTab === "completed") {
+        assignmentStatusParam = "completed";
+      } else if (filterTab === "cancelled") {
+        bookingStatusParam = "cancelled";
+      }
+
+      const res = await fetchAdminTransportBookings({
+        assignment_status: assignmentStatusParam,
+        booking_status: bookingStatusParam,
+        search: search || undefined,
+        per_page: 50,
+      });
+
+      setBookings(res.bookings || []);
+      setStatsMeta({
+        total: res.total || 0,
+        unassigned_count: res.unassigned_count || 0,
+        assigned_count: res.assigned_count || 0,
+        in_progress_count: res.in_progress_count || 0,
+        completed_count: res.completed_count || 0,
+      });
+    } catch (err: any) {
+      console.error("Failed to load admin transport bookings:", err);
+      setErrorMsg(err.message || "Failed to load bookings");
+    } finally {
+      setLoading(false);
+    }
+  }, [filterTab, search]);
+
+  useEffect(() => {
+    loadBookings();
+  }, [loadBookings]);
+
+  const handleViewRequest = (b: AdminTransportBooking) => {
+    setSelectedRequest(formatBookingToRequestData(b));
     setDrawerOpen(true);
   };
 
-  // Calculate stats
-  const stats = {
-    totalRequests: SAMPLE_REQUESTS.length,
-    pendingRequests: SAMPLE_REQUESTS.filter(r => r.bookingStatus === "pending").length,
-    totalRevenue: SAMPLE_REQUESTS.filter(r => r.paymentStatus === "paid").reduce((sum, r) => sum + r.estimatedFare, 0),
-    avgFare: Math.round(SAMPLE_REQUESTS.reduce((sum, r) => sum + r.estimatedFare, 0) / SAMPLE_REQUESTS.length),
-  };
+  const statusTabs = [
+    { id: "all", label: "All Bookings", count: statsMeta.total },
+    { id: "unassigned", label: "New / Unassigned", count: statsMeta.unassigned_count, isHighlight: statsMeta.unassigned_count > 0 },
+    { id: "assigned", label: "Assigned", count: statsMeta.assigned_count },
+    { id: "in_progress", label: "In Progress", count: statsMeta.in_progress_count },
+    { id: "completed", label: "Completed", count: statsMeta.completed_count },
+    { id: "cancelled", label: "Cancelled", count: bookings.filter((b) => b.booking_status === "cancelled").length },
+  ];
+
+  const totalRevenue = bookings
+    .filter((b) => b.payment_status === "paid")
+    .reduce((sum, b) => sum + Number(b.total_price), 0);
+
+  const avgFare = bookings.length > 0
+    ? Math.round(bookings.reduce((sum, b) => sum + Number(b.total_price), 0) / bookings.length)
+    : 0;
 
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-[24px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-          Transfer Request Queue
-        </h1>
-        <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-          Manage all transfer booking requests and operations
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-[24px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            Transfer Dispatch & Requests Queue
+          </h1>
+          <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            Dispatch transfer requests to approved drivers and monitor real-time trip execution
+          </p>
+        </div>
+        <button
+          onClick={loadBookings}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] transition-all"
+          style={{
+            background: "var(--input-background)",
+            border: "1px solid var(--border-light)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          Refresh
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -276,10 +207,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Total Requests
+            Total Transfer Requests
           </p>
           <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {stats.totalRequests}
+            {statsMeta.total}
           </p>
         </div>
 
@@ -287,7 +218,7 @@ export function TransferRequestsPage() {
           className="rounded-xl p-4"
           style={{
             background: "var(--bg-panel)",
-            border: "1px solid var(--border-light)",
+            border: statsMeta.unassigned_count > 0 ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid var(--border-light)",
             boxShadow: "var(--shadow-md)",
           }}
         >
@@ -300,10 +231,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Pending Approval
+            Awaiting Driver Assignment
           </p>
-          <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {stats.pendingRequests}
+          <p className="text-[20px]" style={{ color: statsMeta.unassigned_count > 0 ? "#fbbf24" : "var(--text-primary)", fontWeight: 700 }}>
+            {statsMeta.unassigned_count}
           </p>
         </div>
 
@@ -324,10 +255,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Total Revenue
+            Total Paid Revenue
           </p>
           <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            LKR {stats.totalRevenue.toLocaleString()}
+            ${totalRevenue.toLocaleString()}
           </p>
         </div>
 
@@ -348,10 +279,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Average Fare
+            Average Trip Fare
           </p>
           <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            LKR {stats.avgFare.toLocaleString()}
+            ${avgFare.toLocaleString()}
           </p>
         </div>
       </div>
@@ -378,46 +309,24 @@ export function TransferRequestsPage() {
               <Search size={14} style={{ color: "var(--text-tertiary)" }} />
               <input
                 type="text"
-                placeholder="Search by booking ID, customer, location..."
+                placeholder="Search by booking reference, customer name, email, pickup or destination..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="flex-1 bg-transparent text-[13px] outline-none"
                 style={{ color: "var(--text-primary)" }}
               />
             </div>
-            <button
-              className="px-4 py-2 text-[13px] rounded-lg flex items-center gap-2"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <Filter size={14} />
-              Filters
-            </button>
-            <button
-              className="px-4 py-2 text-[13px] rounded-lg flex items-center gap-2"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <Download size={14} />
-              Export
-            </button>
           </div>
 
           {/* Status Tabs */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {statusTabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setFilterStatus(tab.id)}
-                className="px-4 py-2 text-[12px] rounded-lg transition-all"
+                onClick={() => setFilterTab(tab.id)}
+                className="px-4 py-2 text-[12px] rounded-lg transition-all flex items-center gap-2"
                 style={
-                  filterStatus === tab.id
+                  filterTab === tab.id
                     ? {
                         background: "var(--active-overlay)",
                         color: "var(--accent-navy-light)",
@@ -432,10 +341,21 @@ export function TransferRequestsPage() {
               >
                 {tab.label}
                 <span
-                  className="ml-2 px-2 py-0.5 rounded text-[10px]"
+                  className="px-2 py-0.5 rounded text-[10px]"
                   style={{
-                    background: filterStatus === tab.id ? "var(--accent-navy)" : "var(--input-background)",
-                    color: filterStatus === tab.id ? "white" : "var(--text-tertiary)",
+                    background:
+                      filterTab === tab.id
+                        ? "var(--accent-navy)"
+                        : tab.isHighlight
+                        ? "rgba(245, 158, 11, 0.2)"
+                        : "var(--input-background)",
+                    color:
+                      filterTab === tab.id
+                        ? "white"
+                        : tab.isHighlight
+                        ? "#fbbf24"
+                        : "var(--text-tertiary)",
+                    fontWeight: tab.isHighlight ? 700 : 500,
                   }}
                 >
                   {tab.count}
@@ -445,161 +365,195 @@ export function TransferRequestsPage() {
           </div>
         </div>
 
+        {/* Loading / Error States */}
+        {loading && (
+          <div className="p-12 flex items-center justify-center gap-2" style={{ color: "var(--text-tertiary)" }}>
+            <Loader2 size={18} className="animate-spin" />
+            <span className="text-[13px]">Loading transfer bookings...</span>
+          </div>
+        )}
+
+        {!loading && errorMsg && (
+          <div className="p-8 text-center" style={{ color: "var(--error)" }}>
+            <AlertCircle size={24} className="mx-auto mb-2" />
+            <p className="text-[13px] font-medium">{errorMsg}</p>
+          </div>
+        )}
+
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  BOOKING ID
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  CUSTOMER
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  PICKUP
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  DESTINATION
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  PICKUP DATE/TIME
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  PAX
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  VEHICLE
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  FARE
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  BOOKING
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  PAYMENT
-                </th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-                  ACTIONS
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRequests.map((request) => (
-                <tr
-                  key={request.id}
-                  className="group cursor-pointer transition-all"
-                  style={{ borderBottom: "1px solid var(--border-light)" }}
-                  onClick={() => handleViewRequest(request)}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "transparent";
-                  }}
-                >
-                  <td className="px-4 py-3">
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                      {request.bookingId}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                      {request.customer}
-                    </p>
-                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      {request.customerEmail}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                      {request.pickup}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                      {request.destination}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
-                      {request.pickupDate}
-                    </p>
-                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      {request.pickupTime}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Users size={12} style={{ color: "var(--text-tertiary)" }} />
-                      <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                        {request.passengers}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="text-[11px] px-2.5 py-1 rounded"
-                      style={{
-                        background: "var(--input-background)",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {request.vehicleCategory}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                      LKR {request.estimatedFare.toLocaleString()}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: BOOKING_STATUS_CONFIG[request.bookingStatus].dot }}
-                      />
-                      <span
-                        className="text-[12px] capitalize"
-                        style={{ color: BOOKING_STATUS_CONFIG[request.bookingStatus].text }}
+        {!loading && !errorMsg && bookings.length === 0 ? (
+          <div className="p-12 text-center" style={{ color: "var(--text-tertiary)" }}>
+            <Car size={32} className="mx-auto mb-2 opacity-40" />
+            <p className="text-[13px]">No bookings found in this view.</p>
+          </div>
+        ) : (
+          !loading && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      BOOKING ID
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      CUSTOMER
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      ROUTE
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      DATE & TIME
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      VEHICLE
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      FARE
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      DISPATCH STATUS
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      ASSIGNED DRIVER
+                    </th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                      ACTIONS
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b) => {
+                    const assignConfig = ASSIGNMENT_STATUS_CONFIG[b.assignment_status || "unassigned"] || ASSIGNMENT_STATUS_CONFIG.unassigned;
+                    const bookingStatusConfig = BOOKING_STATUS_CONFIG[b.booking_status] || BOOKING_STATUS_CONFIG.pending;
+
+                    return (
+                      <tr
+                        key={b.id}
+                        className="group cursor-pointer transition-all"
+                        style={{ borderBottom: "1px solid var(--border-light)" }}
+                        onClick={() => handleViewRequest(b)}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.background = "transparent";
+                        }}
                       >
-                        {request.bookingStatus}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="text-[11px] px-2 py-0.5 rounded capitalize"
-                      style={{
-                        background: PAYMENT_STATUS_CONFIG[request.paymentStatus].bg,
-                        color: PAYMENT_STATUS_CONFIG[request.paymentStatus].text,
-                      }}
-                    >
-                      {request.paymentStatus.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleViewRequest(request);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-                      style={{
-                        background: "var(--input-background)",
-                        border: "1px solid var(--border-light)",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      <MoreHorizontal size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                        <td className="px-4 py-3">
+                          <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                            {b.booking_reference}
+                          </p>
+                          <span
+                            className="text-[10px] px-1.5 py-0.2 rounded capitalize inline-block mt-0.5"
+                            style={{
+                              background: bookingStatusConfig.bg,
+                              color: bookingStatusConfig.text,
+                            }}
+                          >
+                            {b.booking_status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
+                            {b.customer_name}
+                          </p>
+                          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                            {b.customer_phone}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 max-w-[220px]">
+                          <p className="text-[12px] truncate" style={{ color: "var(--text-primary)" }}>
+                            {b.pickup_location}
+                          </p>
+                          <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                            → {b.destination_location}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+                            {b.travel_date}
+                          </p>
+                          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                            {b.pickup_time ? b.pickup_time.substring(0, 5) : ""}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className="text-[11px] px-2 py-0.5 rounded"
+                            style={{
+                              background: "var(--input-background)",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {b.vehicle_category?.name || "Standard"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                            ${Number(b.total_price).toFixed(2)}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ background: assignConfig.dot }}
+                            />
+                            <span
+                              className="text-[12px] font-medium"
+                              style={{ color: assignConfig.text }}
+                            >
+                              {assignConfig.label}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {b.driver ? (
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                                  {b.driver.full_name || "Assigned Driver"}
+                                </p>
+                                {b.driver.is_online ? (
+                                  <Wifi size={11} className="text-emerald-400" title="Online" />
+                                ) : (
+                                  <WifiOff size={11} className="text-slate-500" title="Offline" />
+                                )}
+                              </div>
+                              <p className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>
+                                {b.driver.vehicle_plate_number}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] italic" style={{ color: "var(--text-tertiary)" }}>
+                              None assigned
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewRequest(b);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                            style={{
+                              background: "var(--input-background)",
+                              border: "1px solid var(--border-light)",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            <MoreHorizontal size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
       </div>
 
       {/* Transfer Request Drawer */}
@@ -607,6 +561,7 @@ export function TransferRequestsPage() {
         <TransferRequestDrawer
           request={selectedRequest}
           onClose={() => setDrawerOpen(false)}
+          onRefresh={loadBookings}
         />
       )}
     </div>

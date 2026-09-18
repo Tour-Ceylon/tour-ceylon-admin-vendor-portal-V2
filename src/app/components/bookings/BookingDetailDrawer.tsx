@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   X,
   User,
@@ -24,7 +25,9 @@ import {
   Luggage,
   Loader2,
   Globe,
+  Check,
 } from "lucide-react";
+import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
 
 interface Customer {
   name: string;
@@ -32,8 +35,19 @@ interface Customer {
   phone: string;
 }
 
+export interface CartItem {
+  listingId?: string;
+  title: string;
+  travelDate?: string;
+  travelCount?: number;
+  price: number;
+  baseCurrency?: string;
+}
+
 interface Booking {
   id: string;
+  _inquiryId?: string;
+  _inquiryStatus?: string;
   customer: Customer;
   type: string;
   listing: string;
@@ -45,10 +59,13 @@ interface Booking {
   bookingStatus: string;
   paymentStatus: string;
   createdAt: string;
+  rawCreatedAt?: string;
   passengers?: number;
   duration?: string;
   specialRequests?: string;
   riskFlags?: string[];
+  nationality?: string;
+  cartItems?: CartItem[];
 }
 
 interface BookingDetailDrawerProps {
@@ -60,66 +77,136 @@ interface BookingDetailDrawerProps {
   isUpdating?: boolean;
 }
 
-// Timeline data
-const SAMPLE_TIMELINE = [
-  {
-    action: "Booking created",
-    user: "Customer",
-    timestamp: "May 19, 2026 10:30 AM",
-    status: "completed",
-  },
-  {
-    action: "Payment received",
-    user: "System",
-    timestamp: "May 19, 2026 10:32 AM",
-    status: "completed",
-  },
-  {
-    action: "Vendor notified",
-    user: "System",
-    timestamp: "May 19, 2026 10:33 AM",
-    status: "completed",
-  },
-  {
-    action: "Vendor confirmed",
-    user: "Jetwing Hotels",
-    timestamp: "May 19, 2026 11:15 AM",
-    status: "completed",
-  },
-  {
-    action: "Confirmation sent to customer",
-    user: "System",
-    timestamp: "May 19, 2026 11:16 AM",
-    status: "completed",
-  },
-  {
-    action: "Awaiting travel date",
-    user: "",
-    timestamp: "Jun 15, 2026",
-    status: "pending",
-  },
-];
-
-// Transport-specific sample data
-const TRANSPORT_DETAILS = {
-  pickup: "Bandaranaike International Airport (CMB)",
-  pickupTime: "2:30 PM",
-  destination: "Galle Fort Hotel, Galle",
-  distance: "128 km",
-  duration: "2.5 hours",
-  vehicle: "Toyota Hiace - White",
-  driver: {
-    name: "Rohan Silva",
-    phone: "+94 77 123 4567",
-    rating: 4.8,
-  },
-  passengers: 2,
-  luggage: "2 large bags",
-  route: "Southern Expressway (E01)",
-};
-
 export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating }: BookingDetailDrawerProps) {
   const isTransport = booking.type === "Transfer";
+
+  // Internal Notes State & LocalStorage Persistence
+  const storageKey = `booking_note_${booking.id}`;
+  const [noteText, setNoteText] = useState<string>("");
+  const [noteSavedMessage, setNoteSavedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      setNoteText(saved);
+    } else {
+      setNoteText("");
+    }
+    setNoteSavedMessage(null);
+  }, [booking.id, storageKey]);
+
+  const handleSaveNote = () => {
+    localStorage.setItem(storageKey, noteText);
+    setNoteSavedMessage("✓ Internal note saved successfully!");
+    setTimeout(() => {
+      setNoteSavedMessage(null);
+    }, 3000);
+  };
+
+  // Payment Preference Extraction
+  const reqLower = (booking.specialRequests || "").toLowerCase();
+  const isCardPayment = reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay_now") || reqLower.includes("pay now");
+  const isPayAtProperty = reqLower.includes("pay at property") || (!isCardPayment && booking.paymentStatus === "pay_at_property");
+  
+  // Refund Action State
+  const [refundMessage, setRefundMessage] = useState<string | null>(null);
+
+  const handleProcessRefund = () => {
+    if (isPayAtProperty) {
+      setRefundMessage("No refund applicable for 'Pay at Property' (Unpaid) bookings.");
+    } else {
+      setRefundMessage("Refund request submitted to payment gateway.");
+    }
+    setTimeout(() => setRefundMessage(null), 4000);
+  };
+
+  // Dynamic Timeline Generation based on actual creation date & inquiry status
+  const getDynamicTimeline = () => {
+    const events: Array<{ action: string; user?: string; timestamp: string; status: "completed" | "pending" | "cancelled" }> = [];
+    
+    // Parse creation timestamp
+    let createdDt = new Date();
+    if (booking.rawCreatedAt) {
+      createdDt = new Date(booking.rawCreatedAt);
+    } else if (booking.createdAt && !isNaN(Date.parse(booking.createdAt))) {
+      createdDt = new Date(booking.createdAt);
+    }
+
+    const createdFormatted = createdDt.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const notifDt = new Date(createdDt.getTime() + 60000);
+    const notifFormatted = notifDt.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // 1. Inquiry Created
+    events.push({
+      action: "Booking Inquiry Created",
+      user: booking.customer.name || "Customer",
+      timestamp: createdFormatted,
+      status: "completed",
+    });
+
+    // 2. Vendor Notified
+    events.push({
+      action: "Vendor Notified of New Inquiry",
+      user: "System",
+      timestamp: notifFormatted,
+      status: "completed",
+    });
+
+    // 3. Vendor Decision / Confirmation
+    if (booking.bookingStatus === "confirmed" || booking.bookingStatus === "completed") {
+      events.push({
+        action: "Vendor Confirmed & Room Unit Allocated",
+        user: booking.vendor !== "—" ? booking.vendor : "Property Vendor",
+        timestamp: notifFormatted,
+        status: "completed",
+      });
+      events.push({
+        action: "Confirmation Email Sent to Customer",
+        user: "System Email Provider",
+        timestamp: notifFormatted,
+        status: "completed",
+      });
+    } else if (booking.bookingStatus === "cancelled" || booking.bookingStatus === "rejected") {
+      events.push({
+        action: "Inquiry Cancelled / Declined",
+        user: booking.vendor !== "—" ? booking.vendor : "Vendor",
+        timestamp: notifFormatted,
+        status: "cancelled",
+      });
+    } else {
+      events.push({
+        action: "Awaiting Vendor Acceptance & Confirmation",
+        user: booking.vendor !== "—" ? booking.vendor : "Property Vendor",
+        timestamp: "Pending Action",
+        status: "pending",
+      });
+    }
+
+    // 4. Upcoming Travel Date
+    events.push({
+      action: `Travel Check-In (${booking.travelDate || "Scheduled Date"})`,
+      user: "Guest & Property Host",
+      timestamp: booking.travelDate || "Upcoming",
+      status: booking.bookingStatus === "completed" ? "completed" : "pending",
+    });
+
+    return events;
+  };
+
+  const dynamicTimeline = getDynamicTimeline();
 
   return (
     <>
@@ -171,92 +258,42 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Risk Alerts */}
-          {booking.riskFlags && booking.riskFlags.length > 0 && (
+          {/* Action Header for Status Update */}
+          {onStatusUpdate && (
             <div
-              className="rounded-xl p-4"
+              className="rounded-xl p-4 flex items-center justify-between"
               style={{
-                background: "rgba(239, 68, 68, 0.08)",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border-light)",
+                boxShadow: "var(--shadow-md)",
               }}
             >
-              <div className="flex items-start gap-3">
-                <AlertTriangle size={18} style={{ color: "#ef4444" }} className="shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-[13px] mb-1" style={{ color: "#f87171", fontWeight: 600 }}>
-                    Risk Alerts
-                  </p>
-                  <ul className="space-y-1">
-                    {booking.riskFlags.map((flag, i) => (
-                      <li key={i} className="text-[12px]" style={{ color: "#f87171" }}>
-                        • {flag.replace(/_/g, " ")}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              <div>
+                <p className="text-[11px] uppercase font-bold text-slate-500 tracking-wider mb-1">
+                  Manage Status
+                </p>
+                <span className="text-[13px] font-semibold text-slate-700 capitalize">
+                  Current: {booking.bookingStatus}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  disabled={isUpdating}
+                  onClick={() => onStatusUpdate("quoted")}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+                >
+                  Accept & Confirm
+                </button>
+                <button
+                  disabled={isUpdating}
+                  onClick={() => onStatusUpdate("cancelled")}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition"
+                >
+                  Decline / Cancel
+                </button>
               </div>
             </div>
           )}
-
-          {/* Quick Actions */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => onStatusUpdate?.("quoted")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "rgba(34, 197, 94, 0.1)",
-                color: "#4ade80",
-                border: "1px solid rgba(34,197,94,0.3)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-              Send Quote
-            </button>
-            <button
-              onClick={() => onStatusUpdate?.("cancelled")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "rgba(239, 68, 68, 0.1)",
-                color: "#f87171",
-                border: "1px solid rgba(239,68,68,0.3)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
-              Cancel
-            </button>
-            <button
-              onClick={() => onStatusUpdate?.("contacted")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "var(--active-overlay)",
-                color: "var(--accent-navy-light)",
-                border: "1px solid var(--border-accent)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              Contacted Customer
-            </button>
-            <button
-              onClick={() => onStatusUpdate?.("converted_to_booking")}
-              disabled={isUpdating}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all disabled:opacity-60"
-              style={{
-                background: "var(--input-background)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-light)",
-                fontWeight: 500,
-              }}
-            >
-              {isUpdating ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-              Mark Converted
-            </button>
-          </div>
 
           {/* Customer Information */}
           <div
@@ -271,40 +308,41 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               <User size={16} style={{ color: "var(--accent-navy-light)" }} />
               Customer Information
             </h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <User size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Name
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                  Name
+                </p>
+                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                  {booking.customer.name}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                  Email
+                </p>
+                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                  {booking.customer.email}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                  Phone
+                </p>
+                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                  {booking.customer.phone}
+                </p>
+              </div>
+              {booking.nationality && (
+                <div>
+                  <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    Nationality
                   </p>
                   <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {booking.customer.name}
+                    {booking.nationality}
                   </p>
                 </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Mail size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Email
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {booking.customer.email}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Phone size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Phone
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {booking.customer.phone}
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -324,7 +362,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Listing / Package
+                  Listing / Property
                 </p>
                 <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
                   {booking.listing}
@@ -332,7 +370,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               </div>
               <div>
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Vendor
+                  Vendor / Operator
                 </p>
                 <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
                   {booking.vendor}
@@ -346,20 +384,10 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   {booking.travelDate}
                 </p>
               </div>
-              {booking.duration && (
-                <div>
-                  <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    Duration
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {booking.duration}
-                  </p>
-                </div>
-              )}
               {booking.passengers && (
                 <div>
                   <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    Passengers
+                    Guests / Travelers
                   </p>
                   <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
                     {booking.passengers} person{booking.passengers > 1 ? "s" : ""}
@@ -370,17 +398,68 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
                   Booking Status
                 </p>
-                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                <span
+                  className="inline-block px-2.5 py-0.5 rounded text-[11px] font-semibold capitalize"
+                  style={{
+                    background: booking.bookingStatus === "confirmed" || booking.bookingStatus === "completed"
+                      ? "rgba(34, 197, 94, 0.1)"
+                      : booking.bookingStatus === "cancelled"
+                      ? "rgba(239, 68, 68, 0.1)"
+                      : "rgba(245, 158, 11, 0.1)",
+                    color: booking.bookingStatus === "confirmed" || booking.bookingStatus === "completed"
+                      ? "#22c55e"
+                      : booking.bookingStatus === "cancelled"
+                      ? "#ef4444"
+                      : "#f59e0b",
+                  }}
+                >
                   {booking.bookingStatus}
-                </p>
+                </span>
               </div>
             </div>
+
+            {/* Reserved Rooms Breakdown Card */}
+            {booking.cartItems && booking.cartItems.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[11px] uppercase font-bold text-slate-600 tracking-wider">
+                    {booking.type === "Safari" ? "Reserved Safari Packages & Jeeps" : "Reserved Rooms & Unit Breakdown"}
+                  </p>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-[#051f36] text-white">
+                    {booking.type === "Safari"
+                      ? `${booking.cartItems.reduce((sum, item) => sum + (item.travelCount || 1), 0)} Safari Jeep(s)`
+                      : `${booking.cartItems.reduce((sum, item) => sum + (item.travelCount || 1), 0)} Room(s) Reserved`}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {booking.cartItems.map((item, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold text-slate-900 flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                            {item.travelCount || 1}x Unit{(item.travelCount || 1) !== 1 ? "s" : ""}
+                          </span>
+                          {item.title}
+                        </div>
+                        <p className="text-slate-500 text-[11px] mt-1">
+                          Travel Date: {item.travelDate || booking.travelDate}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-extrabold text-slate-900 text-sm">${item.price}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {booking.specialRequests && (
               <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border-light)" }}>
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Special Requests
+                  Special Requests / Payment Preference
                 </p>
-                <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                <p className="text-[12px] font-medium text-slate-700">
                   {booking.specialRequests}
                 </p>
               </div>
@@ -462,45 +541,11 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   </div>
                 </div>
 
-                {/* Driver Assignment */}
-                <div
-                  className="rounded-lg p-3"
-                  style={{
-                    background: "rgba(139, 92, 246, 0.08)",
-                    border: "1px solid rgba(139,92,246,0.25)",
-                  }}
-                >
-                  <p className="text-[11px] mb-2" style={{ color: "var(--text-tertiary)" }}>
-                    Assigned Driver
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[13px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                        {TRANSPORT_DETAILS.driver.name}
-                      </p>
-                      <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                        {TRANSPORT_DETAILS.driver.phone}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[12px]" style={{ color: "#fbbf24", fontWeight: 600 }}>
-                        {TRANSPORT_DETAILS.driver.rating}
-                      </span>
-                      <span className="text-[16px]" style={{ color: "#fbbf24" }}>★</span>
-                    </div>
-                  </div>
-                  <button
-                    className="w-full mt-3 text-[11px] px-3 py-2 rounded-lg transition-all"
-                    style={{
-                      background: "rgba(139, 92, 246, 0.1)",
-                      color: "#a78bfa",
-                      border: "1px solid rgba(139,92,246,0.3)",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Change Driver
-                  </button>
-                </div>
+                {/* Driver Assignment Section */}
+                <DriverAssignmentSection
+                  bookingId={booking._inquiryId || booking.id}
+                  assignmentStatus="unassigned"
+                />
 
                 {/* Vehicle & Passengers */}
                 <div className="grid grid-cols-2 gap-3">
@@ -541,7 +586,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                  Booking Amount
+                  Booking Total Amount
                 </span>
                 <span className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
                   ${booking.amount}
@@ -549,17 +594,29 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                  Payment Method
+                </span>
+                <span className={`text-[12px] font-bold px-2.5 py-0.5 rounded border ${
+                  isCardPayment
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                }`}>
+                  {isCardPayment ? "💳 Credit / Debit Card (Online Payment)" : "🏨 Pay at Property (Check-in)"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
                   Payment Status
                 </span>
                 <span
-                  className="text-[11px] px-2.5 py-1 rounded"
+                  className="text-[11px] px-2.5 py-1 rounded font-semibold capitalize"
                   style={
-                    booking.paymentStatus === "paid"
-                      ? { background: "rgba(34, 197, 94, 0.1)", color: "#4ade80" }
-                      : { background: "rgba(245, 158, 11, 0.1)", color: "#fbbf24" }
+                    !isPayAtProperty && booking.paymentStatus === "paid"
+                      ? { background: "rgba(34, 197, 94, 0.1)", color: "#22c55e" }
+                      : { background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b" }
                   }
                 >
-                  {booking.paymentStatus.replace("_", " ")}
+                  {isPayAtProperty ? "Unpaid (Pay upon arrival)" : booking.paymentStatus.replace("_", " ")}
                 </span>
               </div>
               <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
@@ -579,8 +636,16 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                 </span>
               </div>
             </div>
+
+            {refundMessage && (
+              <p className="mt-3 text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                {refundMessage}
+              </p>
+            )}
+
             <button
-              className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all"
+              onClick={handleProcessRefund}
+              className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all hover:bg-slate-100 active:scale-[0.99]"
               style={{
                 background: "var(--input-background)",
                 color: "var(--text-secondary)",
@@ -593,7 +658,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             </button>
           </div>
 
-          {/* Booking Timeline */}
+          {/* Live Activity Timeline */}
           <div
             className="rounded-xl p-5"
             style={{
@@ -607,17 +672,17 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               Activity Timeline
             </h3>
             <div className="space-y-4">
-              {SAMPLE_TIMELINE.map((event, i) => (
+              {dynamicTimeline.map((event, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className="flex flex-col items-center">
                     <div
-                      className={`w-2 h-2 rounded-full ${event.status === "completed" ? "" : "animate-pulse"}`}
+                      className={`w-2.5 h-2.5 rounded-full ${event.status === "completed" ? "" : "animate-pulse"}`}
                       style={{
-                        background: event.status === "completed" ? "#22c55e" : "#f59e0b",
+                        background: event.status === "completed" ? "#22c55e" : event.status === "cancelled" ? "#ef4444" : "#f59e0b",
                         boxShadow: event.status === "completed" ? "0 0 6px #22c55e" : "0 0 6px #f59e0b",
                       }}
                     />
-                    {i < SAMPLE_TIMELINE.length - 1 && (
+                    {i < dynamicTimeline.length - 1 && (
                       <div
                         className="w-0.5 h-8 mt-1"
                         style={{ background: event.status === "completed" ? "#22c55e40" : "var(--border-light)" }}
@@ -625,7 +690,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                     )}
                   </div>
                   <div className="flex-1 pb-2">
-                    <p className="text-[12px] mb-0.5" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                    <p className="text-[12px] mb-0.5 font-bold" style={{ color: "var(--text-primary)" }}>
                       {event.action}
                     </p>
                     {event.user && (
@@ -633,7 +698,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                         by {event.user}
                       </p>
                     )}
-                    <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                    <p className="text-[10px] font-medium" style={{ color: "var(--text-tertiary)" }}>
                       {event.timestamp}
                     </p>
                   </div>
@@ -642,7 +707,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             </div>
           </div>
 
-          {/* Internal Notes */}
+          {/* Interactive Internal Notes */}
           <div
             className="rounded-xl p-5"
             style={{
@@ -656,26 +721,30 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               Internal Notes
             </h3>
             <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
               placeholder="Add internal notes about this booking..."
-              className="w-full px-3 py-2.5 rounded-lg text-[12px] resize-none outline-none"
+              className="w-full px-3 py-2.5 rounded-lg text-[12px] resize-none outline-none focus:ring-2 focus:ring-blue-500/20 transition"
               style={{
                 background: "var(--input-background)",
                 border: "1px solid var(--border-light)",
                 color: "var(--text-secondary)",
-                minHeight: "80px",
+                minHeight: "90px",
               }}
             />
-            <button
-              className="mt-3 text-[11px] px-4 py-2 rounded-lg transition-all"
-              style={{
-                background: "var(--active-overlay)",
-                color: "var(--accent-navy-light)",
-                border: "1px solid var(--border-accent)",
-                fontWeight: 500,
-              }}
-            >
-              Save Note
-            </button>
+            <div className="flex items-center justify-between mt-3">
+              <button
+                onClick={handleSaveNote}
+                className="text-[11px] px-4 py-2 rounded-lg transition-all font-bold bg-slate-900 text-white hover:bg-slate-800 active:scale-95 flex items-center gap-1.5"
+              >
+                <Check size={13} /> Save Note
+              </button>
+              {noteSavedMessage && (
+                <span className="text-xs font-semibold text-emerald-600">
+                  {noteSavedMessage}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -33,9 +33,12 @@ import {
 import { BookingDetailDrawer } from "./BookingDetailDrawer";
 import { useCommonActions } from "../../hooks/useCommonActions";
 import { FilterModal, type FilterOption } from "../shared/FilterModal";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   adminListBookingInquiries,
+  vendorListBookingInquiries,
   adminUpdateInquiryStatus,
+  vendorUpdateInquiryStatus,
   inferBookingType,
   mapInquiryStatusToUI,
   type AdminBookingInquiryItem,
@@ -66,11 +69,20 @@ interface Booking {
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
   createdAt: string;
+  rawCreatedAt?: string;
   passengers?: number;
   duration?: string;
   specialRequests?: string;
   riskFlags?: string[];
   nationality?: string;
+  cartItems?: Array<{
+    listingId?: string;
+    title: string;
+    travelDate?: string;
+    travelCount?: number;
+    price: number;
+    baseCurrency?: string;
+  }>;
 }
 
 const BOOKING_STATUS_CONFIG: Record<BookingStatus, { bg: string; text: string; dot: string; icon: any }> = {
@@ -224,13 +236,20 @@ const SAMPLE_BOOKINGS: Booking[] = [
 // Helper: convert an AdminBookingInquiryItem to the local Booking shape
 function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
   const firstItem = inq.cartItems?.[0];
-  const travelDate = firstItem?.travelDate
-    ? new Date(firstItem.travelDate).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "TBD";
+  const formatDisplayDate = (val?: string) => {
+    if (!val) return "TBD";
+    if (val.includes(" to ")) {
+      const [start, end] = val.split(" to ");
+      const s = new Date(start.trim());
+      const e = new Date(end.trim());
+      const sStr = !isNaN(s.getTime()) ? s.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : start.trim();
+      const eStr = !isNaN(e.getTime()) ? e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : end.trim();
+      return `${sStr} - ${eStr}`;
+    }
+    const d = new Date(val);
+    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : val;
+  };
+  const travelDate = formatDisplayDate(firstItem?.travelDate);
 
   return {
     id: inq.reference || inq.id,
@@ -243,7 +262,7 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     },
     type: (inferBookingType(inq.cartItems) || "Tour") as BookingType,
     listing: firstItem?.title || "—",
-    vendor: "—",
+    vendor: firstItem?.vendorName || "—",
     travelDate,
     amount: inq.total || inq.subtotal || 0,
     bookingStatus: mapInquiryStatusToUI(inq.status),
@@ -253,9 +272,19 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
       day: "numeric",
       year: "numeric",
     }),
+    rawCreatedAt: inq.createdAt,
     passengers: inq.numberOfTravelers,
     specialRequests: inq.specialRequests,
     nationality: inq.nationality,
+    cartItems: (inq.cartItems || []).map((ci) => ({
+      listingId: ci.listingId,
+      title: ci.title || ci.variantName || "Item",
+      variantName: ci.variantName,
+      travelDate: ci.travelDate,
+      travelCount: ci.travelCount || 1,
+      price: ci.price,
+      baseCurrency: ci.baseCurrency,
+    })),
   };
 }
 
@@ -276,6 +305,8 @@ export function BookingsPage() {
   const [isUpdating, setIsUpdating] = useState<string | null>(null); // inquiry ID being updated
 
   const { handleExport } = useCommonActions();
+  const { effectiveUser, viewAsVendor } = useAuth();
+  const isVendorView = effectiveUser?.role === "vendor" || viewAsVendor;
 
   // Fetch live booking inquiries from backend
   const fetchInquiries = useCallback(async () => {
@@ -289,7 +320,9 @@ export function BookingsPage() {
         filterStatus === "completed" ? "converted_to_booking" :
         filterStatus === "cancelled" ? "cancelled"            : "all";
 
-      const response = await adminListBookingInquiries({
+      const fetchFn = isVendorView ? vendorListBookingInquiries : adminListBookingInquiries;
+
+      const response = await fetchFn({
         status: statusParam === "all" ? undefined : statusParam,
         search: search || undefined,
         perPage: 50,
@@ -334,17 +367,18 @@ export function BookingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [filterStatus, search]);
+  }, [filterStatus, search, isVendorView]);
 
   useEffect(() => {
     fetchInquiries();
   }, [fetchInquiries]);
 
-  // Admin status update handler (wired to BookingDetailDrawer callbacks)
+  // Status update handler (wired to BookingDetailDrawer callbacks)
   const handleUpdateStatus = async (inquiryId: string, newStatus: InquiryStatus) => {
     setIsUpdating(inquiryId);
     try {
-      await adminUpdateInquiryStatus(inquiryId, newStatus);
+      const updateFn = isVendorView ? vendorUpdateInquiryStatus : adminUpdateInquiryStatus;
+      await updateFn(inquiryId, newStatus);
       await fetchInquiries();
     } catch (err: any) {
       console.error("Status update failed:", err);

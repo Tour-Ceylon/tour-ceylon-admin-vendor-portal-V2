@@ -13,7 +13,16 @@ if (!PUBLISHABLE_KEY) {
 export function RootLayout() {
   return (
     <ThemeProvider>
-      <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/login">
+      <ClerkProvider 
+        publishableKey={PUBLISHABLE_KEY} 
+        afterSignOutUrl="/login"
+        appearance={{
+          baseTheme: undefined,
+          variables: {
+            colorPrimary: '#1e40af',
+          }
+        }}
+      >
         <AuthProvider>
           <ToastProvider>
             <Outlet />

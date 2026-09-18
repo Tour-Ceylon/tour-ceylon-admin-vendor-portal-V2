@@ -1,0 +1,28 @@
+/* ── Driver View Custom Animations ── */
+
+/* Pulse animation for online status dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+.pulse-dot {
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* Glow animation for dispatch badge */
+@keyframes badge-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+.badge-glow {
+  animation: badge-glow 2s ease-in-out infinite;
+}
+
+/* Step pulse for active stepper item */
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+.step-pulse {
+  animation: step-pulse 2s ease-in-out infinite;
+}
