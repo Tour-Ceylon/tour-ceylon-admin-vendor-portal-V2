@@ -1697,9 +1697,12 @@ export function RoomsSection() {
     }, [rooms, paymentPolicy]);
 
     const addRoom = () => {
+        const usedTypes = new Set(rooms.map((r) => r.type));
+        const availableType = ROOM_TYPE_OPTIONS.find((t) => !usedTypes.has(t)) || "Custom Room";
+
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
-            type: "Deluxe Room",
+            type: availableType,
             count: "1",
             beds: "0",
             hasBeds: false,
@@ -1804,7 +1807,7 @@ export function RoomsSection() {
                                                     <div className="p-2 rounded-lg text-[11px] font-semibold mt-1.5 flex items-start gap-1.5" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444" }}>
                                                         <span className="text-xs shrink-0">⚠️</span>
                                                         <span>
-                                                            <strong>Room type already exists!</strong> If you are adding more rooms of this type, please increase the <strong>Count</strong> field. If creating a sub-variant, use a unique name (e.g., <em>{room.type} - Type 2</em>).
+                                                            <strong>Room type already exists!</strong> Please use a unique name or increase the <strong>Count</strong> field instead.
                                                         </span>
                                                     </div>
                                                 )}

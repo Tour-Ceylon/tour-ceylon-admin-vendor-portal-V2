@@ -130,10 +130,10 @@ function BlockModal({
   getRoomUnitStatusForRange: (roomUnit: StayRoomUnit, startDate: string, endDateInclusive: string) => RoomUnitStatusEntry;
   initialDate: string;
   onClose: () => void;
-  onSubmit: (payload: { roomUnitId: string; startDate: string; endDate: string; reason: string; blockType: string }) => void;
+  onSubmit: (payload: { roomUnitIds: string[]; startDate: string; endDate: string; reason: string; blockType: string }) => void;
   submitting: boolean;
 }) {
-  const [roomUnitId, setRoomUnitId] = useState("");
+  const [roomUnitIds, setRoomUnitIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(initialDate);
   const [endDate, setEndDate] = useState(initialDate);
   const [reason, setReason] = useState("");
@@ -149,13 +149,12 @@ function BlockModal({
 
   useEffect(() => {
     if (roomUnitOptions.length === 0) {
-      setRoomUnitId("");
+      setRoomUnitIds([]);
       return;
     }
-    if (!roomUnitOptions.some((entry) => entry.id === roomUnitId)) {
-      setRoomUnitId(roomUnitOptions[0]?.id ?? "");
-    }
-  }, [roomUnitId, roomUnitOptions]);
+    // Only keep selected IDs that are still available
+    setRoomUnitIds(prev => prev.filter(id => roomUnitOptions.some(entry => entry.id === id)));
+  }, [roomUnitOptions]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.65)" }}>
@@ -180,26 +179,35 @@ function BlockModal({
         <div className="space-y-3">
           <div>
             <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>
-              Room unit
+              Room units
             </label>
-            <select
-              value={roomUnitId}
-              onChange={(event) => setRoomUnitId(event.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-[13px]"
-              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
-            >
+            <div className="max-h-40 overflow-y-auto space-y-2 p-3 rounded-lg" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
               {roomUnitOptions.map((roomUnit) => (
-                <option key={roomUnit.id} value={roomUnit.id}>
-                  {roomUnit.roomNumber}
-                  {roomUnit.roomName ? ` • ${roomUnit.roomName}` : ""}
-                </option>
+                <label key={roomUnit.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={roomUnitIds.includes(roomUnit.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setRoomUnitIds((prev) => [...prev, roomUnit.id]);
+                      } else {
+                        setRoomUnitIds((prev) => prev.filter((id) => id !== roomUnit.id));
+                      }
+                    }}
+                    className="rounded text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                  />
+                  <span className="text-[13px]" style={{ color: "var(--text-primary)" }}>
+                    {roomUnit.roomNumber}
+                    {roomUnit.roomName ? ` • ${roomUnit.roomName}` : ""}
+                  </span>
+                </label>
               ))}
-            </select>
-            {roomUnitOptions.length === 0 && (
-              <p className="text-[11px] mt-2" style={{ color: "#f87171" }}>
-                No room units are available for the selected date range.
-              </p>
-            )}
+              {roomUnitOptions.length === 0 && (
+                <p className="text-[11px]" style={{ color: "#f87171" }}>
+                  No room units are available for the selected date range.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -272,8 +280,8 @@ function BlockModal({
             Cancel
           </button>
           <button
-            disabled={submitting || !roomUnitId || !startDate || !endDate || roomUnitOptions.length === 0}
-            onClick={() => onSubmit({ roomUnitId, startDate, endDate, reason, blockType })}
+            disabled={submitting || roomUnitIds.length === 0 || !startDate || !endDate || roomUnitOptions.length === 0}
+            onClick={() => onSubmit({ roomUnitIds, startDate, endDate, reason, blockType })}
             className="px-4 py-2 rounded-lg text-[13px] disabled:opacity-50"
             style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
           >
@@ -299,6 +307,7 @@ function AvailabilityCalendarContent() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [submittingBlock, setSubmittingBlock] = useState(false);
+  const [selectedBlocksToRelease, setSelectedBlocksToRelease] = useState<string[]>([]);
 
   useEffect(() => {
     if (!selectedProperty) return;
@@ -357,6 +366,11 @@ function AvailabilityCalendarContent() {
       cancelled = true;
     };
   }, [selectedProperty?.id, roomTypeId, monthDate]);
+  
+  // Clear selected blocks when changing properties or room types
+  useEffect(() => {
+    setSelectedBlocksToRelease([]);
+  }, [selectedProperty?.id, roomTypeId]);
 
   useEffect(() => {
     if (!selectedProperty || !roomTypeId) {
@@ -545,18 +559,34 @@ function AvailabilityCalendarContent() {
     }
   }
 
-  async function handleBlockSubmit(payload: { roomUnitId: string; startDate: string; endDate: string; reason: string; blockType: string }) {
+  async function handleBlockSubmit(payload: { roomUnitIds: string[]; startDate: string; endDate: string; reason: string; blockType: string }) {
     if (!selectedProperty || !roomTypeId) return;
+    
+    if (!window.confirm(`Are you sure you want to block ${payload.roomUnitIds.length} room(s) from ${payload.startDate} to ${payload.endDate}?`)) {
+      return;
+    }
+
     setSubmittingBlock(true);
     try {
-      await createRoomBlock(selectedProperty.id, payload);
+      await Promise.all(
+        payload.roomUnitIds.map((roomUnitId) =>
+          createRoomBlock(selectedProperty.id, {
+            roomUnitId,
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            reason: payload.reason,
+            blockType: payload.blockType,
+          })
+        )
+      );
+      
       setCalendarEntries((current) =>
-        applyBlockDelta(current, payload.startDate, exclusiveEndDateToInclusive(payload.endDate), 1),
+        applyBlockDelta(current, payload.startDate, exclusiveEndDateToInclusive(payload.endDate), payload.roomUnitIds.length),
       );
       await reloadRoomBlocks();
       setShowBlockModal(false);
     } catch (err: any) {
-      setError(err?.message || "Unable to create room block.");
+      setError(err?.message || "Unable to create room block(s).");
       await reloadCurrentCalendar();
     } finally {
       setSubmittingBlock(false);
@@ -565,6 +595,11 @@ function AvailabilityCalendarContent() {
 
   async function handleReleaseBlock(blockId: string) {
     if (!selectedProperty || !roomTypeId) return;
+    
+    if (!window.confirm("Are you sure you want to release this block?")) {
+      return;
+    }
+    
     const existingBlock = roomBlocks.find((block) => block.id === blockId);
     try {
       await releaseRoomBlock(selectedProperty.id, blockId);
@@ -572,9 +607,40 @@ function AvailabilityCalendarContent() {
         const inclusiveEndDate = exclusiveEndDateToInclusive(existingBlock.endDate);
         setCalendarEntries((current) => applyBlockDelta(current, existingBlock.startDate, inclusiveEndDate, -1));
       }
+      setSelectedBlocksToRelease(prev => prev.filter(id => id !== blockId));
       await reloadRoomBlocks();
     } catch (err: any) {
       setError(err?.message || "Unable to release this room block.");
+      await reloadCurrentCalendar();
+    }
+  }
+
+  async function handleReleaseMultipleBlocks() {
+    if (!selectedProperty || !roomTypeId || selectedBlocksToRelease.length === 0) return;
+    
+    if (!window.confirm(`Are you sure you want to release ${selectedBlocksToRelease.length} block(s)?`)) {
+      return;
+    }
+    
+    try {
+      await Promise.all(
+        selectedBlocksToRelease.map((blockId) => releaseRoomBlock(selectedProperty.id, blockId))
+      );
+      
+      const releasedBlocks = roomBlocks.filter(b => selectedBlocksToRelease.includes(b.id));
+      setCalendarEntries((current) => {
+        let updated = [...current];
+        for (const block of releasedBlocks) {
+          const inclusiveEndDate = exclusiveEndDateToInclusive(block.endDate);
+          updated = applyBlockDelta(updated, block.startDate, inclusiveEndDate, -1);
+        }
+        return updated;
+      });
+      
+      setSelectedBlocksToRelease([]);
+      await reloadRoomBlocks();
+    } catch (err: any) {
+      setError(err?.message || "Unable to release room block(s).");
       await reloadCurrentCalendar();
     }
   }
@@ -906,9 +972,21 @@ function AvailabilityCalendarContent() {
           <h2 className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
             Local Active Blocks
           </h2>
-          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-            Active blocks from the backend
-          </span>
+          <div className="flex items-center gap-3">
+            {selectedBlocksToRelease.length > 0 && (
+              <button
+                onClick={() => void handleReleaseMultipleBlocks()}
+                className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-1"
+                style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+              >
+                <Unlock size={11} />
+                Release Selected ({selectedBlocksToRelease.length})
+              </button>
+            )}
+            <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              Active blocks from the backend
+            </span>
+          </div>
         </div>
         <div className="p-5">
           {activeRoomBlocks.length === 0 ? (
@@ -919,14 +997,28 @@ function AvailabilityCalendarContent() {
             <div className="space-y-3">
               {activeRoomBlocks.map((block) => (
                 <div key={block.id} className="rounded-lg p-4 flex items-center justify-between gap-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
-                  <div>
-                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                      {roomUnitsForType.find((roomUnit) => roomUnit.id === block.roomUnitId)?.roomNumber ?? block.roomUnitId}
-                    </p>
-                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      {formatDisplayDate(block.startDate)} to {formatDisplayDate(block.endDate)} • {block.blockType}
-                      {block.reason ? ` • ${block.reason}` : ""}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedBlocksToRelease.includes(block.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBlocksToRelease((prev) => [...prev, block.id]);
+                        } else {
+                          setSelectedBlocksToRelease((prev) => prev.filter((id) => id !== block.id));
+                        }
+                      }}
+                      className="rounded text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    />
+                    <div>
+                      <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                        {roomUnitsForType.find((roomUnit) => roomUnit.id === block.roomUnitId)?.roomNumber ?? block.roomUnitId}
+                      </p>
+                      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        {formatDisplayDate(block.startDate)} to {formatDisplayDate(block.endDate)} • {block.blockType}
+                        {block.reason ? ` • ${block.reason}` : ""}
+                      </p>
+                    </div>
                   </div>
                   <button
                     onClick={() => void handleReleaseBlock(block.id)}

@@ -314,7 +314,7 @@ function stayPropertyToRoomType(roomType: NonNullable<StayPropertyResponse["room
   return {
     id: roomType.id,
     type: roomType.name,
-    count: String(roomType.roomUnits?.length || 1),
+    count: String(roomType.totalUnits ?? roomType.roomUnits?.length ?? 1),
     beds: String(bedConfiguration.beds ?? 0),
     hasBeds: Boolean(bedConfiguration.hasBeds),
     cribs: String(bedConfiguration.cribs ?? 0),
@@ -1889,15 +1889,30 @@ export function ListingEditor({ mode }: ListingEditorProps) {
       setEditError(null);
       try {
         let hydrated: any = null;
+
+        // 1. First, try to fetch as a StayProperty. This is crucial for stays because it contains detailed room structures.
         try {
-          const adminData = await apiFetch<any>(`/admin/listings/${listingId}`);
-          if (adminData) {
-            hydrated = hydrateGeneralListingDraft(adminData);
+          const property = await apiFetch<StayPropertyResponse>(`/vendor/stays/${listingId}`);
+          if (property) {
+            hydrated = hydrateStayDraft(property);
           }
         } catch {
-          // Ignore 404 from admin endpoint
+          // Ignore (might not be a stay listing or not found)
         }
 
+        // 2. Fallback to admin endpoint for other listing types
+        if (!hydrated) {
+          try {
+            const adminData = await apiFetch<any>(`/admin/listings/${listingId}`);
+            if (adminData) {
+              hydrated = hydrateGeneralListingDraft(adminData);
+            }
+          } catch {
+            // Ignore 404/403
+          }
+        }
+
+        // 3. Fallback to public endpoint
         if (!hydrated) {
           try {
             const generalData = await apiFetch<any>(`/listings/${listingId}`);
@@ -1905,16 +1920,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
               hydrated = hydrateGeneralListingDraft(generalData);
             }
           } catch {
-            // Ignore 404 from public endpoint
-          }
-        }
-
-        if (!hydrated) {
-          try {
-            const property = await apiFetch<StayPropertyResponse>(`/vendor/stays/${listingId}`);
-            hydrated = hydrateStayDraft(property);
-          } catch {
-            // Ignore
+            // Ignore 404
           }
         }
 
