@@ -1,4 +1,9 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const getBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || "/api/v1").trim().replace(/\/+$/, "");
+  return envUrl.endsWith("/api/v1") ? envUrl : `${envUrl}/api/v1`;
+};
+const BASE_URL = getBaseUrl();
+
 const TOKEN_CACHE_TTL_MS = 15_000;
 
 type TokenCacheEntry = {

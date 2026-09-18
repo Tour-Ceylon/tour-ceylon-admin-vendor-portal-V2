@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { ContextualActions } from "../common/QuickActions";
 import { useToast } from "../common/ToastNotification";
+import { apiFetch } from "../api/apiClient";
 import {
   vendorListBookingInquiries,
   vendorUpdateInquiryStatus,
@@ -458,13 +459,11 @@ export function VendorBookingCenter() {
                             onClick={async () => {
                               setUpdatingId(booking.id);
                               try {
-                                const response = await fetch(`http://localhost:8000/api/v1/bookings/${booking.id}/mark-paid`, {
+                                await apiFetch(`/bookings/${booking.id}/mark-paid`, {
                                   method: "PATCH",
                                 });
-                                if (response.ok) {
-                                  addToast({ type: "success", title: "Marked as Paid", message: "Booking payment confirmed." });
-                                  fetchInquiries();
-                                }
+                                addToast({ type: "success", title: "Marked as Paid", message: "Booking payment confirmed." });
+                                fetchInquiries();
                               } catch (e) {
                                 addToast({ type: "error", title: "Error", message: "Failed to mark as paid." });
                               } finally {
