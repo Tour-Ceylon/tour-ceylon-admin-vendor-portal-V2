@@ -122,7 +122,7 @@ export async function adminUpdateInquiryStatus(
   inquiryId: string,
   status: InquiryStatus
 ): Promise<AdminBookingInquiryItem> {
-  return apiFetch(`/admin/booking-inquiries/${inquiryId}/status`, {
+  return apiFetch(`/booking-inquiries/${inquiryId}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });

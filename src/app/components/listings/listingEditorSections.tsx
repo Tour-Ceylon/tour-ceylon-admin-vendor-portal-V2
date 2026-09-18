@@ -25,11 +25,32 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
 const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
-const ROOM_TYPE_OPTIONS = ["Bedroom", "Living Room", "Other Room"];
+const ROOM_TYPE_OPTIONS = [
+    "Deluxe Room",
+    "Standard Room",
+    "Superior Room",
+    "Master Bedroom",
+    "Executive Suite",
+    "Junior Suite",
+    "Family Suite",
+    "Presidential Suite",
+    "King Room",
+    "Queen Room",
+    "Twin Room",
+    "Single Room",
+    "Studio Apartment",
+    "Private Villa",
+    "Luxury Bungalow",
+    "Ocean View Room",
+    "Garden View Room",
+    "Dormitory / Bunk Room",
+    "Living Room",
+    "Other Room",
+];
 
 export function normalizeStayRoomType(value?: string | null) {
     const normalized = String(value ?? "").trim();
-    if (!normalized || normalized === "BedRoom") return "Bedroom";
+    if (!normalized || normalized === "BedRoom" || normalized === "Bedroom") return "Standard Room";
     return normalized;
 }
 const DEFAULT_HOUSE_RULES = {
@@ -396,25 +417,30 @@ export function PricingTab({
     setVariants: (v: PricingVariant[]) => void;
 }) {
     const addVariant = () => {
+        const isFirst = variants.length === 0;
         setVariants([
             ...variants,
             {
                 id: `var_${Date.now()}`,
-                name: "New Variant",
+                name: `Option ${variants.length + 1}`,
                 unit: "Per Person",
                 minCapacity: "1",
                 maxCapacity: "6",
-                price: "",
+                price: "100",
                 currency: "USD",
                 priority: variants.length + 1,
-                isDefault: false,
+                isDefault: isFirst,
             },
         ]);
     };
 
-
-
-    const removeVariant = (id: string) => setVariants(variants.filter((v) => v.id !== id));
+    const removeVariant = (id: string) => {
+        const next = variants.filter((v) => v.id !== id);
+        if (next.length > 0 && !next.some((v) => v.isDefault)) {
+            next[0] = { ...next[0], isDefault: true };
+        }
+        setVariants(next);
+    };
     const updateVariant = (id: string, updates: Partial<PricingVariant>) =>
         setVariants(variants.map((v) => (v.id === id ? { ...v, ...updates } : v)));
 
@@ -551,16 +577,392 @@ export function PricingTab({
     );
 }
 
+export interface SafariPackageOptionItem {
+  id: string;
+  name: string;
+  type: "private_jeep" | "shared_seat" | "full_day";
+  price: number;
+  currency: string;
+  capacityMax: number;
+  timeSlot: string; // "Morning (06:00 AM – 10:00 AM)", "Afternoon (02:30 PM – 06:30 PM)", "Full Day (06:00 AM – 06:00 PM)"
+  durationLabel: string;
+  description: string;
+  includesParkFees: boolean;
+}
+
+const SESSION_SLOTS = [
+  {
+    key: "Morning",
+    label: "Morning Drive Session",
+    time: "06:00 AM – 10:00 AM",
+    defaultDuration: "4 Hours (06:00 AM – 10:00 AM)",
+    defaultSlot: "Morning (06:00 AM – 10:00 AM)",
+  },
+  {
+    key: "Afternoon",
+    label: "Afternoon Drive Session",
+    time: "02:30 PM – 06:30 PM",
+    defaultDuration: "4 Hours (02:30 PM – 06:30 PM)",
+    defaultSlot: "Afternoon (02:30 PM – 06:30 PM)",
+  },
+  {
+    key: "Full Day",
+    label: "Full Day Safari Session",
+    time: "06:00 AM – 06:00 PM",
+    defaultDuration: "12 Hours (06:00 AM – 06:00 PM)",
+    defaultSlot: "Full Day (06:00 AM – 06:00 PM)",
+  },
+];
+
+const JEEP_PRESET_NAMES = [
+  "4x4 Open Safari Jeep (Standard 6-Seater)",
+  "Luxury Modified 4x4 Safari Jeep (Up to 6 Guests)",
+  "VIP Full Day Expedition Jeep (Private 4x4)",
+  "Shared Seat Safari Jeep (Per Person)",
+];
+
+function SafariPackagesSection() {
+    const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
+    const setDraft = useListingDraftStore((s) => s.setDraft);
+
+    // Active session slots selection state
+    const [enabledSlots, setEnabledSlots] = useState<Record<string, boolean>>(() => {
+        if (draftCategoryData.enabledSlots) {
+            return draftCategoryData.enabledSlots;
+        }
+        return { Morning: true, Afternoon: true, "Full Day": true };
+    });
+
+    const [packages, setPackages] = useState<SafariPackageOptionItem[]>(() => {
+        if (Array.isArray(draftCategoryData.safariPackages) && draftCategoryData.safariPackages.length > 0) {
+            return draftCategoryData.safariPackages;
+        }
+        return [
+            {
+                id: "safari_opt_morning_private",
+                name: "4x4 Open Safari Jeep (Standard 6-Seater)",
+                type: "private_jeep",
+                price: 150,
+                currency: "USD",
+                capacityMax: 6,
+                timeSlot: "Morning (06:00 AM – 10:00 AM)",
+                durationLabel: "4 Hours (06:00 AM – 10:00 AM)",
+                description: "Best for leopard spotting and bird watching during cool morning hours. Dedicated naturalist guide & open-roof 4WD.",
+                includesParkFees: true,
+            },
+            {
+                id: "safari_opt_afternoon_private",
+                name: "4x4 Open Safari Jeep (Standard 6-Seater)",
+                type: "private_jeep",
+                price: 140,
+                currency: "USD",
+                capacityMax: 6,
+                timeSlot: "Afternoon (02:30 PM – 06:30 PM)",
+                durationLabel: "4 Hours (02:30 PM – 06:30 PM)",
+                description: "Golden hour safari. High probability of elephant herds gathering near lakes & waterholes before sunset.",
+                includesParkFees: true,
+            },
+            {
+                id: "safari_opt_fullday_private",
+                name: "VIP Full Day Expedition Jeep (Private 4x4)",
+                type: "full_day",
+                price: 280,
+                currency: "USD",
+                capacityMax: 6,
+                timeSlot: "Full Day (06:00 AM – 06:00 PM)",
+                durationLabel: "12 Hours (06:00 AM – 06:00 PM)",
+                description: "Complete deep-park exploration including remote Block 2 zones, picnic lunch by riverbank, and full-day ranger.",
+                includesParkFees: true,
+            },
+        ];
+    });
+
+    useEffect(() => {
+        setDraft({
+            categoryData: {
+                ...(draftCategoryData || {}),
+                enabledSlots,
+                safariPackages: packages,
+            },
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabledSlots, packages]);
+
+    const toggleSlot = (key: string) => {
+        setEnabledSlots((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const handleAddPackageForSlot = (slotObj: typeof SESSION_SLOTS[number]) => {
+        const newPkg: SafariPackageOptionItem = {
+            id: `pkg_${Date.now()}`,
+            name: "4x4 Open Safari Jeep (Standard 6-Seater)",
+            type: slotObj.key === "Full Day" ? "full_day" : "private_jeep",
+            price: slotObj.key === "Full Day" ? 280 : 150,
+            currency: "USD",
+            capacityMax: 6,
+            timeSlot: slotObj.defaultSlot,
+            durationLabel: slotObj.defaultDuration,
+            description: "Dedicated naturalist guide, open-roof 4WD jeep, and park entry included.",
+            includesParkFees: true,
+        };
+        setPackages((prev) => [...prev, newPkg]);
+    };
+
+    const handleRemovePackage = (id: string) => {
+        setPackages((prev) => prev.filter((p) => p.id !== id));
+    };
+
+    const handleUpdatePackage = (id: string, field: keyof SafariPackageOptionItem, value: any) => {
+        setPackages((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+        );
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Step 1: Game Drive Time Slots */}
+            <SectionCard title="1. Game Drive Time Slots Availability">
+                <p className="text-xs text-slate-500 mb-4">
+                    Enable the standard Sri Lankan national park safari session time slots offered for this listing:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {SESSION_SLOTS.map((slot) => {
+                        const isEnabled = enabledSlots[slot.key] !== false;
+                        return (
+                            <div
+                                key={slot.key}
+                                onClick={() => toggleSlot(slot.key)}
+                                className={`p-4 rounded-xl border-2 transition cursor-pointer flex items-center justify-between ${
+                                    isEnabled
+                                        ? "border-[#051f36] bg-slate-50 shadow-sm"
+                                        : "border-slate-200 bg-white opacity-60"
+                                }`}
+                            >
+                                <div>
+                                    <h4 className="font-bold text-slate-900 text-sm">{slot.label}</h4>
+                                    <p className="text-xs text-slate-500 mt-0.5">{slot.time}</p>
+                                </div>
+                                <Toggle value={isEnabled} onChange={() => toggleSlot(slot.key)} />
+                            </div>
+                        );
+                    })}
+                </div>
+            </SectionCard>
+
+            {/* Step 2: Vehicle Packages & Pricing Grouped by Time Slot */}
+            <SectionCard title="2. Safari Jeep Vehicle Packages & Pricing by Time Slot">
+                <p className="text-xs text-slate-500 mb-4">
+                    Configure the available Jeep vehicle types, max passenger capacities, and rates under each active time slot.
+                </p>
+
+                <div className="space-y-6">
+                    {SESSION_SLOTS.filter((s) => enabledSlots[s.key] !== false).map((slotObj) => {
+                        const slotPackages = packages.filter((p) => p.timeSlot.includes(slotObj.key));
+
+                        return (
+                            <div key={slotObj.key} className="p-4 rounded-2xl border border-slate-200 bg-white space-y-4">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <div>
+                                        <h3 className="font-extrabold text-[#051f36] text-sm flex items-center gap-2">
+                                            <span>📅</span> {slotObj.label} ({slotObj.time})
+                                        </h3>
+                                        <span className="text-xs text-slate-500 font-medium">
+                                            {slotPackages.length} vehicle package{slotPackages.length === 1 ? "" : "s"} configured
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleAddPackageForSlot(slotObj)}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#051f36] text-white hover:bg-[#0a2f4c] transition"
+                                    >
+                                        + Add Vehicle Package for {slotObj.key}
+                                    </button>
+                                </div>
+
+                                {slotPackages.length === 0 ? (
+                                    <div className="p-4 rounded-xl border border-dashed border-slate-300 text-center bg-slate-50 text-xs text-slate-500">
+                                        No vehicle packages added for {slotObj.label} yet. Click "+ Add Vehicle Package" to add one.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {slotPackages.map((pkg, idx) => (
+                                            <div key={pkg.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-black uppercase text-slate-700">
+                                                        Vehicle Option #{idx + 1} — {slotObj.key} Session
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemovePackage(pkg.id)}
+                                                        className="text-xs font-bold text-rose-600 hover:text-rose-700"
+                                                    >
+                                                        Remove Vehicle Option
+                                                    </button>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <div className="col-span-2">
+                                                        <FieldLabel required>Vehicle / Package Preset Name</FieldLabel>
+                                                        <SelectField
+                                                            value={pkg.name}
+                                                            onChange={(val) => handleUpdatePackage(pkg.id, "name", val)}
+                                                            options={JEEP_PRESET_NAMES}
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <FieldLabel required>Pricing Unit</FieldLabel>
+                                                        <SelectField
+                                                            value={pkg.type === "shared_seat" ? "Per Person (Shared)" : "Per Vehicle (Private)"}
+                                                            onChange={(val) => {
+                                                                const isShared = val.includes("Per Person");
+                                                                handleUpdatePackage(pkg.id, "type", isShared ? "shared_seat" : (slotObj.key === "Full Day" ? "full_day" : "private_jeep"));
+                                                            }}
+                                                            options={["Per Vehicle (Private)", "Per Person (Shared)"]}
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <FieldLabel required>Package Price ({pkg.currency})</FieldLabel>
+                                                        <FormInput
+                                                            type="number"
+                                                            value={pkg.price.toString()}
+                                                            onChange={(val) => handleUpdatePackage(pkg.id, "price", parseFloat(val) || 0)}
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <FieldLabel>Max Passengers / Jeep</FieldLabel>
+                                                        <FormInput
+                                                            type="number"
+                                                            value={pkg.capacityMax.toString()}
+                                                            onChange={(val) => handleUpdatePackage(pkg.id, "capacityMax", parseInt(val, 10) || 6)}
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <FieldLabel>Session Duration Display</FieldLabel>
+                                                        <FormInput
+                                                            value={pkg.durationLabel}
+                                                            onChange={(val) => handleUpdatePackage(pkg.id, "durationLabel", val)}
+                                                            placeholder={slotObj.defaultDuration}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <FieldLabel>Description & Vehicle Features</FieldLabel>
+                                                    <FormTextarea
+                                                        value={pkg.description}
+                                                        onChange={(val) => handleUpdatePackage(pkg.id, "description", val)}
+                                                        rows={2}
+                                                    />
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                                                    <span className="text-xs font-semibold text-slate-700">Includes National Park Entrance Fees</span>
+                                                    <Toggle
+                                                        value={pkg.includesParkFees}
+                                                        onChange={(v) => handleUpdatePackage(pkg.id, "includesParkFees", v)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </SectionCard>
+        </div>
+    );
+}
+
 function SafariDetails() {
-    const [wildlife, setWildlife] = useState([
-        "Sri Lankan Leopard", "Asian Elephant", "Sloth Bear", "Mugger Crocodile", "Sri Lanka Jungle Fowl",
+    const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
+    const setDraft = useListingDraftStore((s) => s.setDraft);
+
+    const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark || "Yala National Park");
+    const [safariType, setSafariType] = useState(draftCategoryData.safariType || "Private Safari");
+    const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes || "360");
+    const [difficultyLevel, setDifficultyLevel] = useState(draftCategoryData.difficultyLevel || "Moderate");
+    const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction || "5+");
+    const [minGroupSize, setMinGroupSize] = useState(draftCategoryData.minGroupSize || "2");
+    const [maxGroupSize, setMaxGroupSize] = useState(draftCategoryData.maxGroupSize || "6");
+    const [startTime, setStartTime] = useState(draftCategoryData.startTime || "06:00");
+    const [endTime, setEndTime] = useState(draftCategoryData.endTime || "12:00");
+    const [bestSeason, setBestSeason] = useState(draftCategoryData.bestSeason || "February–July, September–December");
+
+    const [guideIncluded, setGuideIncluded] = useState(draftCategoryData.guideIncluded ?? true);
+    const [pickupSupported, setPickupSupported] = useState(draftCategoryData.pickupSupported ?? true);
+    const [privateAvailable, setPrivateAvailable] = useState(draftCategoryData.privateAvailable ?? true);
+
+    const [wildlife, setWildlife] = useState<string[]>(
+        draftCategoryData.wildlifeHighlights ?? [
+            "Sri Lankan Leopard", "Asian Elephant", "Sloth Bear", "Mugger Crocodile", "Sri Lanka Jungle Fowl",
+        ]
+    );
+    const [included, setIncluded] = useState<string[]>(
+        draftCategoryData.includedItems ?? [
+            "Experienced naturalist guide", "4WD jeep with open roof", "Park entrance fees", "Water & snacks",
+        ]
+    );
+    const [excluded, setExcluded] = useState<string[]>(
+        draftCategoryData.excludedItems ?? ["Hotel transfers", "Tips & gratuities", "Travel insurance"]
+    );
+    const [languages, setLanguages] = useState<string[]>(
+        draftCategoryData.languages ?? ["English", "Sinhala"]
+    );
+    const [toBring, setToBring] = useState<string[]>(
+        draftCategoryData.whatToBring ?? ["Binoculars", "Sunscreen", "Hat", "Camera"]
+    );
+
+    const [pickupNotes, setPickupNotes] = useState(
+        draftCategoryData.pickupNotes || "Hotel pickup available from Tissamaharama, Kataragama, and Hambantota areas. Please provide hotel details at booking."
+    );
+    const [cancellationPolicy, setCancellationPolicy] = useState(
+        draftCategoryData.cancellationPolicy || "Free cancellation up to 48 hours before. 50% refund 24-48 hours before. No refund within 24 hours or for no-shows."
+    );
+    const [accessibilityInfo, setAccessibilityInfo] = useState(
+        draftCategoryData.accessibilityInfo || "Safari jeeps are not wheelchair accessible. Participants must be able to climb in and out of the vehicle."
+    );
+
+    // Sync to global draft store
+    useEffect(() => {
+        setDraft({
+            categoryData: {
+                ...(draftCategoryData || {}),
+                nationalPark,
+                safariType,
+                durationMinutes,
+                difficultyLevel,
+                ageRestriction,
+                minGroupSize,
+                maxGroupSize,
+                startTime,
+                endTime,
+                bestSeason,
+                guideIncluded,
+                pickupSupported,
+                privateAvailable,
+                wildlifeHighlights: wildlife,
+                includedItems: included,
+                excludedItems: excluded,
+                languages,
+                whatToBring: toBring,
+                pickupNotes,
+                cancellationPolicy,
+                accessibilityInfo,
+            },
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        nationalPark, safariType, durationMinutes, difficultyLevel, ageRestriction,
+        minGroupSize, maxGroupSize, startTime, endTime, bestSeason, guideIncluded,
+        pickupSupported, privateAvailable, wildlife, included, excluded, languages,
+        toBring, pickupNotes, cancellationPolicy, accessibilityInfo,
     ]);
-    const [included, setIncluded] = useState([
-        "Experienced naturalist guide", "4WD jeep with open roof", "Park entrance fees", "Water & snacks",
-    ]);
-    const [excluded, setExcluded] = useState(["Hotel transfers", "Tips & gratuities", "Travel insurance"]);
-    const [languages, setLanguages] = useState(["English", "Sinhala"]);
-    const [toBring, setToBring] = useState(["Binoculars", "Sunscreen", "Hat", "Camera"]);
 
     return (
         <div className="space-y-4">
@@ -569,65 +971,67 @@ function SafariDetails() {
                     <div>
                         <FieldLabel required>National Park</FieldLabel>
                         <SelectField
-                            value="Yala National Park"
-                            onChange={() => { }}
+                            value={nationalPark}
+                            onChange={(val) => setNationalPark(val)}
                             options={["Yala National Park", "Minneriya National Park", "Wasgamuwa National Park", "Kaudulla National Park", "Lunugamvehera National Park", "Udawalawe National Park", "Wilpattu National Park"]}
                         />
                     </div>
                     <div>
                         <FieldLabel required>Safari Type</FieldLabel>
                         <SelectField
-                            value="Jeep Safari"
-                            onChange={() => { }}
-                            options={["Jeep Safari", "Walking Safari", "Boat Safari", "Night Safari", "Private Safari"]}
+                            value={safariType}
+                            onChange={(val) => setSafariType(val)}
+                            options={["Private Safari", "Morning Safari", "Evening Safari", "Full Day Safari", "Shared Safari"]}
                         />
                     </div>
                     <div>
                         <FieldLabel>Duration (minutes)</FieldLabel>
-                        <FormInput value="360" onChange={() => { }} placeholder="e.g. 360" type="number" />
+                        <FormInput value={durationMinutes} onChange={(val) => setDurationMinutes(val)} placeholder="e.g. 360" type="number" />
                     </div>
                     <div>
                         <FieldLabel>Difficulty Level</FieldLabel>
-                        <SelectField value="Moderate" onChange={() => { }} options={["Easy", "Moderate", "Challenging"]} />
+                        <SelectField value={difficultyLevel} onChange={(val) => setDifficultyLevel(val)} options={["Easy", "Moderate", "Challenging"]} />
                     </div>
                     <div>
                         <FieldLabel>Age Restriction</FieldLabel>
-                        <FormInput value="5+" onChange={() => { }} placeholder="e.g. 5+" />
+                        <FormInput value={ageRestriction} onChange={(val) => setAgeRestriction(val)} placeholder="e.g. 5+" />
                     </div>
                     <div>
                         <FieldLabel>Min Group Size</FieldLabel>
-                        <FormInput value="2" onChange={() => { }} type="number" />
+                        <FormInput value={minGroupSize} onChange={(val) => setMinGroupSize(val)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Max Group Size</FieldLabel>
-                        <FormInput value="6" onChange={() => { }} type="number" />
+                        <FormInput value={maxGroupSize} onChange={(val) => setMaxGroupSize(val)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Start Time</FieldLabel>
-                        <FormInput value="06:00" onChange={() => { }} type="time" />
+                        <FormInput value={startTime} onChange={(val) => setStartTime(val)} type="time" />
                     </div>
                     <div>
                         <FieldLabel>End Time</FieldLabel>
-                        <FormInput value="12:00" onChange={() => { }} type="time" />
+                        <FormInput value={endTime} onChange={(val) => setEndTime(val)} type="time" />
                     </div>
                     <div className="col-span-3">
                         <FieldLabel>Best Season</FieldLabel>
-                        <FormInput value="February–July, September–December" onChange={() => { }} placeholder="e.g. Feb–Jul" />
+                        <FormInput value={bestSeason} onChange={(val) => setBestSeason(val)} placeholder="e.g. Feb–Jul" />
                     </div>
                 </div>
                 <div className="grid grid-cols-3 gap-6">
                     {[
-                        { label: "Guide Included", value: true },
-                        { label: "Pickup Supported", value: true },
-                        { label: "Private Available", value: true },
-                    ].map(({ label, value }) => (
+                        { label: "Guide Included", value: guideIncluded, setter: setGuideIncluded },
+                        { label: "Pickup Supported", value: pickupSupported, setter: setPickupSupported },
+                        { label: "Private Available", value: privateAvailable, setter: setPrivateAvailable },
+                    ].map(({ label, value, setter }) => (
                         <div key={label} className="flex items-center justify-between">
                             <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{label}</span>
-                            <Toggle value={value} onChange={() => { }} />
+                            <Toggle value={value} onChange={(v) => setter(v)} />
                         </div>
                     ))}
                 </div>
             </SectionCard>
+
+            <SafariPackagesSection />
 
             <SectionCard title="Wildlife Highlights">
                 <TagInput tags={wildlife} onChange={setWildlife} placeholder="Add wildlife species..." />
@@ -663,15 +1067,15 @@ function SafariDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value="Hotel pickup available from Tissamaharama, Kataragama, and Hambantota areas. Please provide hotel details at booking." onChange={() => { }} rows={3} />
+                        <FormTextarea value={pickupNotes} onChange={(val) => setPickupNotes(val)} rows={3} />
                     </div>
                     <div>
                         <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value="Free cancellation up to 48 hours before. 50% refund 24-48 hours before. No refund within 24 hours or for no-shows." onChange={() => { }} rows={3} />
+                        <FormTextarea value={cancellationPolicy} onChange={(val) => setCancellationPolicy(val)} rows={3} />
                     </div>
                     <div>
                         <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value="Safari jeeps are not wheelchair accessible. Participants must be able to climb in and out of the vehicle." onChange={() => { }} rows={2} />
+                        <FormTextarea value={accessibilityInfo} onChange={(val) => setAccessibilityInfo(val)} rows={2} />
                     </div>
                 </div>
             </SectionCard>
@@ -687,11 +1091,14 @@ function StayDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const [rooms, setRooms] = useState<RoomType[]>(() => (draftCategoryData.roomTypes ?? []) as RoomType[]);
+    const [paymentPolicy, setPaymentPolicy] = useState<"pay_at_property" | "full_online_payment">(
+        draftCategoryData.paymentPolicy ?? "pay_at_property"
+    );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
+        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms]);
+    }, [rooms, paymentPolicy]);
 
     const addRoom = () => {
         const newRoom: RoomType = {
@@ -854,6 +1261,65 @@ function StayDetails() {
                     <div>
                         <FieldLabel>Check-out Notes</FieldLabel>
                         <FormTextarea value="Late check-out available until 15:00 for an additional charge, subject to availability." onChange={() => { }} rows={2} />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Payment & Booking Policy">
+                <div className="space-y-4">
+                    <div>
+                        <FieldLabel required>Payment Method Selection</FieldLabel>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div
+                                onClick={() => setPaymentPolicy("pay_at_property")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "pay_at_property"
+                                        ? "border-emerald-500 bg-emerald-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy"
+                                        checked={paymentPolicy === "pay_at_property"}
+                                        onChange={() => setPaymentPolicy("pay_at_property")}
+                                        className="accent-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-emerald-400">Pay at Property (On-Spot)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Guests pay directly in cash or card upon check-in. Confirmation email will specify check-in payment details.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                onClick={() => setPaymentPolicy("full_online_payment")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "full_online_payment"
+                                        ? "border-blue-500 bg-blue-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy"
+                                        checked={paymentPolicy === "full_online_payment"}
+                                        onChange={() => setPaymentPolicy("full_online_payment")}
+                                        className="accent-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-blue-400">Full Online Payment (Automated)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Platform collects full payment online upfront, deducts commission, and automatically processes payout to your account.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </SectionCard>
@@ -1221,15 +1687,22 @@ export function RoomsSection() {
         })),
     );
 
+    const [paymentPolicy, setPaymentPolicy] = useState<"pay_at_property" | "full_online_payment">(
+        draftCategoryData.paymentPolicy ?? "pay_at_property"
+    );
+
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms } });
+        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms]);
+    }, [rooms, paymentPolicy]);
 
     const addRoom = () => {
+        const usedTypes = new Set(rooms.map((r) => r.type));
+        const availableType = ROOM_TYPE_OPTIONS.find((t) => !usedTypes.has(t)) || "Custom Room";
+
         const newRoom: RoomType = {
             id: `room_${Date.now()}`,
-            type: "Bedroom",
+            type: availableType,
             count: "1",
             beds: "0",
             hasBeds: false,
@@ -1310,8 +1783,35 @@ export function RoomsSection() {
                                 <div key={room.id} className="p-3 rounded-lg" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
                                     <div className="grid grid-cols-2 gap-4 mb-2">
                                         <div>
-                                            <FieldLabel required>Type</FieldLabel>
-                                            <SelectField value={room.type} onChange={(v) => updateRoom(room.id, { type: v })} options={ROOM_TYPE_OPTIONS} />
+                                            <FieldLabel required>Room Type / Name</FieldLabel>
+                                            <div className="space-y-1.5">
+                                                <SelectField
+                                                    value={ROOM_TYPE_OPTIONS.includes(room.type) ? room.type : "Custom"}
+                                                    onChange={(v) => {
+                                                        if (v === "Custom") {
+                                                            updateRoom(room.id, { type: "Custom Room" });
+                                                        } else {
+                                                            updateRoom(room.id, { type: v });
+                                                        }
+                                                    }}
+                                                    options={[...ROOM_TYPE_OPTIONS, "Custom"]}
+                                                />
+                                                {(!ROOM_TYPE_OPTIONS.includes(room.type) || room.type === "Custom Room") && (
+                                                    <FormInput
+                                                        value={room.type === "Custom Room" ? "" : room.type}
+                                                        onChange={(v) => updateRoom(room.id, { type: v || "Custom Room" })}
+                                                        placeholder="Type custom room name (e.g. Royal Water Villa)..."
+                                                    />
+                                                )}
+                                                {rooms.some((r) => r.id !== room.id && r.type.trim().toLowerCase() === room.type.trim().toLowerCase() && room.type.trim().length > 0 && room.type !== "Custom Room" && room.type !== "Custom") && (
+                                                    <div className="p-2 rounded-lg text-[11px] font-semibold mt-1.5 flex items-start gap-1.5" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444" }}>
+                                                        <span className="text-xs shrink-0">⚠️</span>
+                                                        <span>
+                                                            <strong>Room type already exists!</strong> Please use a unique name or increase the <strong>Count</strong> field instead.
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                         <div>
                                             <FieldLabel required>Count</FieldLabel>
@@ -1524,6 +2024,65 @@ export function RoomsSection() {
                             );
                         })
                     )}
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Payment & Booking Policy">
+                <div className="space-y-4">
+                    <div>
+                        <FieldLabel required>Payment Method Selection</FieldLabel>
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div
+                                onClick={() => setPaymentPolicy("pay_at_property")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "pay_at_property"
+                                        ? "border-emerald-500 bg-emerald-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy_rooms"
+                                        checked={paymentPolicy === "pay_at_property"}
+                                        onChange={() => setPaymentPolicy("pay_at_property")}
+                                        className="accent-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-emerald-400">Pay at Property (On-Spot)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Guests pay directly in cash or card upon check-in. Confirmation email will specify check-in payment details.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                onClick={() => setPaymentPolicy("full_online_payment")}
+                                className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                    paymentPolicy === "full_online_payment"
+                                        ? "border-blue-500 bg-blue-500/10"
+                                        : "border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50"
+                                }`}
+                            >
+                                <div className="mt-0.5">
+                                    <input
+                                        type="radio"
+                                        name="payment_policy_rooms"
+                                        checked={paymentPolicy === "full_online_payment"}
+                                        onChange={() => setPaymentPolicy("full_online_payment")}
+                                        className="accent-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-semibold text-blue-400">Full Online Payment (Automated)</p>
+                                    <p className="text-[11px] text-gray-400 mt-1">
+                                        Platform collects full payment online upfront, deducts commission, and automatically processes payout to your account.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </SectionCard>
         </div>

@@ -52,13 +52,20 @@ interface Booking {
 // Map an inquiry to the local Booking shape used by this vendor UI
 function inquiryToVendorBooking(inq: AdminBookingInquiryItem): Booking {
   const firstItem = inq.cartItems?.[0];
-  const travelDate = firstItem?.travelDate
-    ? new Date(firstItem.travelDate).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "TBD";
+  const formatDisplayDate = (val?: string) => {
+    if (!val) return "TBD";
+    if (val.includes(" to ")) {
+      const [start, end] = val.split(" to ");
+      const s = new Date(start.trim());
+      const e = new Date(end.trim());
+      const sStr = !isNaN(s.getTime()) ? s.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : start.trim();
+      const eStr = !isNaN(e.getTime()) ? e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : end.trim();
+      return `${sStr} - ${eStr}`;
+    }
+    const d = new Date(val);
+    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : val;
+  };
+  const travelDate = formatDisplayDate(firstItem?.travelDate);
   const status: BookingStatus =
     inq.status === "new" || inq.status === "contacted"
       ? "pending"
@@ -444,21 +451,36 @@ export function VendorBookingCenter() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-2">                       {booking.bookingStatus === "pending" && (
+                    <div className="flex items-center justify-end gap-2">
+                      {booking.bookingStatus === "pending" && (
                         <>
                           <button
-                            onClick={() => handleVendorStatusUpdate(booking.id, "quoted")}
+                            onClick={async () => {
+                              setUpdatingId(booking.id);
+                              try {
+                                const response = await fetch(`http://localhost:8000/api/v1/bookings/${booking.id}/mark-paid`, {
+                                  method: "PATCH",
+                                });
+                                if (response.ok) {
+                                  addToast({ type: "success", title: "Marked as Paid", message: "Booking payment confirmed." });
+                                  fetchInquiries();
+                                }
+                              } catch (e) {
+                                addToast({ type: "error", title: "Error", message: "Failed to mark as paid." });
+                              } finally {
+                                setUpdatingId(null);
+                              }
+                            }}
                             disabled={updatingId === booking.id}
-                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all disabled:opacity-60"
+                            className="px-3 py-1.5 rounded-lg text-[11px] transition-all disabled:opacity-60 font-semibold"
                             style={{
-                              background: "rgba(34,197,94,0.1)",
-                              color: "#4ade80",
+                              background: "rgba(34,197,94,0.15)",
+                              color: "#22c55e",
                               border: "1px solid rgba(34,197,94,0.3)",
-                              fontWeight: 500,
                             }}
                           >
-                            {updatingId === booking.id ? <Loader2 size={12} className="animate-spin inline" /> : null}
-                            Accept / Send Quote
+                            {updatingId === booking.id ? <Loader2 size={12} className="animate-spin inline mr-1" /> : null}
+                            Mark as Paid
                           </button>
                           <button
                             onClick={() => handleVendorStatusUpdate(booking.id, "contacted")}
