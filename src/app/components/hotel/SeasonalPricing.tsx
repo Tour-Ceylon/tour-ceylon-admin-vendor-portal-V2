@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DollarSign, Plus, Edit3, Trash2, X, Calendar } from "lucide-react";
+import { useStayHotel, StayHotelPropertyGate } from "./StayHotelContext";
 
 interface Season {
   id: string;
@@ -145,7 +146,8 @@ function SeasonModal({ season, onClose }: { season?: Season; onClose: () => void
   );
 }
 
-export function SeasonalPricing() {
+function SeasonalPricingContent() {
+  const { selectedProperty } = useStayHotel();
   const [seasons] = useState<Season[]>(SEASONS);
   const [showModal, setShowModal] = useState(false);
   const [editingSeason, setEditingSeason] = useState<Season | undefined>();
@@ -155,10 +157,12 @@ export function SeasonalPricing() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <DollarSign size={15} style={{ color: "var(--accent-navy)" }} />
-            <span className="text-[11px] uppercase tracking-widest" style={{ color: "var(--accent-navy)" }}>Seasonal Pricing</span>
+            <DollarSign size={15} style={{ color: "var(--accent-navy-light)" }} />
+            <span className="text-[11px] uppercase tracking-widest font-semibold" style={{ color: "var(--accent-navy-light)" }}>Seasonal Pricing</span>
           </div>
-          <h1 className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>Pricing Rules — Jetwing Yala</h1>
+          <h1 className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            Pricing Rules — {selectedProperty?.name}
+          </h1>
         </div>
         <button
           onClick={() => { setEditingSeason(undefined); setShowModal(true); }}
@@ -320,3 +324,12 @@ export function SeasonalPricing() {
     </div>
   );
 }
+
+export function SeasonalPricing() {
+  return (
+    <StayHotelPropertyGate>
+      <SeasonalPricingContent />
+    </StayHotelPropertyGate>
+  );
+}
+

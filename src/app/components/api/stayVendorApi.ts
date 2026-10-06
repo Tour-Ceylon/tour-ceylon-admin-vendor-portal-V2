@@ -240,3 +240,16 @@ export async function deleteStayRoomUnit(propertyId: string, roomUnitId: string)
     method: "DELETE",
   });
 }
+
+export async function getStayProperty(propertyId: string) {
+  return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`);
+}
+
+export async function updateStayProperty(propertyId: string, payload: Partial<StayPropertySummary>) {
+  return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+
