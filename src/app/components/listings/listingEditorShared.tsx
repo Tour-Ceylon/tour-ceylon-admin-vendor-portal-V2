@@ -2,8 +2,10 @@ import React, { useState } from "react";
 import {
     Check,
     ChevronDown,
+    Plus,
     ToggleLeft,
     ToggleRight,
+    Trash2,
     X,
 } from "lucide-react";
 import type { Category } from "../../stores/listingDraftStore";
@@ -123,6 +125,47 @@ export function SelectField({
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 style={{ color: "var(--text-secondary)" }}
             />
+        </div>
+    );
+}
+
+export function CreatableSelect({
+    value,
+    onChange,
+    options,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    options: string[];
+}) {
+    // Generate a unique ID using Math.random once on mount (or just hardcode if options don't collide)
+    // We'll use a deterministic ID based on a few options to avoid SSR issues
+    const listId = `datalist-${options.length}`;
+    
+    return (
+        <div className="relative">
+            <input
+                list={listId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Select or type to create new..."
+                className="w-full px-3 py-2 rounded-lg text-[13px] outline-none transition-all pr-8"
+                style={{
+                    background: "var(--input-background)",
+                    border: "1px solid var(--border-light)",
+                    color: "var(--text-primary)",
+                }}
+            />
+            <ChevronDown
+                size={13}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: "var(--text-secondary)" }}
+            />
+            <datalist id={listId}>
+                {options.map((o) => (
+                    <option key={o} value={o} />
+                ))}
+            </datalist>
         </div>
     );
 }
@@ -413,6 +456,52 @@ export function CreateWizardMultiSelectStep({
                     })}
                 </div>
             </SectionCard>
+        </div>
+    );
+}
+
+export function ItineraryBuilder({ itinerary, onChange }: { itinerary: any[], onChange: (val: any[]) => void }) {
+    const handleAdd = () => {
+        onChange([...(itinerary || []), { day: (itinerary || []).length + 1, title: "", description: "" }]);
+    };
+    
+    const updateDay = (index: number, key: string, value: any) => {
+        const updated = [...itinerary];
+        updated[index] = { ...updated[index], [key]: value };
+        onChange(updated);
+    };
+
+    const handleRemove = (index: number) => {
+        onChange(itinerary.filter((_, i) => i !== index).map((item, i) => ({...item, day: i + 1})));
+    };
+
+    const currentList = Array.isArray(itinerary) ? itinerary : [];
+
+    return (
+        <div className="space-y-4">
+            {currentList.map((day, index) => (
+                <div key={index} className="border rounded-xl p-4 space-y-3 relative" style={{ borderColor: "var(--border-light)", background: "var(--bg-elevated)" }}>
+                    <button type="button" onClick={() => handleRemove(index)} className="absolute top-4 right-4 p-1 rounded transition-colors" style={{ color: "var(--text-tertiary)" }}>
+                        <Trash2 size={16}/>
+                    </button>
+                    <div className="font-bold text-[13px]" style={{ color: "var(--text-secondary)" }}>Day {day.day}</div>
+                    <div>
+                        <FieldLabel>Title</FieldLabel>
+                        <FormInput value={day.title || ""} onChange={(v) => updateDay(index, "title", v)} placeholder="e.g. Arrival in Colombo" />
+                    </div>
+                    <div>
+                        <FieldLabel>Description</FieldLabel>
+                        <FormTextarea value={day.description || ""} onChange={(v) => updateDay(index, "description", v)} placeholder="What happens on this day..." rows={3} />
+                    </div>
+                    <div>
+                        <FieldLabel>Overnight Stay (Optional)</FieldLabel>
+                        <FormInput value={day.overnight || ""} onChange={(v) => updateDay(index, "overnight", v)} placeholder="e.g. Negombo, Kandy, Ella" />
+                    </div>
+                </div>
+            ))}
+            <button type="button" onClick={handleAdd} className="flex items-center gap-2 text-[13px] font-medium transition-colors rounded-lg px-4 py-2" style={{ color: "var(--accent-navy)", background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                <Plus size={16} /> Add Day
+            </button>
         </div>
     );
 }

@@ -398,26 +398,26 @@ function hydrateGeneralListingDraft(listingData: any) {
   const safariPackages = (safariDet.jeep_packages && safariDet.jeep_packages.length > 0)
     ? safariDet.jeep_packages
     : variants.map((v, idx) => {
-        const nameLower = (v.name || "").toLowerCase();
-        let timeSlot = "Morning (06:00 AM – 10:00 AM)";
-        if (nameLower.includes("afternoon") || nameLower.includes("evening") || nameLower.includes("02:30")) {
-          timeSlot = "Afternoon (02:30 PM – 06:30 PM)";
-        } else if (nameLower.includes("full day") || nameLower.includes("fullday") || nameLower.includes("12 hr")) {
-          timeSlot = "Full Day (06:00 AM – 06:00 PM)";
-        }
-        return {
-          id: v.id || `pkg_${idx + 1}`,
-          name: v.name || `Safari Package ${idx + 1}`,
-          type: v.unit === "Per Person" ? "shared_seat" : "private_jeep",
-          capacityMax: Number(v.maxCapacity) || 6,
-          price: Number(v.price) || 95,
-          currency: v.currency || "USD",
-          timeSlot,
-          durationLabel: timeSlot.includes("Full Day") ? "12 Hours (06:00 AM – 06:00 PM)" : "4 Hours",
-          description: "Experienced naturalist guide, open-roof 4WD jeep, and park entry included.",
-          includesParkFees: true,
-        };
-      });
+      const nameLower = (v.name || "").toLowerCase();
+      let timeSlot = "Morning (06:00 AM – 10:00 AM)";
+      if (nameLower.includes("afternoon") || nameLower.includes("evening") || nameLower.includes("02:30")) {
+        timeSlot = "Afternoon (02:30 PM – 06:30 PM)";
+      } else if (nameLower.includes("full day") || nameLower.includes("fullday") || nameLower.includes("12 hr")) {
+        timeSlot = "Full Day (06:00 AM – 06:00 PM)";
+      }
+      return {
+        id: v.id || `pkg_${idx + 1}`,
+        name: v.name || `Safari Package ${idx + 1}`,
+        type: v.unit === "Per Person" ? "shared_seat" : "private_jeep",
+        capacityMax: Number(v.maxCapacity) || 6,
+        price: Number(v.price) || 95,
+        currency: v.currency || "USD",
+        timeSlot,
+        durationLabel: timeSlot.includes("Full Day") ? "12 Hours (06:00 AM – 06:00 PM)" : "4 Hours",
+        description: "Experienced naturalist guide, open-roof 4WD jeep, and park entry included.",
+        includesParkFees: true,
+      };
+    });
 
   const tourDet = listingData.tour_detail || {};
   const actDet = listingData.activity_detail || {};
@@ -447,34 +447,42 @@ function hydrateGeneralListingDraft(listingData: any) {
       amenities: hotelDet.amenities || [],
       roomTypes: hotelDet.room_types || [],
       images: { cover, gallery },
-      // Safari details hydration
+      // Safari specific hydration
       nationalPark: safariDet.national_park || safariDet.nationalPark || listingData.destination?.name || listingData.title || "Yala National Park",
       safariType: safariDet.safari_type || safariDet.safariType || "Jeep Safari",
       durationMinutes: safariDet.duration_minutes != null ? String(safariDet.duration_minutes) : safariDet.durationMinutes != null ? String(safariDet.durationMinutes) : "360",
-      difficultyLevel: safariDet.difficulty_level || safariDet.difficultyLevel || "Moderate",
       ageRestriction: safariDet.age_restriction || safariDet.ageRestriction || "5+",
-      minGroupSize: safariDet.group_size_min != null ? String(safariDet.group_size_min) : "1",
-      maxGroupSize: safariDet.group_size_max != null ? String(safariDet.group_size_max) : "6",
-      startTime: safariDet.start_time || safariDet.startTime || "06:00",
-      endTime: safariDet.end_time || safariDet.endTime || "12:00",
       bestSeason: safariDet.best_season || safariDet.bestSeason || "February–July, September–December",
       guideIncluded: safariDet.guide_included ?? safariDet.guideIncluded ?? true,
       pickupSupported: safariDet.pickup_supported ?? safariDet.pickupSupported ?? true,
-      privateAvailable: safariDet.private_available ?? safariDet.privateAvailable ?? true,
       wildlifeHighlights: safariDet.wildlife_highlights || safariDet.wildlifeHighlights || ["Sri Lankan Leopard", "Asian Elephant", "Sloth Bear"],
-      includedItems: safariDet.included_items || safariDet.includedItems || ["Experienced guide", "4WD jeep"],
-      excludedItems: safariDet.excluded_items || safariDet.excludedItems || ["Tips"],
-      languages: safariDet.languages || ["English", "Sinhala"],
-      whatToBring: safariDet.what_to_bring || safariDet.whatToBring || ["Binoculars", "Sunscreen"],
-      pickupNotes: safariDet.pickup_notes || safariDet.pickupNotes || "",
-      cancellationPolicy: safariDet.cancellation_policy || safariDet.cancellationPolicy || "",
-      accessibilityInfo: safariDet.accessibility_info || safariDet.accessibilityInfo || "",
       safariPackages,
-      // Tour details hydration
+      // Tour specific hydration
       durationDays: tourDet.duration_days != null ? String(tourDet.duration_days) : "1",
       routeSummary: tourDet.route_summary || "",
       meetingPoint: tourDet.meeting_point || "",
-      itineraryHighlights: tourDet.itinerary_highlights || [],
+      categoryId: tourDet.category_id || tourDet.categoryId || "",
+      additionalCategories: tourDet.additional_categories || tourDet.additionalCategories || [],
+      itinerary: tourDet.itinerary || [],
+      itineraryHighlights: tourDet.itinerary_highlights || tourDet.itineraryHighlights || [],
+      pickupAvailable: tourDet.pickup_available ?? false,
+      dropoffAvailable: tourDet.dropoff_available ?? false,
+      childPolicy: tourDet.child_policy || "",
+      dropoffNotes: tourDet.dropoff_notes || "",
+      // Shared hydration (safari, tour, activity)
+      difficultyLevel: tourDet.difficulty_level || safariDet.difficulty_level || safariDet.difficultyLevel || "Easy",
+      minGroupSize: tourDet.group_size_min != null ? String(tourDet.group_size_min) : safariDet.group_size_min != null ? String(safariDet.group_size_min) : "1",
+      maxGroupSize: tourDet.group_size_max != null ? String(tourDet.group_size_max) : safariDet.group_size_max != null ? String(safariDet.group_size_max) : "15",
+      startTime: tourDet.start_time || safariDet.start_time || safariDet.startTime || "09:00",
+      endTime: tourDet.end_time || safariDet.end_time || safariDet.endTime || "13:00",
+      privateAvailable: tourDet.private_available ?? safariDet.private_available ?? safariDet.privateAvailable ?? false,
+      includedItems: tourDet.included_items || safariDet.included_items || safariDet.includedItems || ["Experienced guide", "4WD jeep"],
+      excludedItems: tourDet.excluded_items || safariDet.excluded_items || safariDet.excludedItems || ["Tips"],
+      languages: tourDet.languages || safariDet.languages || ["English", "Sinhala"],
+      whatToBring: tourDet.what_to_bring || safariDet.what_to_bring || safariDet.whatToBring || ["Binoculars", "Sunscreen"],
+      pickupNotes: tourDet.pickup_notes || safariDet.pickup_notes || safariDet.pickupNotes || "",
+      cancellationPolicy: tourDet.cancellation_policy || safariDet.cancellation_policy || safariDet.cancellationPolicy || "",
+      accessibilityInfo: tourDet.accessibility_info || safariDet.accessibility_info || safariDet.accessibilityInfo || "",
       // Activity details hydration
       activityType: actDet.activity_type || "",
       // Transfer details hydration
@@ -538,38 +546,38 @@ function buildStayApplicationPayload({
   const rooms = ((categoryData.roomTypes ?? []) as RoomType[]).map((room) => {
     const roomType = normalizeStayRoomType(room.type);
     return {
-    id: room.id && isUuid(room.id) ? room.id : undefined,
-    name: roomType,
-    description: "",
-    count: Number(room.count) || 1,
-    unitPrefix: roomType
-      .split(/\s+/)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 4)
-      .toUpperCase() || "RM",
-    size: room.size || undefined,
-    sizeUnit: room.size ? "sqm" : undefined,
-    maxGuests: Number(room.maxGuests) || undefined,
-    basePrice: Number(room.pricePerNight) || undefined,
-    currency: room.currency || "LKR",
-    smoking: toBoolean(room.smoking),
-    guestAccess: toBoolean(room.guestAccess),
-    bedConfiguration: {
-      hasBeds: room.hasBeds ?? false,
-      beds: Number(room.beds) || 0,
-      cribs: Number(room.cribs) || 0,
-      breakdown: room.bedBreakdown ?? {},
-    },
-    bathroom: {
-      type: room.bathroomType,
-      items: room.bathroomItems ?? [],
-    },
-    discounts: room.discounts ?? [],
-    metadata: {
-      localDraftId: room.id,
-    },
-  };
+      id: room.id && isUuid(room.id) ? room.id : undefined,
+      name: roomType,
+      description: "",
+      count: Number(room.count) || 1,
+      unitPrefix: roomType
+        .split(/\s+/)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 4)
+        .toUpperCase() || "RM",
+      size: room.size || undefined,
+      sizeUnit: room.size ? "sqm" : undefined,
+      maxGuests: Number(room.maxGuests) || undefined,
+      basePrice: Number(room.pricePerNight) || undefined,
+      currency: room.currency || "LKR",
+      smoking: toBoolean(room.smoking),
+      guestAccess: toBoolean(room.guestAccess),
+      bedConfiguration: {
+        hasBeds: room.hasBeds ?? false,
+        beds: Number(room.beds) || 0,
+        cribs: Number(room.cribs) || 0,
+        breakdown: room.bedBreakdown ?? {},
+      },
+      bathroom: {
+        type: room.bathroomType,
+        items: room.bathroomItems ?? [],
+      },
+      discounts: room.discounts ?? [],
+      metadata: {
+        localDraftId: room.id,
+      },
+    };
   });
 
   const propertyName = propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
@@ -927,13 +935,30 @@ function CreateListingWizard({
           }
         } else if (catLower === "tour") {
           payload.tourDetail = {
-            durationDays: 1,
-            routeSummary: destination || "Scenic Tour Route",
-            meetingPoint: destination || "City Center",
-            itineraryHighlights: ["Scenic Views", "Cultural Highlights"],
-            includedItems: ["Guide", "Transport"],
-            excludedItems: ["Personal Expenses"],
-            languages: ["English"],
+            durationDays: Number(draftCatData.durationDays) || 1,
+            routeSummary: draftCatData.routeSummary || destination || "Scenic Tour Route",
+            meetingPoint: draftCatData.meetingPoint || destination || "City Center",
+            categoryId: draftCatData.categoryId || null,
+            additionalCategories: Array.isArray(draftCatData.additionalCategories) ? draftCatData.additionalCategories : [],
+            itinerary: Array.isArray(draftCatData.itinerary) ? draftCatData.itinerary : [],
+            itineraryHighlights: Array.isArray(draftCatData.itineraryHighlights) ? draftCatData.itineraryHighlights : [],
+            difficultyLevel: draftCatData.difficultyLevel || "Easy",
+            groupSizeMin: Number(draftCatData.minGroupSize) || 1,
+            groupSizeMax: Number(draftCatData.maxGroupSize) || 15,
+            startTime: draftCatData.startTime || "09:00",
+            endTime: draftCatData.endTime || "13:00",
+            privateAvailable: Boolean(draftCatData.privateAvailable),
+            pickupAvailable: Boolean(draftCatData.pickupAvailable),
+            dropoffAvailable: Boolean(draftCatData.dropoffAvailable),
+            includedItems: Array.isArray(draftCatData.includedItems) ? draftCatData.includedItems : [],
+            excludedItems: Array.isArray(draftCatData.excludedItems) ? draftCatData.excludedItems : [],
+            languages: Array.isArray(draftCatData.languages) ? draftCatData.languages : ["English"],
+            whatToBring: Array.isArray(draftCatData.whatToBring) ? draftCatData.whatToBring : [],
+            childPolicy: draftCatData.childPolicy || "",
+            pickupNotes: draftCatData.pickupNotes || "",
+            dropoffNotes: draftCatData.dropoffNotes || "",
+            cancellationPolicy: draftCatData.cancellationPolicy || "",
+            accessibilityInfo: draftCatData.accessibilityInfo || "",
           };
         } else if (catLower === "experience") {
           payload.activityDetail = {
@@ -1346,50 +1371,50 @@ function RatePlansStep() {
                 {editingSection === "group" ? (
                   <>
                     {ratePlans.groupRates.map((row, index) => (
-                        <div key={`group-rate-${index}`} className="grid grid-cols-[80px_120px_100px_1fr_auto] gap-3 items-end">
-                          <div>
-                            <FieldLabel>Groups</FieldLabel>
-                            <FormInput
-                              value={row.groups}
-                              onChange={(value) => updateGroupRate(index, { groups: value })}
-                              placeholder="#"
-                              type="number"
-                            />
-                          </div>
-                          <div>
-                            <FieldLabel>Guests per group</FieldLabel>
-                            <FormInput
-                              value={row.guestsPerGroup}
-                              onChange={(value) => updateGroupRate(index, { guestsPerGroup: value })}
-                              placeholder="#"
-                              type="number"
-                            />
-                          </div>
-                          <div>
-                            <FieldLabel>Currency</FieldLabel>
-                            <SelectField
-                              value={row.currency}
-                              onChange={(value) => updateGroupRate(index, { currency: value })}
-                              options={RATE_PLAN_CURRENCIES}
-                            />
-                          </div>
-                          <div>
-                            <FieldLabel>Amount</FieldLabel>
-                            <FormInput
-                              value={row.amount}
-                              onChange={(value) => updateGroupRate(index, { amount: value })}
-                              placeholder="0.00"
-                              type="number"
-                            />
-                          </div>
-                          <button
-                            onClick={() => removeGroupRate(index)}
-                            className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
-                            style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                      <div key={`group-rate-${index}`} className="grid grid-cols-[80px_120px_100px_1fr_auto] gap-3 items-end">
+                        <div>
+                          <FieldLabel>Groups</FieldLabel>
+                          <FormInput
+                            value={row.groups}
+                            onChange={(value) => updateGroupRate(index, { groups: value })}
+                            placeholder="#"
+                            type="number"
+                          />
                         </div>
+                        <div>
+                          <FieldLabel>Guests per group</FieldLabel>
+                          <FormInput
+                            value={row.guestsPerGroup}
+                            onChange={(value) => updateGroupRate(index, { guestsPerGroup: value })}
+                            placeholder="#"
+                            type="number"
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Currency</FieldLabel>
+                          <SelectField
+                            value={row.currency}
+                            onChange={(value) => updateGroupRate(index, { currency: value })}
+                            options={RATE_PLAN_CURRENCIES}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Amount</FieldLabel>
+                          <FormInput
+                            value={row.amount}
+                            onChange={(value) => updateGroupRate(index, { amount: value })}
+                            placeholder="0.00"
+                            type="number"
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeGroupRate(index)}
+                          className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
+                          style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     ))}
                     <button
                       onClick={addGroupRate}
@@ -2105,36 +2130,36 @@ export function ListingEditor({ mode }: ListingEditorProps) {
 
           let rawVariants = safariPackages.length > 0
             ? safariPackages.map((pkg: any, idx: number) => {
-                const slotPrefix = pkg.timeSlot ? pkg.timeSlot.split(" ")[0] : "Morning";
-                const formattedName = (pkg.name || "").toLowerCase().includes(slotPrefix.toLowerCase())
-                  ? pkg.name
-                  : `${slotPrefix} Drive — ${pkg.name}`;
+              const slotPrefix = pkg.timeSlot ? pkg.timeSlot.split(" ")[0] : "Morning";
+              const formattedName = (pkg.name || "").toLowerCase().includes(slotPrefix.toLowerCase())
+                ? pkg.name
+                : `${slotPrefix} Drive — ${pkg.name}`;
 
-                return {
-                  name: formattedName,
-                  bookingUnit: pkg.type === "shared_seat" ? "per_person" : "per_vehicle",
-                  capacityMin: 1,
-                  capacityMax: Number(pkg.capacityMax || pkg.maxPassengers) || 6,
-                  isDefault: idx === 0,
-                  pricing: {
-                    amount: Number(pkg.price) || 95,
-                    currency: pkg.currency || "USD",
-                    priority: idx,
-                  },
-                };
-              })
-            : (variants || []).map((v, i) => ({
-                name: v.name || `Option ${i + 1}`,
-                bookingUnit: v.unit === "Per Group" ? "per_group" : v.unit === "Per Vehicle" ? "per_vehicle" : "per_person",
-                capacityMin: Number(v.minCapacity) || 1,
-                capacityMax: Number(v.maxCapacity) || 6,
-                isDefault: v.isDefault ?? (i === 0),
+              return {
+                name: formattedName,
+                bookingUnit: pkg.type === "shared_seat" ? "per_person" : "per_vehicle",
+                capacityMin: 1,
+                capacityMax: Number(pkg.capacityMax || pkg.maxPassengers) || 6,
+                isDefault: idx === 0,
                 pricing: {
-                  amount: Number(v.price) || 100,
-                  currency: v.currency || "USD",
-                  priority: i,
+                  amount: Number(pkg.price) || 95,
+                  currency: pkg.currency || "USD",
+                  priority: idx,
                 },
-              }));
+              };
+            })
+            : (variants || []).map((v, i) => ({
+              name: v.name || `Option ${i + 1}`,
+              bookingUnit: v.unit === "Per Group" ? "per_group" : v.unit === "Per Vehicle" ? "per_vehicle" : "per_person",
+              capacityMin: Number(v.minCapacity) || 1,
+              capacityMax: Number(v.maxCapacity) || 6,
+              isDefault: v.isDefault ?? (i === 0),
+              pricing: {
+                amount: Number(v.price) || 100,
+                currency: v.currency || "USD",
+                priority: i,
+              },
+            }));
 
           if (rawVariants.length > 0) {
             let foundDefault = false;
@@ -2152,6 +2177,9 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             durationDays: 1,
             routeSummary: destination || "Scenic Tour Route",
             meetingPoint: destination || "City Center",
+            categoryId: "adventure",
+            additionalCategories: [],
+            itinerary: [],
             itineraryHighlights: ["Scenic Views"],
             includedItems: ["Guide"],
             excludedItems: ["Personal Expenses"],
@@ -2307,196 +2335,196 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     );
   }
 
-const SAFARI_EDIT_SECTIONS = [
-  { id: "details", label: "Safari Details & Jeep Packages", icon: Compass },
-  { id: "basic", label: "Basic Info & Location", icon: Info },
-  { id: "media", label: "Photos & Media", icon: ImageIcon },
-  { id: "policies", label: "Policies & Pickup", icon: Shield },
-];
+  const SAFARI_EDIT_SECTIONS = [
+    { id: "details", label: "Safari Details & Jeep Packages", icon: Compass },
+    { id: "basic", label: "Basic Info & Location", icon: Info },
+    { id: "media", label: "Photos & Media", icon: ImageIcon },
+    { id: "policies", label: "Policies & Pickup", icon: Shield },
+  ];
 
-const TOUR_EDIT_SECTIONS = [
-  { id: "details", label: "Tour Details & Highlights", icon: Compass },
-  { id: "basic", label: "Basic Info & Location", icon: Info },
-  { id: "pricing", label: "Pricing & Variants", icon: DollarSign },
-  { id: "media", label: "Photos & Media", icon: ImageIcon },
-  { id: "policies", label: "Policies & Pickup", icon: Shield },
-];
+  const TOUR_EDIT_SECTIONS = [
+    { id: "details", label: "Tour Details & Highlights", icon: Compass },
+    { id: "basic", label: "Basic Info & Location", icon: Info },
+    { id: "pricing", label: "Pricing & Variants", icon: DollarSign },
+    { id: "media", label: "Photos & Media", icon: ImageIcon },
+    { id: "policies", label: "Policies & Pickup", icon: Shield },
+  ];
 
-const EXPERIENCE_EDIT_SECTIONS = [
-  { id: "details", label: "Activity Details & Highlights", icon: Anchor },
-  { id: "basic", label: "Basic Info & Location", icon: Info },
-  { id: "pricing", label: "Pricing & Variants", icon: DollarSign },
-  { id: "media", label: "Photos & Media", icon: ImageIcon },
-  { id: "policies", label: "Policies", icon: Shield },
-];
+  const EXPERIENCE_EDIT_SECTIONS = [
+    { id: "details", label: "Activity Details & Highlights", icon: Anchor },
+    { id: "basic", label: "Basic Info & Location", icon: Info },
+    { id: "pricing", label: "Pricing & Variants", icon: DollarSign },
+    { id: "media", label: "Photos & Media", icon: ImageIcon },
+    { id: "policies", label: "Policies", icon: Shield },
+  ];
 
-const TRANSFER_EDIT_SECTIONS = [
-  { id: "details", label: "Transfer Details & Policy", icon: Car },
-  { id: "basic", label: "Basic Info & Location", icon: Info },
-  { id: "pricing", label: "Vehicle Variants & Pricing", icon: DollarSign },
-  { id: "media", label: "Photos & Media", icon: ImageIcon },
-  { id: "policies", label: "Policies & Instructions", icon: Shield },
-];
+  const TRANSFER_EDIT_SECTIONS = [
+    { id: "details", label: "Transfer Details & Policy", icon: Car },
+    { id: "basic", label: "Basic Info & Location", icon: Info },
+    { id: "pricing", label: "Vehicle Variants & Pricing", icon: DollarSign },
+    { id: "media", label: "Photos & Media", icon: ImageIcon },
+    { id: "policies", label: "Policies & Instructions", icon: Shield },
+  ];
 
-const FULL_STAY_EDIT_SECTIONS = [
-  { id: "basic", label: "Basic Info & Location", icon: Info },
-  { id: "details", label: "Property Details", icon: Building2 },
-  { id: "rooms", label: "Rooms & Units", icon: Layers },
-  { id: "rates", label: "Rate Plans", icon: DollarSign },
-  { id: "media", label: "Photos & Media", icon: ImageIcon },
-];
+  const FULL_STAY_EDIT_SECTIONS = [
+    { id: "basic", label: "Basic Info & Location", icon: Info },
+    { id: "details", label: "Property Details", icon: Building2 },
+    { id: "rooms", label: "Rooms & Units", icon: Layers },
+    { id: "rates", label: "Rate Plans", icon: DollarSign },
+    { id: "media", label: "Photos & Media", icon: ImageIcon },
+  ];
 
-function CategoryEditPanel({
-  category,
-  title,
-  setTitle,
-  active,
-  setActive,
-  description,
-  setDescription,
-  destination,
-  setDestination,
-  lat,
-  setLat,
-  lng,
-  setLng,
-  variants,
-  setVariants,
-}: {
-  category: Category;
-  title: string;
-  setTitle: (value: string) => void;
-  active: boolean;
-  setActive: (value: boolean) => void;
-  description: string;
-  setDescription: (value: string) => void;
-  destination: string;
-  setDestination: (value: string) => void;
-  lat: string;
-  setLat: (value: string) => void;
-  lng: string;
-  setLng: (value: string) => void;
-  variants: PricingVariant[];
-  setVariants: (value: PricingVariant[]) => void;
-}) {
-  const sections = category === "Safari"
-    ? SAFARI_EDIT_SECTIONS
-    : category === "Tour"
-    ? TOUR_EDIT_SECTIONS
-    : category === "Experience"
-    ? EXPERIENCE_EDIT_SECTIONS
-    : category === "Transport"
-    ? TRANSFER_EDIT_SECTIONS
-    : FULL_STAY_EDIT_SECTIONS;
+  function CategoryEditPanel({
+    category,
+    title,
+    setTitle,
+    active,
+    setActive,
+    description,
+    setDescription,
+    destination,
+    setDestination,
+    lat,
+    setLat,
+    lng,
+    setLng,
+    variants,
+    setVariants,
+  }: {
+    category: Category;
+    title: string;
+    setTitle: (value: string) => void;
+    active: boolean;
+    setActive: (value: boolean) => void;
+    description: string;
+    setDescription: (value: string) => void;
+    destination: string;
+    setDestination: (value: string) => void;
+    lat: string;
+    setLat: (value: string) => void;
+    lng: string;
+    setLng: (value: string) => void;
+    variants: PricingVariant[];
+    setVariants: (value: PricingVariant[]) => void;
+  }) {
+    const sections = category === "Safari"
+      ? SAFARI_EDIT_SECTIONS
+      : category === "Tour"
+        ? TOUR_EDIT_SECTIONS
+        : category === "Experience"
+          ? EXPERIENCE_EDIT_SECTIONS
+          : category === "Transport"
+            ? TRANSFER_EDIT_SECTIONS
+            : FULL_STAY_EDIT_SECTIONS;
 
-  const [activeSection, setActiveSection] = useState(sections[0].id);
+    const [activeSection, setActiveSection] = useState(sections[0].id);
 
-  const renderSection = () => {
-    switch (activeSection) {
-      case "details":
-        return <CategoryDetailsTab category={category} />;
-      case "basic":
-        return (
-          <div className="space-y-5">
-            <BasicInfoTab
-              title={title}
-              setTitle={setTitle}
-              active={active}
-              setActive={setActive}
-              description={description}
-              setDescription={setDescription}
-            />
-            <DestinationTab
-              destination={destination}
-              setDestination={setDestination}
-              lat={lat}
-              setLat={setLat}
-              lng={lng}
-              setLng={setLng}
-            />
-          </div>
-        );
-      case "pricing":
-        return <PricingTab variants={variants} setVariants={setVariants} />;
-      case "rooms":
-        return <RoomsSection />;
-      case "rates":
-        return <RatePlansStep />;
-      case "media":
-        return (
-          <div className="space-y-5">
-            <MediaTab />
-            <ImagesSection />
-          </div>
-        );
-      case "policies":
-        return <PoliciesTab category={category} />;
-      default:
-        return <CategoryDetailsTab category={category} />;
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Category Header */}
-      <div
-        className="px-6 py-3 shrink-0 flex items-center justify-between"
-        style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-header)" }}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className="px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider"
-            style={{
-              background: "var(--active-overlay)",
-              color: "var(--accent-navy-light)",
-              border: "1px solid var(--border-accent)",
-            }}
-          >
-            Editing {category} Listing
-          </span>
-          <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-            {title || "Untitled Listing"}
-          </span>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div
-        className="flex items-center gap-1 px-6 pt-2 pb-0 shrink-0"
-        style={{ borderBottom: "1px solid var(--border-light)" }}
-      >
-        {sections.map(({ id, label, icon: Icon }) => {
-          const isActive = activeSection === id;
+    const renderSection = () => {
+      switch (activeSection) {
+        case "details":
+          return <CategoryDetailsTab category={category} />;
+        case "basic":
           return (
-            <button
-              key={id}
-              onClick={() => setActiveSection(id)}
-              className="flex items-center gap-2 px-4 py-2.5 text-[12px] rounded-t-lg transition-all"
-              style={
-                isActive
-                  ? {
+            <div className="space-y-5">
+              <BasicInfoTab
+                title={title}
+                setTitle={setTitle}
+                active={active}
+                setActive={setActive}
+                description={description}
+                setDescription={setDescription}
+              />
+              <DestinationTab
+                destination={destination}
+                setDestination={setDestination}
+                lat={lat}
+                setLat={setLat}
+                lng={lng}
+                setLng={setLng}
+              />
+            </div>
+          );
+        case "pricing":
+          return <PricingTab variants={variants} setVariants={setVariants} />;
+        case "rooms":
+          return <RoomsSection />;
+        case "rates":
+          return <RatePlansStep />;
+        case "media":
+          return (
+            <div className="space-y-5">
+              <MediaTab />
+              <ImagesSection />
+            </div>
+          );
+        case "policies":
+          return <PoliciesTab category={category} />;
+        default:
+          return <CategoryDetailsTab category={category} />;
+      }
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Category Header */}
+        <div
+          className="px-6 py-3 shrink-0 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-header)" }}
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider"
+              style={{
+                background: "var(--active-overlay)",
+                color: "var(--accent-navy-light)",
+                border: "1px solid var(--border-accent)",
+              }}
+            >
+              Editing {category} Listing
+            </span>
+            <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+              {title || "Untitled Listing"}
+            </span>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div
+          className="flex items-center gap-1 px-6 pt-2 pb-0 shrink-0"
+          style={{ borderBottom: "1px solid var(--border-light)" }}
+        >
+          {sections.map(({ id, label, icon: Icon }) => {
+            const isActive = activeSection === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveSection(id)}
+                className="flex items-center gap-2 px-4 py-2.5 text-[12px] rounded-t-lg transition-all"
+                style={
+                  isActive
+                    ? {
                       color: "var(--accent-navy-light)",
                       background: "var(--active-overlay)",
                       borderBottom: "2px solid var(--accent-navy)",
                       fontWeight: 600,
                     }
-                  : { color: "var(--text-tertiary)" }
-              }
-            >
-              <Icon size={13} />
-              {label}
-            </button>
-          );
-        })}
-      </div>
+                    : { color: "var(--text-tertiary)" }
+                }
+              >
+                <Icon size={13} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {renderSection()}
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {renderSection()}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   if (mode === "edit") {
     return (
@@ -2786,10 +2814,10 @@ function CategoryEditPanel({
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px var(--border-accent)";
             }}
-            >
-              <Check size={12} />
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
+          >
+            <Check size={12} />
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
         </div>
       </div>
     </div>

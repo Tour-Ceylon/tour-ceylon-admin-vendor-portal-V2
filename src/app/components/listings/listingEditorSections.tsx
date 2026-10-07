@@ -9,8 +9,10 @@ import {
     FormTextarea,
     SectionCard,
     SelectField,
+    CreatableSelect,
     TagInput,
     Toggle,
+    ItineraryBuilder,
 } from "./listingEditorShared";
 
 // Helper: read a File to a data URL (module scope)
@@ -1328,11 +1330,18 @@ function StayDetails() {
 }
 
 function TourDetails() {
-    const [highlights, setHighlights] = useState(["Galle Fort ramparts", "Dutch Reformed Church", "Lighthouse", "Local gem shops"]);
-    const [included, setIncluded] = useState(["Professional guide", "Water", "Entrance fees"]);
-    const [excluded, setExcluded] = useState(["Hotel transfers", "Lunch", "Tips"]);
-    const [languages, setLanguages] = useState(["English", "German"]);
-    const [toBring, setToBring] = useState(["Comfortable shoes", "Hat", "Camera", "Water bottle"]);
+    const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
+    const setDraft = useListingDraftStore((s) => s.setDraft);
+
+    const updateDraft = (key: string, value: any) => {
+        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+    };
+
+    const highlights = draftCategoryData.itineraryHighlights ?? [];
+    const included = draftCategoryData.includedItems ?? [];
+    const excluded = draftCategoryData.excludedItems ?? [];
+    const languages = draftCategoryData.languages ?? [];
+    const toBring = draftCategoryData.whatToBring ?? [];
 
     return (
         <div className="space-y-4">
@@ -1340,42 +1349,42 @@ function TourDetails() {
                 <div className="grid grid-cols-3 gap-4 mb-4">
                     <div>
                         <FieldLabel>Duration Days</FieldLabel>
-                        <FormInput value="1" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.durationDays ?? "1"} onChange={(v) => updateDraft("durationDays", v)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Meeting Point</FieldLabel>
-                        <FormInput value="Galle Fort Main Gate" onChange={() => { }} />
+                        <FormInput value={draftCategoryData.meetingPoint ?? ""} onChange={(v) => updateDraft("meetingPoint", v)} placeholder="e.g. Galle Fort Main Gate" />
                     </div>
                     <div>
                         <FieldLabel>Difficulty Level</FieldLabel>
-                        <SelectField value="Easy" onChange={() => { }} options={["Easy", "Moderate", "Challenging"]} />
+                        <SelectField value={draftCategoryData.difficultyLevel ?? "Easy"} onChange={(v) => updateDraft("difficultyLevel", v)} options={["Easy", "Moderate", "Challenging"]} />
                     </div>
                     <div>
                         <FieldLabel>Minimum Group Size</FieldLabel>
-                        <FormInput value="2" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.minGroupSize ?? "1"} onChange={(v) => updateDraft("minGroupSize", v)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Maximum Group Size</FieldLabel>
-                        <FormInput value="15" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.maxGroupSize ?? "15"} onChange={(v) => updateDraft("maxGroupSize", v)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Start Time</FieldLabel>
-                        <FormInput value="09:00" onChange={() => { }} type="time" />
+                        <FormInput value={draftCategoryData.startTime ?? "09:00"} onChange={(v) => updateDraft("startTime", v)} type="time" />
                     </div>
                     <div>
                         <FieldLabel>End Time</FieldLabel>
-                        <FormInput value="13:00" onChange={() => { }} type="time" />
+                        <FormInput value={draftCategoryData.endTime ?? "13:00"} onChange={(v) => updateDraft("endTime", v)} type="time" />
                     </div>
                 </div>
                 <div className="grid grid-cols-3 gap-6">
                     {[
-                        { label: "Private Available", v: true },
-                        { label: "Pickup Available", v: true },
-                        { label: "Drop-off Available", v: false },
-                    ].map(({ label, v }) => (
+                        { label: "Private Available", key: "privateAvailable" },
+                        { label: "Pickup Available", key: "pickupAvailable" },
+                        { label: "Drop-off Available", key: "dropoffAvailable" },
+                    ].map(({ label, key }) => (
                         <div key={label} className="flex items-center justify-between">
                             <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{label}</span>
-                            <Toggle value={v} onChange={() => { }} />
+                            <Toggle value={draftCategoryData[key] ?? false} onChange={(v) => updateDraft(key, v)} />
                         </div>
                     ))}
                 </div>
@@ -1384,31 +1393,53 @@ function TourDetails() {
             <SectionCard title="Tour Content">
                 <div className="space-y-4">
                     <div>
+                        <FieldLabel>Primary Category</FieldLabel>
+                        <CreatableSelect
+                            value={draftCategoryData.categoryId ?? "adventure"}
+                            onChange={(v) => updateDraft("categoryId", v)}
+                            options={[
+                                "adventure", "beach", "cultural", "family",
+                                "hill-country", "honeymoon", "wellness", "wildlife"
+                            ]}
+                        />
+                    </div>
+                    <div>
+                        <FieldLabel>Additional Categories</FieldLabel>
+                        <TagInput tags={draftCategoryData.additionalCategories || []} onChange={(v) => updateDraft("additionalCategories", v)} placeholder="e.g. wildlife" />
+                    </div>
+                    <div>
                         <FieldLabel>Route Summary</FieldLabel>
-                        <FormTextarea value="Start at Main Gate → Ramparts walk → Dutch Church → Clock Tower → National Maritime Museum → Lighthouse → Gem Museum → Return to gate" onChange={() => { }} rows={3} />
+                        <FormTextarea value={draftCategoryData.routeSummary ?? ""} onChange={(v) => updateDraft("routeSummary", v)} rows={3} />
                     </div>
                     <div>
                         <FieldLabel>Itinerary Highlights</FieldLabel>
-                        <TagInput tags={highlights} onChange={setHighlights} placeholder="Add highlight..." />
+                        <TagInput tags={highlights} onChange={(v) => updateDraft("itineraryHighlights", v)} placeholder="Add highlight..." />
+                    </div>
+                    <div>
+                        <FieldLabel>Itinerary Builder</FieldLabel>
+                        <ItineraryBuilder 
+                            itinerary={Array.isArray(draftCategoryData.itinerary) ? draftCategoryData.itinerary : []} 
+                            onChange={(v) => updateDraft("itinerary", v)}
+                        />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <FieldLabel>Included Items</FieldLabel>
-                            <TagInput tags={included} onChange={setIncluded} placeholder="Add included item..." />
+                            <TagInput tags={included} onChange={(v) => updateDraft("includedItems", v)} placeholder="Add included item..." />
                         </div>
                         <div>
                             <FieldLabel>Excluded Items</FieldLabel>
-                            <TagInput tags={excluded} onChange={setExcluded} placeholder="Add excluded item..." />
+                            <TagInput tags={excluded} onChange={(v) => updateDraft("excludedItems", v)} placeholder="Add excluded item..." />
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <FieldLabel>Languages</FieldLabel>
-                            <TagInput tags={languages} onChange={setLanguages} placeholder="Add language..." />
+                            <TagInput tags={languages} onChange={(v) => updateDraft("languages", v)} placeholder="Add language..." />
                         </div>
                         <div>
                             <FieldLabel>What to Bring</FieldLabel>
-                            <TagInput tags={toBring} onChange={setToBring} placeholder="Add item..." />
+                            <TagInput tags={toBring} onChange={(v) => updateDraft("whatToBring", v)} placeholder="Add item..." />
                         </div>
                     </div>
                 </div>
@@ -1418,23 +1449,23 @@ function TourDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Child Policy</FieldLabel>
-                        <FormTextarea value="Children of all ages welcome. Children under 12 receive 50% discount when accompanied by adults." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.childPolicy ?? ""} onChange={(v) => updateDraft("childPolicy", v)} rows={2} />
                     </div>
                     <div>
                         <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value="Hotel pickup available from Galle, Unawatuna, and Hikkaduwa areas. Please provide hotel details at booking." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.pickupNotes ?? ""} onChange={(v) => updateDraft("pickupNotes", v)} rows={2} />
                     </div>
                     <div>
                         <FieldLabel>Drop-off Notes</FieldLabel>
-                        <FormTextarea value="Drop-off at original pickup location or at Galle Fort as requested." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.dropoffNotes ?? ""} onChange={(v) => updateDraft("dropoffNotes", v)} rows={2} />
                     </div>
                     <div>
                         <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value="Free cancellation up to 24 hours before tour. No refund for cancellations within 24 hours or no-shows." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.cancellationPolicy ?? ""} onChange={(v) => updateDraft("cancellationPolicy", v)} rows={2} />
                     </div>
                     <div>
                         <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value="Tour involves walking on uneven surfaces and stairs. Not suitable for wheelchairs. Moderate fitness level required." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.accessibilityInfo ?? ""} onChange={(v) => updateDraft("accessibilityInfo", v)} rows={2} />
                     </div>
                 </div>
             </SectionCard>
@@ -1443,11 +1474,18 @@ function TourDetails() {
 }
 
 function ExperienceDetails() {
-    const [highlights, setHighlights] = useState(["Sunset views from Galle Face", "Local street food tasting", "Street art discovery", "Beach promenade walk"]);
-    const [included, setIncluded] = useState(["Local guide", "Food samples", "Water"]);
-    const [excluded, setExcluded] = useState(["Hotel pickup", "Additional meals", "Gratuities"]);
-    const [languages, setLanguages] = useState(["English", "Sinhala"]);
-    const [toBring, setToBring] = useState(["Camera", "Light jacket", "Comfortable shoes"]);
+    const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
+    const setDraft = useListingDraftStore((s) => s.setDraft);
+
+    const updateDraft = (key: string, value: any) => {
+        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+    };
+
+    const highlights = draftCategoryData.highlights ?? [];
+    const included = draftCategoryData.includedItems ?? [];
+    const excluded = draftCategoryData.excludedItems ?? [];
+    const languages = draftCategoryData.languages ?? [];
+    const toBring = draftCategoryData.whatToBring ?? [];
 
     return (
         <div className="space-y-4">
@@ -1455,49 +1493,49 @@ function ExperienceDetails() {
                 <div className="grid grid-cols-3 gap-4 mb-4">
                     <div>
                         <FieldLabel>Activity Type</FieldLabel>
-                        <SelectField value="City Walk" onChange={() => { }} options={["City Walk", "Food Tour", "Cultural", "Adventure", "Wellness", "Workshop", "Photography"]} />
+                        <SelectField value={draftCategoryData.activityType ?? "City Walk"} onChange={(v) => updateDraft("activityType", v)} options={["City Walk", "Food Tour", "Cultural", "Adventure", "Wellness", "Workshop", "Photography", "Water Sports", "Hiking"]} />
                     </div>
                     <div>
                         <FieldLabel>Meeting Point</FieldLabel>
-                        <FormInput value="Galle Face Green Main Entrance" onChange={() => { }} />
+                        <FormInput value={draftCategoryData.meetingPoint ?? ""} onChange={(v) => updateDraft("meetingPoint", v)} placeholder="e.g. Galle Face Green" />
                     </div>
                     <div>
                         <FieldLabel>Duration (minutes)</FieldLabel>
-                        <FormInput value="180" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.durationMinutes ?? ""} onChange={(v) => updateDraft("durationMinutes", v)} type="number" placeholder="180" />
                     </div>
                     <div>
                         <FieldLabel>Difficulty Level</FieldLabel>
-                        <SelectField value="Easy" onChange={() => { }} options={["Easy", "Moderate", "Challenging"]} />
+                        <SelectField value={draftCategoryData.difficultyLevel ?? "Easy"} onChange={(v) => updateDraft("difficultyLevel", v)} options={["Easy", "Moderate", "Challenging"]} />
                     </div>
                     <div>
                         <FieldLabel>Age Restriction</FieldLabel>
-                        <FormInput value="12+" onChange={() => { }} />
+                        <FormInput value={draftCategoryData.ageRestriction ?? ""} onChange={(v) => updateDraft("ageRestriction", v)} placeholder="e.g. 12+" />
                     </div>
                     <div>
                         <FieldLabel>Minimum Group Size</FieldLabel>
-                        <FormInput value="1" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.minGroupSize ?? "1"} onChange={(v) => updateDraft("minGroupSize", v)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Maximum Group Size</FieldLabel>
-                        <FormInput value="10" onChange={() => { }} type="number" />
+                        <FormInput value={draftCategoryData.maxGroupSize ?? "10"} onChange={(v) => updateDraft("maxGroupSize", v)} type="number" />
                     </div>
                     <div>
                         <FieldLabel>Start Time</FieldLabel>
-                        <FormInput value="16:00" onChange={() => { }} type="time" />
+                        <FormInput value={draftCategoryData.startTime ?? ""} onChange={(v) => updateDraft("startTime", v)} type="time" />
                     </div>
                     <div>
                         <FieldLabel>End Time</FieldLabel>
-                        <FormInput value="19:00" onChange={() => { }} type="time" />
+                        <FormInput value={draftCategoryData.endTime ?? ""} onChange={(v) => updateDraft("endTime", v)} type="time" />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-6">
                     {[
-                        { label: "Pickup Supported", v: true },
-                        { label: "Private Available", v: true },
-                    ].map(({ label, v }) => (
+                        { label: "Pickup Supported", key: "pickupSupported" },
+                        { label: "Private Available", key: "privateAvailable" },
+                    ].map(({ label, key }) => (
                         <div key={label} className="flex items-center justify-between">
                             <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{label}</span>
-                            <Toggle value={v} onChange={() => { }} />
+                            <Toggle value={draftCategoryData[key] ?? true} onChange={(v) => updateDraft(key, v)} />
                         </div>
                     ))}
                 </div>
@@ -1507,26 +1545,26 @@ function ExperienceDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Highlights</FieldLabel>
-                        <TagInput tags={highlights} onChange={setHighlights} placeholder="Add highlight..." />
+                        <TagInput tags={highlights} onChange={(v) => updateDraft("highlights", v)} placeholder="Add highlight..." />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <FieldLabel>Included Items</FieldLabel>
-                            <TagInput tags={included} onChange={setIncluded} placeholder="Add included..." />
+                            <TagInput tags={included} onChange={(v) => updateDraft("includedItems", v)} placeholder="Add included..." />
                         </div>
                         <div>
                             <FieldLabel>Excluded Items</FieldLabel>
-                            <TagInput tags={excluded} onChange={setExcluded} placeholder="Add excluded..." />
+                            <TagInput tags={excluded} onChange={(v) => updateDraft("excludedItems", v)} placeholder="Add excluded..." />
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <FieldLabel>Languages</FieldLabel>
-                            <TagInput tags={languages} onChange={setLanguages} placeholder="Add language..." />
+                            <TagInput tags={languages} onChange={(v) => updateDraft("languages", v)} placeholder="Add language..." />
                         </div>
                         <div>
                             <FieldLabel>What to Bring</FieldLabel>
-                            <TagInput tags={toBring} onChange={setToBring} placeholder="Add item..." />
+                            <TagInput tags={toBring} onChange={(v) => updateDraft("whatToBring", v)} placeholder="Add item..." />
                         </div>
                     </div>
                 </div>
@@ -1536,19 +1574,19 @@ function ExperienceDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value="Hotel pickup available from Colombo city center hotels. Please specify your location at booking." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.pickupNotes ?? ""} onChange={(v) => updateDraft("pickupNotes", v)} rows={2} placeholder="Where should guests wait?" />
                     </div>
                     <div>
                         <FieldLabel>Availability Notes</FieldLabel>
-                        <FormTextarea value="Available daily. Best enjoyed during weekday evenings for fewer crowds. May be affected by weather conditions." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.availabilityNotes ?? ""} onChange={(v) => updateDraft("availabilityNotes", v)} rows={2} placeholder="When is this available?" />
                     </div>
                     <div>
                         <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value="Free cancellation up to 24 hours before experience. No refund for cancellations within 24 hours or no-shows." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.cancellationPolicy ?? ""} onChange={(v) => updateDraft("cancellationPolicy", v)} rows={2} placeholder="Refund policies" />
                     </div>
                     <div>
                         <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value="Experience involves moderate walking. Wheelchair accessible with assistance. Please notify in advance for special requirements." onChange={() => { }} rows={2} />
+                        <FormTextarea value={draftCategoryData.accessibilityInfo ?? ""} onChange={(v) => updateDraft("accessibilityInfo", v)} rows={2} placeholder="Wheelchair access, stairs, etc." />
                     </div>
                 </div>
             </SectionCard>
