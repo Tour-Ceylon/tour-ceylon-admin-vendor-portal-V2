@@ -62,6 +62,8 @@ interface Booking {
   type: BookingType;
   listing: string;
   vendor: string;
+  vendorEmail?: string;
+  vendorRole?: string;
   travelDate: string;
   checkIn?: string;
   checkOut?: string;
@@ -78,10 +80,19 @@ interface Booking {
   cartItems?: Array<{
     listingId?: string;
     title: string;
+    variantName?: string;
     travelDate?: string;
+    travelDateEnd?: string;
+    travelDateRaw?: string;
     travelCount?: number;
     price: number;
     baseCurrency?: string;
+    selectedRooms?: Array<{
+      roomId?: string;
+      roomName?: string;
+      qty?: number;
+      price?: number;
+    }>;
   }>;
 }
 
@@ -236,20 +247,35 @@ const SAMPLE_BOOKINGS: Booking[] = [
 // Helper: convert an AdminBookingInquiryItem to the local Booking shape
 function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
   const firstItem = inq.cartItems?.[0];
-  const formatDisplayDate = (val?: string) => {
-    if (!val) return "TBD";
-    if (val.includes(" to ")) {
-      const [start, end] = val.split(" to ");
+  const formatDisplayDate = (val?: string, endVal?: string, rawVal?: string) => {
+    const effective = rawVal || (val && endVal ? `${val} to ${endVal}` : val);
+    if (!effective) return "TBD";
+    if (effective.includes(" to ")) {
+      const [start, end] = effective.split(" to ");
       const s = new Date(start.trim());
       const e = new Date(end.trim());
       const sStr = !isNaN(s.getTime()) ? s.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : start.trim();
       const eStr = !isNaN(e.getTime()) ? e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : end.trim();
       return `${sStr} - ${eStr}`;
     }
-    const d = new Date(val);
-    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : val;
+    const d = new Date(effective);
+    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : effective;
   };
-  const travelDate = formatDisplayDate(firstItem?.travelDate);
+  const rawDateStr = (firstItem as any)?.travelDateRaw || (firstItem as any)?.travel_date_raw;
+  const endDateStr = (firstItem as any)?.travelDateEnd || (firstItem as any)?.travel_date_end;
+  const startDateStr = firstItem?.travelDate || (firstItem as any)?.travel_date;
+  const travelDate = formatDisplayDate(startDateStr, endDateStr, rawDateStr);
+
+  let checkInStr = "";
+  let checkOutStr = "";
+  if (rawDateStr && rawDateStr.includes(" to ")) {
+    const parts = rawDateStr.split(" to ");
+    checkInStr = parts[0]?.trim();
+    checkOutStr = parts[1]?.trim();
+  } else if (startDateStr && endDateStr) {
+    checkInStr = startDateStr;
+    checkOutStr = endDateStr;
+  }
 
   return {
     id: inq.reference || inq.id,
@@ -260,10 +286,14 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
       email: inq.email || 'N/A',
       phone: inq.phone || 'N/A',
     },
-    type: (inferBookingType(inq.cartItems) || "Tour") as BookingType,
+    type: (inferBookingType(inq.cartItems, inq.reference) || "Stay") as BookingType,
     listing: firstItem?.title || "—",
-    vendor: firstItem?.vendorName || "—",
+    vendor: inq.vendorName || (firstItem as any)?.vendorName || (firstItem as any)?.vendor_name || "—",
+    vendorEmail: inq.vendorEmail || (firstItem as any)?.vendorEmail || (firstItem as any)?.vendor_email,
+    vendorRole: inq.vendorRole || (firstItem as any)?.vendorRole || (firstItem as any)?.vendor_role,
     travelDate,
+    checkIn: checkInStr,
+    checkOut: checkOutStr,
     amount: inq.total || inq.subtotal || 0,
     bookingStatus: mapInquiryStatusToUI(inq.status),
     paymentStatus: "unpaid" as PaymentStatus,
@@ -276,14 +306,17 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     passengers: inq.numberOfTravelers,
     specialRequests: inq.specialRequests,
     nationality: inq.nationality,
-    cartItems: (inq.cartItems || []).map((ci) => ({
+    cartItems: (inq.cartItems || []).map((ci: any) => ({
       listingId: ci.listingId,
       title: ci.title || ci.variantName || "Item",
       variantName: ci.variantName,
-      travelDate: ci.travelDate,
+      travelDate: ci.travelDateRaw || ci.travel_date_raw || (ci.travelDate && (ci.travelDateEnd || ci.travel_date_end) ? `${ci.travelDate} to ${ci.travelDateEnd || ci.travel_date_end}` : ci.travelDate),
+      travelDateEnd: ci.travelDateEnd || ci.travel_date_end,
+      travelDateRaw: ci.travelDateRaw || ci.travel_date_raw,
       travelCount: ci.travelCount || 1,
       price: ci.price,
       baseCurrency: ci.baseCurrency,
+      selectedRooms: ci.selectedRooms || ci.selected_rooms || [],
     })),
   };
 }
