@@ -1,5 +1,13 @@
 import { apiFetch } from "./apiClient";
 
+export interface StayPropertyAmenity {
+  id?: string;
+  name: string;
+  value?: unknown;
+  category?: string | null;
+  valueType?: string;
+}
+
 export interface StayPropertySummary {
   id: string;
   vendorId?: string;
@@ -13,10 +21,14 @@ export interface StayPropertySummary {
   latitude?: number | string | null;
   longitude?: number | string | null;
   status: string;
+  applicationNote?: string | null;
   contact?: Record<string, unknown>;
   policies?: Record<string, unknown>;
+  paymentPolicy?: string;
   media?: Array<Record<string, unknown>>;
   metadata?: Record<string, unknown>;
+  amenities?: StayPropertyAmenity[];
+  roomTypes?: StayRoomType[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -245,11 +257,91 @@ export async function getStayProperty(propertyId: string) {
   return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`);
 }
 
-export async function updateStayProperty(propertyId: string, payload: Partial<StayPropertySummary>) {
-  return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+export async function updateStayProperty(
+  propertyId: string,
+  payload: Partial<StayPropertySummary> | Record<string, unknown>,
+  options?: {
+    existingProperty?: StayPropertySummary | null;
+    method?: "PATCH" | "PUT";
+  },
+) {
+  const preferredMethod = options?.method || "PATCH";
+
+  const buildPutPayload = () => {
+    const existing = options?.existingProperty;
+    const baseRoomTypes =
+      (payload as any).roomTypes ||
+      existing?.roomTypes?.map((rt) => ({
+        id: rt.id,
+        name: rt.name,
+        description: rt.description || "",
+        count: rt.roomUnits?.length || rt.totalUnits || 1,
+        size: rt.size || undefined,
+        sizeUnit: rt.sizeUnit || undefined,
+        maxGuests: rt.maxGuests ? Number(rt.maxGuests) : undefined,
+        basePrice: rt.basePrice ? Number(rt.basePrice) : undefined,
+        currency: rt.currency || "LKR",
+        bedConfiguration: rt.bedConfiguration || {},
+        bathroom: rt.bathroom || {},
+        discounts: rt.discounts || [],
+      })) ||
+      [];
+
+    return {
+      name: payload.name ?? existing?.name ?? "Property",
+      propertyType: payload.propertyType ?? existing?.propertyType ?? "Hotel",
+      description: payload.description ?? existing?.description ?? "",
+      address: payload.address ?? existing?.address ?? "",
+      city: payload.city ?? existing?.city ?? "",
+      district: payload.district ?? existing?.district ?? "",
+      latitude: payload.latitude ?? existing?.latitude ?? null,
+      longitude: payload.longitude ?? existing?.longitude ?? null,
+      status: payload.status ?? existing?.status ?? "submitted",
+      applicationNote: payload.applicationNote ?? existing?.applicationNote ?? null,
+      contact: {
+        ...(existing?.contact || {}),
+        ...((payload.contact as Record<string, unknown>) || {}),
+      },
+      policies: {
+        ...(existing?.policies || {}),
+        ...((payload.policies as Record<string, unknown>) || {}),
+      },
+      paymentPolicy: (payload as any).paymentPolicy ?? existing?.paymentPolicy ?? "pay_at_property",
+      media: payload.media ?? existing?.media ?? [],
+      amenities: (payload as any).amenities ?? existing?.amenities ?? [],
+      roomTypes: baseRoomTypes,
+      metadata: {
+        ...(existing?.metadata || {}),
+        ...((payload.metadata as Record<string, unknown>) || {}),
+      },
+    };
+  };
+
+  if (preferredMethod === "PUT") {
+    const putPayload = options?.existingProperty ? buildPutPayload() : payload;
+    return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`, {
+      method: "PUT",
+      body: JSON.stringify(putPayload),
+    });
+  }
+
+  try {
+    return await apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  } catch (err: any) {
+    if (err?.status === 405 || String(err?.message || "").includes("405")) {
+      console.warn("PATCH returned 405 Method Not Allowed; falling back to PUT with full projection for stay", propertyId);
+      const putPayload = options?.existingProperty ? buildPutPayload() : payload;
+      return apiFetch<StayPropertySummary>(`/vendor/stays/${propertyId}`, {
+        method: "PUT",
+        body: JSON.stringify(putPayload),
+      });
+    }
+    throw err;
+  }
 }
+
 
 

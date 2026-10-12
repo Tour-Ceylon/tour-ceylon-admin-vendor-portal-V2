@@ -91,7 +91,9 @@ function PoliciesContent() {
         },
       };
 
-      await updateStayProperty(selectedProperty.id, payload as any);
+      await updateStayProperty(selectedProperty.id, payload as any, {
+        existingProperty: selectedProperty,
+      });
       await refreshProperties();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
