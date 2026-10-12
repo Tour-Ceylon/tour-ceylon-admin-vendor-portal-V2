@@ -19,13 +19,31 @@ export type InquiryStatus =
   | "converted_to_booking"
   | "cancelled";
 
+export interface SelectedRoomItem {
+  roomId?: string;
+  roomName?: string;
+  qty?: number;
+  price?: number;
+}
+
 export interface CartItemSummary {
   listingId: string;
   title: string;
   travelDate?: string;
+  travelDateEnd?: string;
+  travelDateRaw?: string;
+  travel_date?: string;
+  travel_date_end?: string;
+  travel_date_raw?: string;
   travelCount: number;
   price: number;
   baseCurrency: string;
+  selectedRooms?: SelectedRoomItem[];
+  selected_rooms?: SelectedRoomItem[];
+  vendorId?: string;
+  vendorName?: string;
+  vendorEmail?: string;
+  vendorRole?: string;
 }
 
 export interface AdminBookingInquiryItem {
@@ -45,6 +63,12 @@ export interface AdminBookingInquiryItem {
   numberOfTravelers: number;
   specialRequests?: string;
   cartItems: CartItemSummary[];
+
+  // Vendor / Creator
+  vendorId?: string;
+  vendorName?: string;
+  vendorEmail?: string;
+  vendorRole?: string;
 
   // Financials
   subtotal?: number;
@@ -178,22 +202,45 @@ export async function vendorUpdateInquiryStatus(
  * Derive a display-friendly booking type from the first cart item's title.
  * Falls back to "Inquiry" if no title is available.
  */
-export function inferBookingType(items: CartItemSummary[]): string {
+export function inferBookingType(items?: CartItemSummary[], reference?: string): string {
+  const ref = (reference || "").toUpperCase();
+  if (ref.startsWith("STY-")) return "Stay";
+  if (ref.startsWith("SAF-")) return "Safari";
+  if (ref.startsWith("TRN-") || ref.startsWith("TRP-")) return "Transfer";
+
   if (!items || items.length === 0) return "Inquiry";
-  const title = (items[0].title || "").toLowerCase();
+
+  const first = items[0];
+  const selectedRooms = first.selectedRooms || (first as any).selected_rooms;
+  if (selectedRooms && selectedRooms.length > 0) return "Stay";
+
+  const title = (first.title || "").toLowerCase();
   if (title.includes("transfer") || title.includes("transport")) return "Transfer";
   if (title.includes("safari")) return "Safari";
-  if (title.includes("stay") || title.includes("hotel") || title.includes("villa"))
+  if (
+    title.includes("stay") ||
+    title.includes("hotel") ||
+    title.includes("villa") ||
+    title.includes("resort") ||
+    title.includes("inn") ||
+    title.includes("lodge") ||
+    title.includes("hills") ||
+    title.includes("araliya") ||
+    title.includes("bungalow") ||
+    title.includes("cabin")
+  ) {
     return "Stay";
+  }
   if (title.includes("tour") || title.includes("heritage") || title.includes("walk"))
     return "Tour";
   if (
     title.includes("experience") ||
     title.includes("food") ||
     title.includes("cooking")
-  )
+  ) {
     return "Experience";
-  return "Tour";
+  }
+  return "Stay";
 }
 
 /**

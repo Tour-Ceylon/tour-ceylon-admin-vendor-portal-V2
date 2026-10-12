@@ -93,7 +93,11 @@ export async function apiFetch<T = any>(
   path: string,
   options: CustomRequestInit = {}
 ): Promise<T> {
-  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+  const normalizedPath = path.startsWith("/api/v1")
+    ? path.slice("/api/v1".length)
+    : path;
+  const pathWithSlash = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  const url = path.startsWith("http") ? path : `${BASE_URL}${pathWithSlash}`;
 
   // Get token either passed explicitly or from global Clerk session
   let token = options.token;

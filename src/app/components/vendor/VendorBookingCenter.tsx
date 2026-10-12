@@ -52,22 +52,26 @@ interface Booking {
 // Map an inquiry to the local Booking shape used by this vendor UI
 function inquiryToVendorBooking(inq: AdminBookingInquiryItem): Booking {
   const firstItem = inq.cartItems?.[0];
-  const formatDisplayDate = (val?: string) => {
-    if (!val) return "TBD";
-    if (val.includes(" to ")) {
-      const [start, end] = val.split(" to ");
+  const formatDisplayDate = (val?: string, endVal?: string, rawVal?: string) => {
+    const effective = rawVal || (val && endVal ? `${val} to ${endVal}` : val);
+    if (!effective) return "TBD";
+    if (effective.includes(" to ")) {
+      const [start, end] = effective.split(" to ");
       const s = new Date(start.trim());
       const e = new Date(end.trim());
       const sStr = !isNaN(s.getTime()) ? s.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : start.trim();
       const eStr = !isNaN(e.getTime()) ? e.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : end.trim();
       return `${sStr} - ${eStr}`;
     }
-    const d = new Date(val);
-    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : val;
+    const d = new Date(effective);
+    return !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : effective;
   };
-  const travelDate = formatDisplayDate(firstItem?.travelDate);
+  const rawDateStr = (firstItem as any)?.travelDateRaw || (firstItem as any)?.travel_date_raw;
+  const endDateStr = (firstItem as any)?.travelDateEnd || (firstItem as any)?.travel_date_end;
+  const startDateStr = firstItem?.travelDate || (firstItem as any)?.travel_date;
+  const travelDate = formatDisplayDate(startDateStr, endDateStr, rawDateStr);
   const status: BookingStatus =
-    inq.status === "new" || inq.status === "contacted"
+    inq.status === "pending_contact" || inq.status === "contacted"
       ? "pending"
       : inq.status === "quoted"
       ? "confirmed"
@@ -81,7 +85,9 @@ function inquiryToVendorBooking(inq: AdminBookingInquiryItem): Booking {
     customer: `${inq.firstName} ${inq.lastName}`,
     customerEmail: inq.email,
     listing: firstItem?.title || "—",
-    listingType: inferBookingType(inq.cartItems),
+    listingType: inferBookingType(inq.cartItems, inq.reference),
+    vendor: inq.vendorName || (firstItem as any)?.vendorName || "—",
+    vendorEmail: inq.vendorEmail || (firstItem as any)?.vendorEmail,
     travelDate,
     guests: inq.numberOfTravelers,
     amount: inq.total ? `$${inq.total.toFixed(0)}` : "TBD",

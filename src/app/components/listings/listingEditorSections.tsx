@@ -1,5 +1,21 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Check, GripVertical, Plus, Trash2, Upload, Minus } from "lucide-react";
+import {
+    Check,
+    GripVertical,
+    Plus,
+    Trash2,
+    Upload,
+    Minus,
+    Sparkles,
+    MapPin,
+    RotateCcw,
+    Compass,
+    Calendar,
+    BedDouble,
+    Navigation,
+    Clock,
+    Users,
+} from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import type { Category } from "../../stores/listingDraftStore";
 import { useListingDraftStore } from "../../stores/listingDraftStore";
@@ -885,8 +901,18 @@ function SafariDetails() {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
+    const normalizeSafariDisplayType = (val?: string) => {
+        if (!val) return "Private Safari";
+        const v = val.toLowerCase();
+        if (v.includes("morning")) return "Morning Safari";
+        if (v.includes("evening") || v.includes("afternoon")) return "Evening Safari";
+        if (v.includes("full")) return "Full Day Safari";
+        if (v.includes("shared")) return "Shared Safari";
+        return "Private Safari";
+    };
+
     const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark || "Yala National Park");
-    const [safariType, setSafariType] = useState(draftCategoryData.safariType || "Private Safari");
+    const [safariType, setSafariType] = useState(() => normalizeSafariDisplayType(draftCategoryData.safariType));
     const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes || "360");
     const [difficultyLevel, setDifficultyLevel] = useState(draftCategoryData.difficultyLevel || "Moderate");
     const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction || "5+");
@@ -899,6 +925,12 @@ function SafariDetails() {
     const [guideIncluded, setGuideIncluded] = useState(draftCategoryData.guideIncluded ?? true);
     const [pickupSupported, setPickupSupported] = useState(draftCategoryData.pickupSupported ?? true);
     const [privateAvailable, setPrivateAvailable] = useState(draftCategoryData.privateAvailable ?? true);
+
+    const parkOptions = Array.from(new Set([
+        nationalPark,
+        "Yala National Park", "Minneriya National Park", "Wasgamuwa National Park", 
+        "Kaudulla National Park", "Lunugamvehera National Park", "Udawalawe National Park", "Wilpattu National Park"
+    ])).filter(Boolean);
 
     const [wildlife, setWildlife] = useState<string[]>(
         draftCategoryData.wildlifeHighlights ?? [
@@ -975,7 +1007,7 @@ function SafariDetails() {
                         <SelectField
                             value={nationalPark}
                             onChange={(val) => setNationalPark(val)}
-                            options={["Yala National Park", "Minneriya National Park", "Wasgamuwa National Park", "Kaudulla National Park", "Lunugamvehera National Park", "Udawalawe National Park", "Wilpattu National Park"]}
+                            options={parkOptions}
                         />
                     </div>
                     <div>
@@ -1329,6 +1361,80 @@ function StayDetails() {
     );
 }
 
+const CANONICAL_TOUR_CATEGORIES = [
+    { id: "honeymoon", label: "Honeymoon & Romantic", icon: "💍", desc: "Secluded boutique stays, candlelight & romance" },
+    { id: "wildlife", label: "Wildlife & Safari", icon: "🐘", desc: "Yala leopards, Minneriya elephants & marine life" },
+    { id: "family", label: "Family & Leisure", icon: "👨‍👩‍👧‍👦", desc: "Relaxed pace, kid-friendly activities & coastal bliss" },
+    { id: "cultural", label: "Cultural & Heritage", icon: "🏛️", desc: "Ancient kingdoms, Sigiriya rock & sacred temples" },
+    { id: "wellness", label: "Wellness & Ayurveda", icon: "🌿", desc: "Yoga retreats, authentic Ayurveda & rejuvenation" },
+    { id: "adventure", label: "Adventure & Trekking", icon: "🧗", desc: "Knuckles mountains, whitewater rafting & hikes" },
+    { id: "beach", label: "Beach & Coastal", icon: "🏖️", desc: "Golden south coast, surfing & tropical relaxation" },
+    { id: "hill-country", label: "Hill Country & Scenic", icon: "⛰️", desc: "Ella trains, misty tea valleys & waterfalls" },
+];
+
+const POPULAR_TOUR_DESTINATIONS = [
+    "Negombo", "Sigiriya", "Dambulla", "Anuradhapura", "Polonnaruwa",
+    "Kandy", "Nuwara Eliya", "Ella", "Yala", "Mirissa",
+    "Galle Fort", "Bentota", "Tangalle", "Trincomalee", "Knuckles", "Colombo",
+];
+
+const COMMON_TOUR_INCLUSIONS = [
+    "Private AC Luxury Vehicle",
+    "English-speaking Chauffeur Guide",
+    "Daily Breakfast",
+    "Handpicked Boutique Accommodation",
+    "Airport Meet & Greet & Transfers",
+    "Sigiriya Lion Rock Entrance",
+    "Yala National Park Jeep Safari & Fees",
+    "Scenic Ella Train Reserved Tickets",
+    "Bottled Mineral Water During Travel",
+    "All Government Taxes & Highway Tolls",
+    "24/7 Dedicated Ground Support",
+];
+
+const COMMON_TOUR_EXCLUSIONS = [
+    "International Flights",
+    "Sri Lanka Entry Tourist Visa (ETA)",
+    "Travel & Medical Insurance",
+    "Lunches & Dinners (unless specified)",
+    "Tips & Chauffeur Guide Gratuities",
+    "Personal Expenses & Souvenirs",
+    "Camera & Drone Filming Permits",
+    "Early Check-in / Late Check-out Fees",
+];
+
+const COMMON_WHAT_TO_BRING = [
+    "Comfortable Walking / Hiking Shoes",
+    "Sun Protection & Sunglasses",
+    "Modest Attire for Temples (covers knees/shoulders)",
+    "Lightweight Breathable Cotton Clothing",
+    "Warm Light Jacket for Hill Country / Ella",
+    "Camera with Extra Memory & Batteries",
+    "Insect / Mosquito Repellent",
+    "Valid Passport & Visa Documentation",
+];
+
+const COMMON_TOUR_HIGHLIGHTS = [
+    "Kalpitiya Lagoon & Dolphin Watching",
+    "Pidurangala Sunset Vista",
+    "Sigiriya Lion Rock Fortress",
+    "Knuckles Mountain Cloud Forest Trek",
+    "Kandy Sacred Temple of the Tooth",
+    "World-famous Scenic Train to Ella",
+    "Ella's Quiet Corners & Nine Arch Bridge",
+    "Yala National Park Leopard Safari",
+    "Tangalle's Secluded Beaches",
+    "Galle Fort Dutch Ramparts & Sunset",
+];
+
+const COMMON_MEETING_POINTS = [
+    "Bandaranaike International Airport (CMB) — Arrival Hall",
+    "Colombo City Hotels (Complimentary Pickup)",
+    "Negombo Coastal Hotels",
+    "Kandy Railway Station",
+    "Galle Fort Main Gate",
+];
+
 function TourDetails() {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
@@ -1337,135 +1443,573 @@ function TourDetails() {
         setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
     };
 
-    const highlights = draftCategoryData.itineraryHighlights ?? [];
-    const included = draftCategoryData.includedItems ?? [];
-    const excluded = draftCategoryData.excludedItems ?? [];
-    const languages = draftCategoryData.languages ?? [];
-    const toBring = draftCategoryData.whatToBring ?? [];
+    const highlights = Array.isArray(draftCategoryData.itineraryHighlights) ? draftCategoryData.itineraryHighlights : [];
+    const included = Array.isArray(draftCategoryData.includedItems) ? draftCategoryData.includedItems : [];
+    const excluded = Array.isArray(draftCategoryData.excludedItems) ? draftCategoryData.excludedItems : [];
+    const languages = Array.isArray(draftCategoryData.languages) && draftCategoryData.languages.length > 0 ? draftCategoryData.languages : ["English"];
+    const toBring = Array.isArray(draftCategoryData.whatToBring) ? draftCategoryData.whatToBring : [];
+    const itineraryList = Array.isArray(draftCategoryData.itinerary) ? draftCategoryData.itinerary : [];
+
+    // Derive route destination stops dynamically from store (reactive to API load)
+    const routeStops: string[] = (
+        Array.isArray(draftCategoryData.signatureDestinations) && draftCategoryData.signatureDestinations.length > 0
+            ? draftCategoryData.signatureDestinations
+            : (draftCategoryData.routeSummary || "")
+                ? draftCategoryData.routeSummary.split(/\s*[\u2022•\uFFFD\->|]\s*/).map((s: string) => s.trim()).filter(Boolean)
+                : []
+    );
+
+    const [customStopInput, setCustomStopInput] = useState("");
+
+    const updateRouteStops = (newStops: string[]) => {
+        setDraft({
+            categoryData: {
+                ...draftCategoryData,
+                signatureDestinations: newStops,
+                routeSummary: newStops.join(" • "),
+            },
+        });
+    };
+
+    const addRouteStop = (stop: string) => {
+        const trimmed = stop.trim();
+        if (!trimmed) return;
+        if (!routeStops.includes(trimmed)) {
+            const next = [...routeStops, trimmed];
+            updateRouteStops(next);
+        }
+    };
+
+    const handleAddCustomStop = () => {
+        if (!customStopInput.trim()) return;
+        addRouteStop(customStopInput.trim());
+        setCustomStopInput("");
+    };
+
+    const removeRouteStop = (index: number) => {
+        const next = routeStops.filter((_, i) => i !== index);
+        updateRouteStops(next);
+    };
+
+    const generateRouteSummary = () => {
+        if (routeStops.length > 0) {
+            updateDraft("routeSummary", routeStops.join(" • "));
+        }
+    };
+
+    const handleItineraryChange = (updatedItinerary: any[]) => {
+        const updates: Record<string, any> = { itinerary: updatedItinerary };
+        if (
+            !draftCategoryData.durationDays ||
+            draftCategoryData.durationDays === "1" ||
+            Number(draftCategoryData.durationDays) === itineraryList.length
+        ) {
+            updates.durationDays = String(Math.max(1, updatedItinerary.length));
+        }
+        setDraft({ categoryData: { ...draftCategoryData, ...updates } });
+    };
+
+    const durationDaysNum = Number(draftCategoryData.durationDays) || Math.max(1, itineraryList.length);
+    const durationNightsNum = Math.max(0, durationDaysNum - 1);
+
+    const addQuickItem = (key: string, currentItems: string[], item: string) => {
+        if (!currentItems.includes(item)) {
+            updateDraft(key, [...currentItems, item]);
+        }
+    };
 
     return (
-        <div className="space-y-4">
-            <SectionCard title="Tour Overview">
-                <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="space-y-5">
+            {/* 1. TOUR OVERVIEW & DURATION (Multi-Day based, NO daily time) */}
+            <SectionCard title="Tour Overview & Duration">
+                {/* Duration & Nights Banner */}
+                <div className="flex items-center justify-between p-3.5 mb-4 rounded-xl border border-[var(--border-light)]" style={{ background: "var(--bg-elevated)" }}>
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold">
+                            <Calendar size={18} />
+                        </div>
+                        <div>
+                            <div className="text-[14px] font-bold text-[var(--text-primary)]">
+                                {durationDaysNum} Days / {durationNightsNum} Nights Tour Package
+                            </div>
+                            <div className="text-[12px] text-[var(--text-secondary)]">
+                                {itineraryList.length} itinerary {itineraryList.length === 1 ? "day" : "days"} currently planned
+                            </div>
+                        </div>
+                    </div>
+                    {itineraryList.length > 0 && Number(draftCategoryData.durationDays) !== itineraryList.length && (
+                        <button
+                            type="button"
+                            onClick={() => updateDraft("durationDays", String(itineraryList.length))}
+                            className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all"
+                        >
+                            <RotateCcw size={12} /> Sync Duration ({itineraryList.length} Days)
+                        </button>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div>
-                        <FieldLabel>Duration Days</FieldLabel>
-                        <FormInput value={draftCategoryData.durationDays ?? "1"} onChange={(v) => updateDraft("durationDays", v)} type="number" />
+                        <FieldLabel required>Duration Days</FieldLabel>
+                        <FormInput
+                            value={draftCategoryData.durationDays ?? "1"}
+                            onChange={(v) => updateDraft("durationDays", v)}
+                            type="number"
+                        />
                     </div>
                     <div>
-                        <FieldLabel>Meeting Point</FieldLabel>
-                        <FormInput value={draftCategoryData.meetingPoint ?? ""} onChange={(v) => updateDraft("meetingPoint", v)} placeholder="e.g. Galle Fort Main Gate" />
-                    </div>
-                    <div>
-                        <FieldLabel>Difficulty Level</FieldLabel>
-                        <SelectField value={draftCategoryData.difficultyLevel ?? "Easy"} onChange={(v) => updateDraft("difficultyLevel", v)} options={["Easy", "Moderate", "Challenging"]} />
+                        <FieldLabel>Difficulty / Travel Style</FieldLabel>
+                        <SelectField
+                            value={draftCategoryData.difficultyLevel ?? "Couple Friendly"}
+                            onChange={(v) => updateDraft("difficultyLevel", v)}
+                            options={[
+                                "Couple Friendly",
+                                "Easy",
+                                "Moderate",
+                                "Challenging",
+                                "Active Adventure",
+                                "Relaxed & Leisurely",
+                            ]}
+                        />
                     </div>
                     <div>
                         <FieldLabel>Minimum Group Size</FieldLabel>
-                        <FormInput value={draftCategoryData.minGroupSize ?? "1"} onChange={(v) => updateDraft("minGroupSize", v)} type="number" />
+                        <FormInput
+                            value={draftCategoryData.minGroupSize ?? "1"}
+                            onChange={(v) => updateDraft("minGroupSize", v)}
+                            type="number"
+                        />
                     </div>
                     <div>
                         <FieldLabel>Maximum Group Size</FieldLabel>
-                        <FormInput value={draftCategoryData.maxGroupSize ?? "15"} onChange={(v) => updateDraft("maxGroupSize", v)} type="number" />
-                    </div>
-                    <div>
-                        <FieldLabel>Start Time</FieldLabel>
-                        <FormInput value={draftCategoryData.startTime ?? "09:00"} onChange={(v) => updateDraft("startTime", v)} type="time" />
-                    </div>
-                    <div>
-                        <FieldLabel>End Time</FieldLabel>
-                        <FormInput value={draftCategoryData.endTime ?? "13:00"} onChange={(v) => updateDraft("endTime", v)} type="time" />
+                        <FormInput
+                            value={draftCategoryData.maxGroupSize ?? "15"}
+                            onChange={(v) => updateDraft("maxGroupSize", v)}
+                            type="number"
+                        />
                     </div>
                 </div>
-                <div className="grid grid-cols-3 gap-6">
+
+                {/* Meeting Point with Suggestions */}
+                <div className="mb-4">
+                    <FieldLabel>Primary Tour Meeting Point / Pickup Hub</FieldLabel>
+                    <FormInput
+                        value={draftCategoryData.meetingPoint ?? ""}
+                        onChange={(v) => updateDraft("meetingPoint", v)}
+                        placeholder="e.g. Bandaranaike Int'l Airport (CMB) or Colombo City Hotel"
+                    />
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        <span className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1">
+                            <MapPin size={11} className="text-emerald-400" /> Quick select:
+                        </span>
+                        {COMMON_MEETING_POINTS.map((mp) => (
+                            <button
+                                key={mp}
+                                type="button"
+                                onClick={() => updateDraft("meetingPoint", mp)}
+                                className="text-[11px] px-2.5 py-0.5 rounded-full border border-[var(--border-light)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-emerald-400/40 transition-all"
+                            >
+                                {mp}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Logistics Toggles */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-3 border-t border-[var(--border-light)]">
                     {[
-                        { label: "Private Available", key: "privateAvailable" },
-                        { label: "Pickup Available", key: "pickupAvailable" },
-                        { label: "Drop-off Available", key: "dropoffAvailable" },
+                        { label: "Private Tour Available", key: "privateAvailable" },
+                        { label: "Hotel / Airport Pickup Included", key: "pickupAvailable" },
+                        { label: "Airport / City Drop-off Included", key: "dropoffAvailable" },
                     ].map(({ label, key }) => (
                         <div key={label} className="flex items-center justify-between">
-                            <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{label}</span>
-                            <Toggle value={draftCategoryData[key] ?? false} onChange={(v) => updateDraft(key, v)} />
+                            <span className="text-[12px] font-medium" style={{ color: "var(--text-secondary)" }}>{label}</span>
+                            <Toggle value={Boolean(draftCategoryData[key])} onChange={(v) => updateDraft(key, v)} />
                         </div>
                     ))}
                 </div>
             </SectionCard>
 
-            <SectionCard title="Tour Content">
-                <div className="space-y-4">
+            {/* 2. CANONICAL TOUR CATEGORY SELECTOR */}
+            <SectionCard title="Tour Package Category & Theme">
+                <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+                    Select the primary tour category to place this package in the right client showcase tab:
+                </p>
+
+                {/* 8 Canonical Category Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                    {CANONICAL_TOUR_CATEGORIES.map((cat) => {
+                        const isSelected = (draftCategoryData.categoryId || "honeymoon").toLowerCase() === cat.id.toLowerCase();
+                        return (
+                            <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => updateDraft("categoryId", cat.id)}
+                                className={`text-left p-3 rounded-xl border transition-all relative overflow-hidden ${
+                                    isSelected
+                                        ? "border-amber-500 bg-amber-500/10 shadow-sm"
+                                        : "border-[var(--border-light)] bg-[var(--bg-elevated)] hover:border-[var(--border-accent)]"
+                                }`}
+                            >
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-xl">{cat.icon}</span>
+                                    {isSelected && (
+                                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                    )}
+                                </div>
+                                <div className={`text-[12px] font-bold mb-0.5 ${isSelected ? "text-amber-300" : "text-[var(--text-primary)]"}`}>
+                                    {cat.label}
+                                </div>
+                                <div className="text-[10px] text-[var(--text-tertiary)] line-clamp-1">
+                                    {cat.desc}
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <FieldLabel>Primary Category</FieldLabel>
+                        <FieldLabel>Custom / Direct Category Slug</FieldLabel>
                         <CreatableSelect
-                            value={draftCategoryData.categoryId ?? "adventure"}
+                            value={draftCategoryData.categoryId ?? "honeymoon"}
                             onChange={(v) => updateDraft("categoryId", v)}
-                            options={[
-                                "adventure", "beach", "cultural", "family",
-                                "hill-country", "honeymoon", "wellness", "wildlife"
-                            ]}
+                            options={CANONICAL_TOUR_CATEGORIES.map((c) => c.id)}
                         />
                     </div>
                     <div>
-                        <FieldLabel>Additional Categories</FieldLabel>
-                        <TagInput tags={draftCategoryData.additionalCategories || []} onChange={(v) => updateDraft("additionalCategories", v)} placeholder="e.g. wildlife" />
-                    </div>
-                    <div>
-                        <FieldLabel>Route Summary</FieldLabel>
-                        <FormTextarea value={draftCategoryData.routeSummary ?? ""} onChange={(v) => updateDraft("routeSummary", v)} rows={3} />
-                    </div>
-                    <div>
-                        <FieldLabel>Itinerary Highlights</FieldLabel>
-                        <TagInput tags={highlights} onChange={(v) => updateDraft("itineraryHighlights", v)} placeholder="Add highlight..." />
-                    </div>
-                    <div>
-                        <FieldLabel>Itinerary Builder</FieldLabel>
-                        <ItineraryBuilder 
-                            itinerary={Array.isArray(draftCategoryData.itinerary) ? draftCategoryData.itinerary : []} 
-                            onChange={(v) => updateDraft("itinerary", v)}
+                        <FieldLabel>Additional Cross-Listing Categories</FieldLabel>
+                        <TagInput
+                            tags={draftCategoryData.additionalCategories || []}
+                            onChange={(v) => updateDraft("additionalCategories", v)}
+                            placeholder="Add tag (e.g. scenic-train, luxury, photography)..."
                         />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <FieldLabel>Included Items</FieldLabel>
-                            <TagInput tags={included} onChange={(v) => updateDraft("includedItems", v)} placeholder="Add included item..." />
+                </div>
+            </SectionCard>
+
+            {/* 3. ROUTE & DESTINATION STOPS BUILDER */}
+            <SectionCard title="Route & Signature Destinations">
+                <p className="text-[12px] text-[var(--text-secondary)] mb-3">
+                    Build the sequence of destination stops. You can type any custom stop below or pick popular stops. These stops are automatically used as 1-click overnight suggestions in your day-by-day itinerary:
+                </p>
+
+                {/* Add Custom Stop Input */}
+                <div className="mb-3">
+                    <FieldLabel>Add Any New Destination / Stop</FieldLabel>
+                    <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                            <FormInput
+                                value={customStopInput}
+                                onChange={setCustomStopInput}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        handleAddCustomStop();
+                                    }
+                                }}
+                                placeholder="Type custom destination or stop (e.g. Hiriketiya, Wilpattu, Knuckles) and press Enter..."
+                            />
                         </div>
-                        <div>
-                            <FieldLabel>Excluded Items</FieldLabel>
-                            <TagInput tags={excluded} onChange={(v) => updateDraft("excludedItems", v)} placeholder="Add excluded item..." />
+                        <button
+                            type="button"
+                            onClick={handleAddCustomStop}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold transition-all shrink-0"
+                            style={{
+                                background: "var(--accent-navy)",
+                                color: "#ffffff",
+                            }}
+                        >
+                            <Plus size={14} /> Add Stop
+                        </button>
+                    </div>
+                </div>
+
+                {/* Popular Destinations Quick Add Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-4 p-3 rounded-xl border border-[var(--border-light)]" style={{ background: "var(--bg-elevated)" }}>
+                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] flex items-center gap-1 mr-1">
+                        <MapPin size={12} className="text-emerald-400" /> Quick Add Popular:
+                    </span>
+                    {POPULAR_TOUR_DESTINATIONS.map((dest) => (
+                        <button
+                            key={dest}
+                            type="button"
+                            onClick={() => addRouteStop(dest)}
+                            className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${
+                                routeStops.includes(dest)
+                                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                    : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-emerald-400/40"
+                            }`}
+                        >
+                            + {dest}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Active Destination Sequence View */}
+                {routeStops.length > 0 && (
+                    <div className="mb-4 p-3.5 rounded-xl border border-[var(--border-accent)] bg-emerald-500/5">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1.5">
+                                <Sparkles size={13} /> Configured Route Sequence ({routeStops.length} Stops):
+                            </span>
+                            <button
+                                type="button"
+                                onClick={generateRouteSummary}
+                                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                            >
+                                <Sparkles size={11} /> Format into Route Summary
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {routeStops.map((stop, i) => (
+                                <React.Fragment key={stop + i}>
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-semibold bg-[var(--input-background)] border border-[var(--border-light)] text-[var(--text-primary)] shadow-sm">
+                                        <span className="text-[11px] text-[var(--text-tertiary)]">{i + 1}.</span>
+                                        {stop}
+                                        <button
+                                            type="button"
+                                            onClick={() => removeRouteStop(i)}
+                                            className="text-[var(--text-tertiary)] hover:text-red-400 ml-1 text-sm leading-none"
+                                            title="Remove stop"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                    {i < routeStops.length - 1 && (
+                                        <span className="text-[var(--text-tertiary)] font-bold text-[12px]">→</span>
+                                    )}
+                                </React.Fragment>
+                            ))}
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <FieldLabel>Languages</FieldLabel>
-                            <TagInput tags={languages} onChange={(v) => updateDraft("languages", v)} placeholder="Add language..." />
+                )}
+
+                <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                        <FieldLabel required>Route Summary String (Displayed to Travelers)</FieldLabel>
+                        <span className="text-[11px] text-[var(--text-tertiary)]">e.g. Negombo • Sigiriya • Kandy • Ella • Yala • Galle Fort</span>
+                    </div>
+                    <FormInput
+                        value={draftCategoryData.routeSummary ?? ""}
+                        onChange={(v) => updateDraft("routeSummary", v)}
+                        placeholder="Negombo • Sigiriya • Kandy • Ella • Yala • Galle Fort"
+                    />
+                </div>
+            </SectionCard>
+
+            {/* 4. PACKAGE HIGHLIGHTS */}
+            <SectionCard title="Package Highlights">
+                <div className="space-y-3">
+                    <FieldLabel>Key Tour Highlights (Bullet Points)</FieldLabel>
+                    <TagInput
+                        tags={highlights}
+                        onChange={(v) => updateDraft("itineraryHighlights", v)}
+                        placeholder="Add highlight (e.g. Pidurangala Sunset, Yala Safari)..."
+                    />
+
+                    {/* Quick Highlight Suggestions */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <span className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-1">
+                            <Sparkles size={11} className="text-amber-400" /> Suggested Highlights:
+                        </span>
+                        {COMMON_TOUR_HIGHLIGHTS.map((hl) => (
+                            <button
+                                key={hl}
+                                type="button"
+                                onClick={() => addQuickItem("itineraryHighlights", highlights, hl)}
+                                className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${
+                                    highlights.includes(hl)
+                                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                        : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-amber-400/40"
+                                }`}
+                            >
+                                + {hl}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </SectionCard>
+
+            {/* 5. FULL ITINERARY BUILDER WITH OVERNIGHT STAYS */}
+            <SectionCard title="Day-by-Day Itinerary Builder">
+                <p className="text-[12px] text-[var(--text-secondary)] mb-4">
+                    Configure every single day of the tour with detailed explanations, overnight stays, activities, and meals.
+                </p>
+                <ItineraryBuilder
+                    itinerary={itineraryList}
+                    onChange={handleItineraryChange}
+                    routeStops={routeStops}
+                />
+            </SectionCard>
+
+            {/* 6. INCLUSIONS & EXCLUSIONS */}
+            <SectionCard title="Package Inclusions & Exclusions">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Inclusions */}
+                    <div className="space-y-3">
+                        <FieldLabel>What's Included</FieldLabel>
+                        <TagInput
+                            tags={included}
+                            onChange={(v) => updateDraft("includedItems", v)}
+                            placeholder="Add included item..."
+                        />
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            <span className="text-[11px] text-emerald-400 font-semibold block w-full">Quick Add Inclusions:</span>
+                            {COMMON_TOUR_INCLUSIONS.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => addQuickItem("includedItems", included, item)}
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${
+                                        included.includes(item)
+                                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 font-semibold"
+                                            : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-emerald-400/40"
+                                    }`}
+                                >
+                                    + {item}
+                                </button>
+                            ))}
                         </div>
-                        <div>
-                            <FieldLabel>What to Bring</FieldLabel>
-                            <TagInput tags={toBring} onChange={(v) => updateDraft("whatToBring", v)} placeholder="Add item..." />
+                    </div>
+
+                    {/* Exclusions */}
+                    <div className="space-y-3">
+                        <FieldLabel>What's Excluded</FieldLabel>
+                        <TagInput
+                            tags={excluded}
+                            onChange={(v) => updateDraft("excludedItems", v)}
+                            placeholder="Add excluded item..."
+                        />
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            <span className="text-[11px] text-red-400 font-semibold block w-full">Quick Add Exclusions:</span>
+                            {COMMON_TOUR_EXCLUSIONS.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => addQuickItem("excludedItems", excluded, item)}
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${
+                                        excluded.includes(item)
+                                            ? "bg-red-500/15 text-red-300 border-red-500/30 font-semibold"
+                                            : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-red-400/40"
+                                    }`}
+                                >
+                                    + {item}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 </div>
             </SectionCard>
 
-            <SectionCard title="Additional Information">
+            {/* 7. LANGUAGES & WHAT TO BRING */}
+            <SectionCard title="Languages & Packing Advice">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                        <FieldLabel>Guiding Languages Available</FieldLabel>
+                        <TagInput
+                            tags={languages}
+                            onChange={(v) => updateDraft("languages", v)}
+                            placeholder="Add language..."
+                        />
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            {["English", "French", "German", "Russian", "Spanish", "Italian", "Sinhala"].map((lang) => (
+                                <button
+                                    key={lang}
+                                    type="button"
+                                    onClick={() => addQuickItem("languages", languages, lang)}
+                                    className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${
+                                        languages.includes(lang)
+                                            ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
+                                            : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)]"
+                                    }`}
+                                >
+                                    + {lang}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <FieldLabel>What Travelers Should Bring</FieldLabel>
+                        <TagInput
+                            tags={toBring}
+                            onChange={(v) => updateDraft("whatToBring", v)}
+                            placeholder="Add item..."
+                        />
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            {COMMON_WHAT_TO_BRING.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => addQuickItem("whatToBring", toBring, item)}
+                                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${
+                                        toBring.includes(item)
+                                            ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                            : "bg-[var(--input-background)] text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)]"
+                                    }`}
+                                >
+                                    + {item}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </SectionCard>
+
+            {/* 8. POLICIES & LOGISTICS */}
+            <SectionCard title="Policies & Logistics">
                 <div className="space-y-4">
-                    <div>
-                        <FieldLabel>Child Policy</FieldLabel>
-                        <FormTextarea value={draftCategoryData.childPolicy ?? ""} onChange={(v) => updateDraft("childPolicy", v)} rows={2} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <FieldLabel>Child & Family Policy</FieldLabel>
+                            <FormTextarea
+                                value={draftCategoryData.childPolicy ?? ""}
+                                onChange={(v) => updateDraft("childPolicy", v)}
+                                placeholder="e.g. Children below 5 travel free. Child discount available for ages 5-11..."
+                                rows={2}
+                            />
+                        </div>
+                        <div>
+                            <FieldLabel>Cancellation Policy</FieldLabel>
+                            <FormTextarea
+                                value={draftCategoryData.cancellationPolicy ?? ""}
+                                onChange={(v) => updateDraft("cancellationPolicy", v)}
+                                placeholder="e.g. Free cancellation up to 14 days before arrival. 50% refund within 7-13 days..."
+                                rows={2}
+                            />
+                        </div>
                     </div>
-                    <div>
-                        <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value={draftCategoryData.pickupNotes ?? ""} onChange={(v) => updateDraft("pickupNotes", v)} rows={2} />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <FieldLabel>Pickup Instructions & Meeting Notes</FieldLabel>
+                            <FormTextarea
+                                value={draftCategoryData.pickupNotes ?? ""}
+                                onChange={(v) => updateDraft("pickupNotes", v)}
+                                placeholder="e.g. Your chauffeur guide will hold a sign with your name outside the airport arrival terminal..."
+                                rows={2}
+                            />
+                        </div>
+                        <div>
+                            <FieldLabel>Drop-off Instructions</FieldLabel>
+                            <FormTextarea
+                                value={draftCategoryData.dropoffNotes ?? ""}
+                                onChange={(v) => updateDraft("dropoffNotes", v)}
+                                placeholder="e.g. Complimentary transfer back to Colombo Airport or south coast beach resort..."
+                                rows={2}
+                            />
+                        </div>
                     </div>
+
                     <div>
-                        <FieldLabel>Drop-off Notes</FieldLabel>
-                        <FormTextarea value={draftCategoryData.dropoffNotes ?? ""} onChange={(v) => updateDraft("dropoffNotes", v)} rows={2} />
-                    </div>
-                    <div>
-                        <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value={draftCategoryData.cancellationPolicy ?? ""} onChange={(v) => updateDraft("cancellationPolicy", v)} rows={2} />
-                    </div>
-                    <div>
-                        <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value={draftCategoryData.accessibilityInfo ?? ""} onChange={(v) => updateDraft("accessibilityInfo", v)} rows={2} />
+                        <FieldLabel>Accessibility & Fitness Information</FieldLabel>
+                        <FormTextarea
+                            value={draftCategoryData.accessibilityInfo ?? ""}
+                            onChange={(v) => updateDraft("accessibilityInfo", v)}
+                            placeholder="e.g. Sigiriya Rock Fortress involves climbing 1,200 steps. Moderate fitness recommended..."
+                            rows={2}
+                        />
                     </div>
                 </div>
             </SectionCard>

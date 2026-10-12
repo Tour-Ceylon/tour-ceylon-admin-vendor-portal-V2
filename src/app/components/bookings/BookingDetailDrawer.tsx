@@ -35,13 +35,24 @@ interface Customer {
   phone: string;
 }
 
+export interface SelectedRoomItem {
+  roomId?: string;
+  roomName?: string;
+  qty?: number;
+  price?: number;
+}
+
 export interface CartItem {
   listingId?: string;
   title: string;
+  variantName?: string;
   travelDate?: string;
+  travelDateEnd?: string;
+  travelDateRaw?: string;
   travelCount?: number;
   price: number;
   baseCurrency?: string;
+  selectedRooms?: SelectedRoomItem[];
 }
 
 interface Booking {
@@ -52,6 +63,8 @@ interface Booking {
   type: string;
   listing: string;
   vendor: string;
+  vendorEmail?: string;
+  vendorRole?: string;
   travelDate: string;
   checkIn?: string;
   checkOut?: string;
@@ -169,7 +182,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
     if (booking.bookingStatus === "confirmed" || booking.bookingStatus === "completed") {
       events.push({
         action: "Vendor Confirmed & Room Unit Allocated",
-        user: booking.vendor !== "—" ? booking.vendor : "Property Vendor",
+        user: booking.vendor !== "—" ? `${booking.vendor}${booking.vendorEmail ? ` (${booking.vendorEmail})` : ''}` : "Property Vendor",
         timestamp: notifFormatted,
         status: "completed",
       });
@@ -182,14 +195,14 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
     } else if (booking.bookingStatus === "cancelled" || booking.bookingStatus === "rejected") {
       events.push({
         action: "Inquiry Cancelled / Declined",
-        user: booking.vendor !== "—" ? booking.vendor : "Vendor",
+        user: booking.vendor !== "—" ? `${booking.vendor}${booking.vendorEmail ? ` (${booking.vendorEmail})` : ''}` : "Vendor",
         timestamp: notifFormatted,
         status: "cancelled",
       });
     } else {
       events.push({
         action: "Awaiting Vendor Acceptance & Confirmation",
-        user: booking.vendor !== "—" ? booking.vendor : "Property Vendor",
+        user: booking.vendor !== "—" ? `${booking.vendor}${booking.vendorEmail ? ` (${booking.vendorEmail})` : ''}` : "Property Vendor",
         timestamp: "Pending Action",
         status: "pending",
       });
@@ -372,17 +385,34 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
                   Vendor / Operator
                 </p>
-                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
                   {booking.vendor}
                 </p>
+                {booking.vendorEmail && (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-blue-600 font-medium">
+                      {booking.vendorEmail}
+                    </span>
+                    {booking.vendorRole && (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                        {booking.vendorRole}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  Travel Date
+                  {booking.type === "Stay" ? "Check-In / Out Dates" : "Travel Date"}
                 </p>
                 <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
                   {booking.travelDate}
                 </p>
+                {booking.checkIn && booking.checkOut && (
+                  <p className="text-[11px] mt-0.5 text-emerald-600 font-semibold">
+                    In: {booking.checkIn.includes("T") ? booking.checkIn.split("T")[0] : booking.checkIn} | Out: {booking.checkOut.includes("T") ? booking.checkOut.split("T")[0] : booking.checkOut}
+                  </p>
+                )}
               </div>
               {booking.passengers && (
                 <div>
@@ -431,25 +461,43 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                       : `${booking.cartItems.reduce((sum, item) => sum + (item.travelCount || 1), 0)} Room(s) Reserved`}
                   </span>
                 </div>
-                <div className="space-y-2">
-                  {booking.cartItems.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900 flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-black">
-                            {item.travelCount || 1}x Unit{(item.travelCount || 1) !== 1 ? "s" : ""}
-                          </span>
-                          {item.title}
+                <div className="space-y-3">
+                  {booking.cartItems.map((item, idx) => {
+                    const cleanDate = (item.travelDate || booking.travelDate || "").replace(/T00:00:00/g, "").replace(/T09:00:00/g, "");
+                    const hasRooms = item.selectedRooms && item.selectedRooms.length > 0;
+                    return (
+                      <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                              {item.travelCount || 1}x {booking.type === "Stay" ? "Room Unit" : "Unit"}{(item.travelCount || 1) !== 1 ? "s" : ""}
+                            </span>
+                            {item.title}
+                          </div>
+                          <span className="font-extrabold text-slate-900 text-sm">${item.price}</span>
                         </div>
-                        <p className="text-slate-500 text-[11px] mt-1">
-                          Travel Date: {item.travelDate || booking.travelDate}
+                        <p className="text-slate-500 text-[11px]">
+                          Travel Date: {cleanDate}
                         </p>
+                        {hasRooms && (
+                          <div className="space-y-1.5 mt-2.5 pt-2 border-t border-slate-200/80">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Allocated Room Breakdown</p>
+                            {item.selectedRooms!.map((sr, sIdx) => (
+                              <div key={sIdx} className="flex items-center justify-between pl-2.5 border-l-2 border-emerald-500 py-1 text-xs bg-white rounded-r-lg px-2 shadow-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[10px] font-black">{sr.qty}x</span>
+                                  <span className="font-bold text-slate-800">{sr.roomName || "Room"}</span>
+                                </div>
+                                {sr.price !== undefined && sr.price > 0 && (
+                                  <span className="text-slate-600 font-semibold text-[11px]">${sr.price}/night</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <span className="font-extrabold text-slate-900 text-sm">${item.price}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

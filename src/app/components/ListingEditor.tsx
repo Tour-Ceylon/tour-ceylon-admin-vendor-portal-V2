@@ -394,7 +394,7 @@ function hydrateGeneralListingDraft(listingData: any) {
     isDefault: v.is_default ?? (index === 0),
   }));
 
-  const safariDet = listingData.safari_detail || {};
+  const safariDet = listingData.safari_detail || listingData.safariDetail || {};
   const safariPackages = (safariDet.jeep_packages && safariDet.jeep_packages.length > 0)
     ? safariDet.jeep_packages
     : variants.map((v, idx) => {
@@ -419,10 +419,10 @@ function hydrateGeneralListingDraft(listingData: any) {
       };
     });
 
-  const tourDet = listingData.tour_detail || {};
-  const actDet = listingData.activity_detail || {};
-  const transDet = listingData.transfer_detail || {};
-  const hotelDet = listingData.hotel_detail || {};
+  const tourDet = listingData.tour_detail || listingData.tourDetail || {};
+  const actDet = listingData.activity_detail || listingData.activityDetail || {};
+  const transDet = listingData.transfer_detail || listingData.transferDetail || {};
+  const hotelDet = listingData.hotel_detail || listingData.hotelDetail || {};
 
   return {
     category,
@@ -458,31 +458,41 @@ function hydrateGeneralListingDraft(listingData: any) {
       wildlifeHighlights: safariDet.wildlife_highlights || safariDet.wildlifeHighlights || ["Sri Lankan Leopard", "Asian Elephant", "Sloth Bear"],
       safariPackages,
       // Tour specific hydration
-      durationDays: tourDet.duration_days != null ? String(tourDet.duration_days) : "1",
-      routeSummary: tourDet.route_summary || "",
-      meetingPoint: tourDet.meeting_point || "",
-      categoryId: tourDet.category_id || tourDet.categoryId || "",
+      durationDays: (tourDet.duration_days != null ? String(tourDet.duration_days) : tourDet.durationDays != null ? String(tourDet.durationDays) : "1"),
+      routeSummary: tourDet.route_summary || tourDet.routeSummary || "",
+      meetingPoint: tourDet.meeting_point || tourDet.meetingPoint || "",
+      categoryId: tourDet.category_id || tourDet.categoryId || "honeymoon",
       additionalCategories: tourDet.additional_categories || tourDet.additionalCategories || [],
       itinerary: tourDet.itinerary || [],
-      itineraryHighlights: tourDet.itinerary_highlights || tourDet.itineraryHighlights || [],
-      pickupAvailable: tourDet.pickup_available ?? false,
-      dropoffAvailable: tourDet.dropoff_available ?? false,
-      childPolicy: tourDet.child_policy || "",
-      dropoffNotes: tourDet.dropoff_notes || "",
+      itineraryHighlights: tourDet.itinerary_highlights || tourDet.itineraryHighlights || listingData.highlights || [],
+      signatureDestinations: (tourDet.signature_destinations && tourDet.signature_destinations.length > 0)
+        ? tourDet.signature_destinations
+        : (tourDet.signatureDestinations && tourDet.signatureDestinations.length > 0)
+          ? tourDet.signatureDestinations
+          : (tourDet.route_summary || tourDet.routeSummary || "")
+            ? (tourDet.route_summary || tourDet.routeSummary)
+                .split(/\s*[\u2022•\uFFFD\->|]\s*/)
+                .map((s: string) => s.trim())
+                .filter(Boolean)
+            : [],
+      pickupAvailable: tourDet.pickup_available ?? tourDet.pickupAvailable ?? false,
+      dropoffAvailable: tourDet.dropoff_available ?? tourDet.dropoffAvailable ?? false,
+      childPolicy: tourDet.child_policy || tourDet.childPolicy || "",
+      dropoffNotes: tourDet.dropoff_notes || tourDet.dropoffNotes || "",
       // Shared hydration (safari, tour, activity)
-      difficultyLevel: tourDet.difficulty_level || safariDet.difficulty_level || safariDet.difficultyLevel || "Easy",
-      minGroupSize: tourDet.group_size_min != null ? String(tourDet.group_size_min) : safariDet.group_size_min != null ? String(safariDet.group_size_min) : "1",
-      maxGroupSize: tourDet.group_size_max != null ? String(tourDet.group_size_max) : safariDet.group_size_max != null ? String(safariDet.group_size_max) : "15",
-      startTime: tourDet.start_time || safariDet.start_time || safariDet.startTime || "09:00",
-      endTime: tourDet.end_time || safariDet.end_time || safariDet.endTime || "13:00",
-      privateAvailable: tourDet.private_available ?? safariDet.private_available ?? safariDet.privateAvailable ?? false,
-      includedItems: tourDet.included_items || safariDet.included_items || safariDet.includedItems || ["Experienced guide", "4WD jeep"],
-      excludedItems: tourDet.excluded_items || safariDet.excluded_items || safariDet.excludedItems || ["Tips"],
-      languages: tourDet.languages || safariDet.languages || ["English", "Sinhala"],
-      whatToBring: tourDet.what_to_bring || safariDet.what_to_bring || safariDet.whatToBring || ["Binoculars", "Sunscreen"],
-      pickupNotes: tourDet.pickup_notes || safariDet.pickup_notes || safariDet.pickupNotes || "",
-      cancellationPolicy: tourDet.cancellation_policy || safariDet.cancellation_policy || safariDet.cancellationPolicy || "",
-      accessibilityInfo: tourDet.accessibility_info || safariDet.accessibility_info || safariDet.accessibilityInfo || "",
+      difficultyLevel: tourDet.difficulty_level || tourDet.difficultyLevel || safariDet.difficulty_level || safariDet.difficultyLevel || "Couple Friendly",
+      minGroupSize: tourDet.group_size_min != null ? String(tourDet.group_size_min) : tourDet.groupSizeMin != null ? String(tourDet.groupSizeMin) : safariDet.group_size_min != null ? String(safariDet.group_size_min) : "1",
+      maxGroupSize: tourDet.group_size_max != null ? String(tourDet.group_size_max) : tourDet.groupSizeMax != null ? String(tourDet.groupSizeMax) : safariDet.group_size_max != null ? String(safariDet.group_size_max) : "15",
+      startTime: tourDet.start_time || tourDet.startTime || safariDet.start_time || safariDet.startTime || "09:00",
+      endTime: tourDet.end_time || tourDet.endTime || safariDet.end_time || safariDet.endTime || "13:00",
+      privateAvailable: tourDet.private_available ?? tourDet.privateAvailable ?? safariDet.private_available ?? false,
+      includedItems: tourDet.included_items || tourDet.includedItems || safariDet.included_items || safariDet.includedItems || [],
+      excludedItems: tourDet.excluded_items || tourDet.excludedItems || safariDet.excluded_items || safariDet.excludedItems || [],
+      languages: tourDet.languages || safariDet.languages || ["English"],
+      whatToBring: tourDet.what_to_bring || tourDet.whatToBring || safariDet.what_to_bring || safariDet.whatToBring || [],
+      pickupNotes: tourDet.pickup_notes || tourDet.pickupNotes || safariDet.pickup_notes || safariDet.pickupNotes || "",
+      cancellationPolicy: tourDet.cancellation_policy || tourDet.cancellationPolicy || safariDet.cancellation_policy || safariDet.cancellationPolicy || "",
+      accessibilityInfo: tourDet.accessibility_info || tourDet.accessibilityInfo || safariDet.accessibility_info || safariDet.accessibilityInfo || "",
       // Activity details hydration
       activityType: actDet.activity_type || "",
       // Transfer details hydration
@@ -510,9 +520,11 @@ function normalizeSafariTypeEnum(val?: string): "morning" | "evening" | "full_da
   return "private";
 }
 
-function toOptionalNumber(value: string) {
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
+function toOptionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const str = String(value).trim();
+  if (!str) return undefined;
+  const parsed = Number(str);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
@@ -1828,7 +1840,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   const { effectiveUser } = useAuth();
   const isAdmin = effectiveUser?.role === "admin";
   const listingId = params.id || null;
-  const [category, setCategory] = useState<Category | null>(() => (mode === "create" ? null : "Stay"));
+  const [category, setCategory] = useState<Category | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("basic");
   const [title, setTitle] = useState("");
   const [active, setActive] = useState(true);
@@ -1856,6 +1868,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editLoading, setEditLoading] = useState(mode === "edit");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1911,33 +1924,49 @@ export function ListingEditor({ mode }: ListingEditorProps) {
       }
 
       setEditLoading(true);
-      setEditError(null);
+      setLoadError(null);
       try {
         let hydrated: any = null;
 
-        // 1. First, try to fetch as a StayProperty. This is crucial for stays because it contains detailed room structures.
+        // 1. Fetch generic/admin listing data to determine category accurately without spurious stay 404s
+        let listingData: any = null;
         try {
-          const property = await apiFetch<StayPropertyResponse>(`/vendor/stays/${listingId}`);
-          if (property) {
-            hydrated = hydrateStayDraft(property);
-          }
+          listingData = await apiFetch<any>(`/admin/listings/${listingId}`);
         } catch {
-          // Ignore (might not be a stay listing or not found)
+          try {
+            listingData = await apiFetch<any>(`/listings/${listingId}`);
+          } catch {
+            // will check stay endpoint below
+          }
         }
 
-        // 2. Fallback to admin endpoint for other listing types
-        if (!hydrated) {
+        const rawType = String(
+          listingData?.category ||
+          listingData?.listing_type ||
+          listingData?.listingType ||
+          ""
+        ).toLowerCase();
+
+        const isStay = !listingData || rawType === "hotel" || rawType === "stay";
+
+        // 2. Only if it is a stay (or if unknown), attempt StayProperty fetch for room structures
+        if (isStay) {
           try {
-            const adminData = await apiFetch<any>(`/admin/listings/${listingId}`);
-            if (adminData) {
-              hydrated = hydrateGeneralListingDraft(adminData);
+            const property = await apiFetch<StayPropertyResponse>(`/vendor/stays/${listingId}`);
+            if (property) {
+              hydrated = hydrateStayDraft(property);
             }
           } catch {
-            // Ignore 404/403
+            // Ignore (might not be a stay property or not found)
           }
         }
 
-        // 3. Fallback to public endpoint
+        // 3. If not hydrated by stay property, hydrate from general listing data
+        if (!hydrated && listingData) {
+          hydrated = hydrateGeneralListingDraft(listingData);
+        }
+
+        // 4. Fallback to public endpoint if not already tried
         if (!hydrated) {
           try {
             const generalData = await apiFetch<any>(`/listings/${listingId}`);
@@ -1965,7 +1994,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
         useListingDraftStore.getState().setDraft(hydrated);
       } catch (error: any) {
         if (cancelled) return;
-        setEditError(error?.message || "Unable to load this listing.");
+        setLoadError(error?.message || "Unable to load this listing.");
       } finally {
         if (!cancelled) setEditLoading(false);
       }
@@ -2018,7 +2047,7 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     setEditError(null);
     setSaveSuccess(false);
     try {
-      const currentCategory = category ?? "Safari";
+      const currentCategory = category || useListingDraftStore.getState().category || "Safari";
       const catLower = currentCategory.toLowerCase();
 
       let destinationId: string | undefined = undefined;
@@ -2173,17 +2202,34 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             }
           }
         } else if (catLower === "tour") {
+          const tourItinerary = Array.isArray(draftCatData.itinerary) ? draftCatData.itinerary : [];
+          const computedDuration = Number(draftCatData.durationDays) || (tourItinerary.length > 0 ? tourItinerary.length : 1);
+
           payload.tourDetail = {
-            durationDays: 1,
-            routeSummary: destination || "Scenic Tour Route",
-            meetingPoint: destination || "City Center",
-            categoryId: "adventure",
-            additionalCategories: [],
-            itinerary: [],
-            itineraryHighlights: ["Scenic Views"],
-            includedItems: ["Guide"],
-            excludedItems: ["Personal Expenses"],
-            languages: ["English"],
+            durationDays: computedDuration,
+            routeSummary: draftCatData.routeSummary || destination || "Scenic Tour Route",
+            meetingPoint: draftCatData.meetingPoint || destination || "Bandaranaike International Airport (CMB)",
+            categoryId: draftCatData.categoryId || "honeymoon",
+            additionalCategories: Array.isArray(draftCatData.additionalCategories) ? draftCatData.additionalCategories : [],
+            itinerary: tourItinerary,
+            itineraryHighlights: Array.isArray(draftCatData.itineraryHighlights) ? draftCatData.itineraryHighlights : [],
+            includedItems: Array.isArray(draftCatData.includedItems) ? draftCatData.includedItems : [],
+            excludedItems: Array.isArray(draftCatData.excludedItems) ? draftCatData.excludedItems : [],
+            languages: Array.isArray(draftCatData.languages) && draftCatData.languages.length > 0 ? draftCatData.languages : ["English"],
+            difficultyLevel: draftCatData.difficultyLevel || "Couple Friendly",
+            groupSizeMin: Number(draftCatData.minGroupSize) || 1,
+            groupSizeMax: Number(draftCatData.maxGroupSize) || 15,
+            startTime: draftCatData.startTime || "09:00",
+            endTime: draftCatData.endTime || "13:00",
+            privateAvailable: Boolean(draftCatData.privateAvailable),
+            pickupAvailable: Boolean(draftCatData.pickupAvailable),
+            dropoffAvailable: Boolean(draftCatData.dropoffAvailable),
+            pickupNotes: draftCatData.pickupNotes || "",
+            dropoffNotes: draftCatData.dropoffNotes || "",
+            childPolicy: draftCatData.childPolicy || "",
+            whatToBring: Array.isArray(draftCatData.whatToBring) ? draftCatData.whatToBring : [],
+            cancellationPolicy: draftCatData.cancellationPolicy || "",
+            accessibilityInfo: draftCatData.accessibilityInfo || "",
           };
           if (variants && variants.length > 0) {
             let foundDefault = false;
@@ -2325,11 +2371,11 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     );
   }
 
-  if (mode === "edit" && editError) {
+  if (mode === "edit" && loadError) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="rounded-xl px-4 py-3 text-[13px]" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
-          {editError}
+          {loadError}
         </div>
       </div>
     );
@@ -2720,6 +2766,19 @@ export function ListingEditor({ mode }: ListingEditorProps) {
           <StatusPanel mode={mode} active={active} category={resolvedCategory} />
         </div>
       </div>
+
+      {saveSuccess && (
+        <div className="px-6 py-2 bg-emerald-500/10 border-t border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center justify-between">
+          <span>✓ All changes saved successfully!</span>
+          <button onClick={() => setSaveSuccess(false)} className="text-emerald-400 hover:underline">Dismiss</button>
+        </div>
+      )}
+      {editError && (
+        <div className="px-6 py-2 bg-rose-500/10 border-t border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center justify-between">
+          <span>⚠️ {editError}</span>
+          <button onClick={() => setEditError(null)} className="text-rose-400 hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {/* Sticky bottom save bar */}
       <div
