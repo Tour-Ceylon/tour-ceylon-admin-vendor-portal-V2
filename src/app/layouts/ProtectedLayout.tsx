@@ -195,7 +195,47 @@ export function ProtectedLayout() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 6. Vendor Route Authorization Guard
+  // 6. Stay Vendor Experience Handling
+  // Approved stay vendors operate in their dedicated StayVendorLayout (/hotel/*)
+  const isStayVendor =
+    effectiveUser?.role === "vendor" &&
+    (effectiveUser?.approvedCategories?.includes("Stay") ||
+      (effectiveUser?.approvedCategories?.length === 0));
+
+  if (isStayVendor) {
+    // If a stay vendor accesses root, general dashboard, or general vendor business center, route to stay hotel dashboard
+    if (
+      location.pathname === "/" ||
+      location.pathname === "/dashboard" ||
+      location.pathname.startsWith("/vendor/") ||
+      location.pathname === "/vendor"
+    ) {
+      return <Navigate to="/hotel/dashboard" replace />;
+    }
+
+    // Direct listings requests to hotel-scoped routes so they stay inside the StayVendorLayout
+    if (location.pathname === "/listings") {
+      return <Navigate to="/hotel/listings?category=stay" replace />;
+    }
+    if (location.pathname === "/listings/create") {
+      return <Navigate to="/hotel/listings/create" replace />;
+    }
+    if (location.pathname.startsWith("/listings/") && location.pathname.endsWith("/manage")) {
+      const parts = location.pathname.split("/");
+      return <Navigate to={`/hotel/listings/${parts[2]}/manage`} replace />;
+    }
+    if (location.pathname.startsWith("/listings/") && location.pathname.endsWith("/edit")) {
+      const parts = location.pathname.split("/");
+      return <Navigate to={`/hotel/listings/${parts[2]}/edit`} replace />;
+    }
+  }
+
+  // Hotel operations routes render in the dedicated StayVendorLayout
+  if (location.pathname.startsWith("/hotel")) {
+    return <Outlet />;
+  }
+
+  // 7. Vendor Route Authorization Guard
   // Prevent vendors from navigating to admin-only pages
   const isAdminPath =
     location.pathname.startsWith("/users") ||
@@ -220,7 +260,7 @@ export function ProtectedLayout() {
 
   if (effectiveUser?.role === "vendor" && isAdminPath) {
     console.warn(`Vendor unauthorized for admin path: ${location.pathname}`);
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={isStayVendor ? "/hotel/dashboard" : "/dashboard"} replace />;
   }
 
   return (

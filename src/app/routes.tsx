@@ -154,6 +154,7 @@ export const router = createBrowserRouter([
             path: "hotel",
             Component: HotelOperationsLayout,
             children: [
+              { index: true, Component: () => <Navigate to="/hotel/dashboard" replace /> },
               { path: "dashboard", Component: HotelDashboard },
               { path: "availability", Component: AvailabilityCalendar },
               { path: "rooms", Component: RoomInventory },
@@ -161,6 +162,10 @@ export const router = createBrowserRouter([
               { path: "pricing", Component: SeasonalPricing },
               { path: "settings", Component: PropertySettings },
               { path: "policies", Component: Policies },
+              { path: "listings", Component: ListingsPage },
+              { path: "listings/create", Component: () => <ListingEditor mode="create" /> },
+              { path: "listings/:id/edit", Component: () => <ListingEditor mode="edit" /> },
+              { path: "listings/:id/manage", Component: SingleListingManager },
             ],
           },
 
