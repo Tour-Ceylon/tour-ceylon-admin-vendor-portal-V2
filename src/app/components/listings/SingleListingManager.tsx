@@ -22,6 +22,11 @@ import {
     releaseSafariBlock,
 } from "../api/safariVendorApi";
 import {
+    listListingBlocks,
+    createListingBlock,
+    releaseListingBlock,
+} from "../api/listingBlocksApi";
+import {
     ArrowLeft,
     BedDouble,
     CalendarDays,
@@ -156,13 +161,36 @@ function SafariListingManager({
     const [statusFilter, setStatusFilter] = useState<BookingStatusFilter>("ALL");
     const [selectedSlot, setSelectedSlot] = useState<"ALL" | "Morning" | "Afternoon" | "Full Day">("ALL");
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const [blackoutDates, setBlackoutDates] = useState<Record<string, string>>({
-        "2026-09-12": "Park Maintenance Blackout",
-        "2026-09-20": "Heavy Monsoon Rain Closure",
-    });
     const [showBlockModal, setShowBlockModal] = useState(false);
     const [blockReason, setBlockReason] = useState("");
-    const [blockDateStr, setBlockDateStr] = useState("");
+    const [blockStartDateStr, setBlockStartDateStr] = useState("");
+    const [blockEndDateStr, setBlockEndDateStr] = useState("");
+    const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
+    
+    const [safariBookings, setSafariBookings] = useState<any[]>([]);
+    const [safariBlocks, setSafariBlocks] = useState<any[]>([]);
+    const [loadingData, setLoadingData] = useState(true);
+    const [submittingBlock, setSubmittingBlock] = useState(false);
+
+    useEffect(() => {
+        if (!listingId) return;
+        let cancelled = false;
+        setLoadingData(true);
+        const startStr = formatIsoDate(startOfMonth(monthDate));
+        const endStr = formatIsoDate(endOfMonth(monthDate));
+        
+        Promise.all([
+            apiFetch(`/bookings/listing/${listingId}`).catch(() => ({ bookings: [] })),
+            listSafariBlocks(listingId, startStr, endStr).catch(() => ({ blocks: [] }))
+        ]).then(([bookingsRes, blocksRes]) => {
+            if (cancelled) return;
+            setSafariBookings(Array.isArray(bookingsRes) ? bookingsRes : (bookingsRes.bookings || []));
+            setSafariBlocks(blocksRes.blocks || []);
+        }).finally(() => {
+            if (!cancelled) setLoadingData(false);
+        });
+        return () => { cancelled = true; };
+    }, [listingId, monthDate]);
 
     const realVariants = listing?.variants || listing?.safariDetail?.variants || [];
     const rawPackages = listing?.safariDetail?.jeep_packages || listing?.categoryData?.safariPackages || [];
@@ -212,47 +240,7 @@ function SafariListingManager({
         "Painted Stork",
     ];
 
-    const [safariBookings, setSafariBookings] = useState([
-        {
-            id: "BK-SAF-101",
-            guestName: "Alexander Wright",
-            email: "alex.wright@example.com",
-            phone: "+1 555-0192",
-            package: "Morning Private 4x4 Jeep",
-            slot: "Morning (06:00 AM)",
-            date: "2026-09-06",
-            passengers: 4,
-            price: "$150 USD",
-            paymentMethod: "Pay at Property",
-            status: "CONFIRMED",
-        },
-        {
-            id: "BK-SAF-102",
-            guestName: "Elena Rostova",
-            email: "elena.r@example.com",
-            phone: "+44 7700 900077",
-            package: "VIP Full Day Expedition Jeep",
-            slot: "Full Day (06:00 AM)",
-            date: "2026-09-08",
-            passengers: 2,
-            price: "$280 USD",
-            paymentMethod: "Full Online Payment",
-            status: "PENDING",
-        },
-        {
-            id: "BK-SAF-103",
-            guestName: "Marcus Vance",
-            email: "marcus.v@example.com",
-            phone: "+61 400 123 456",
-            package: "Afternoon Private 4x4 Jeep",
-            slot: "Afternoon (02:30 PM)",
-            date: "2026-09-10",
-            passengers: 6,
-            price: "$140 USD",
-            paymentMethod: "Pay at Property",
-            status: "CONFIRMED",
-        },
-    ]);
+
 
     const counts = useMemo(() => {
         let pending = 0;
@@ -269,25 +257,54 @@ function SafariListingManager({
     const filteredBookings = useMemo(() => {
         return safariBookings.filter((b) => {
             if (statusFilter !== "ALL" && b.status !== statusFilter) return false;
-            if (selectedSlot !== "ALL" && !b.slot.startsWith(selectedSlot)) return false;
+            if (selectedSlot !== "ALL" && b.slot && !b.slot.toLowerCase().startsWith(selectedSlot.toLowerCase())) return false;
+            if (selectedDate) {
+                const bDate = String(b.date || b.travel_date || "");
+                if (bDate !== selectedDate && !bDate.startsWith(selectedDate)) return false;
+            }
             return true;
         });
-    }, [safariBookings, statusFilter, selectedSlot]);
+    }, [safariBookings, statusFilter, selectedSlot, selectedDate]);
 
-    const handleAddBlackout = () => {
-        if (!blockDateStr) return;
-        setBlackoutDates((prev) => ({ ...prev, [blockDateStr]: blockReason || "Vendor Blackout" }));
-        setShowBlockModal(false);
-        setBlockReason("");
-        setBlockDateStr("");
+    const handleAddBlackout = async () => {
+        if (!blockStartDateStr || !blockEndDateStr || !listingId) return;
+        setSubmittingBlock(true);
+        try {
+            await createSafariBlock(listingId, {
+                variantIds: selectedVariantIds,
+                startDate: blockStartDateStr,
+                endDate: blockEndDateStr,
+                reason: blockReason || "Vendor Blackout",
+                blockType: "vendor_manual"
+            });
+            setShowBlockModal(false);
+            setBlockReason("");
+            setBlockStartDateStr("");
+            setBlockEndDateStr("");
+            setSelectedVariantIds([]);
+            
+            const startStr = formatIsoDate(startOfMonth(monthDate));
+            const endStr = formatIsoDate(endOfMonth(monthDate));
+            const blocksRes = await listSafariBlocks(listingId, startStr, endStr).catch(() => ({ blocks: [] }));
+            setSafariBlocks(blocksRes.blocks || []);
+        } catch (err) {
+            console.error(err);
+            alert("Failed to create blackout");
+        } finally {
+            setSubmittingBlock(false);
+        }
     };
 
-    const handleRemoveBlackout = (dateKey: string) => {
-        setBlackoutDates((prev) => {
-            const next = { ...prev };
-            delete next[dateKey];
-            return next;
-        });
+    const handleRemoveBlackout = async (blockId: string) => {
+        if (!listingId) return;
+        if (!window.confirm("Are you sure you want to release this blackout?")) return;
+        try {
+            await releaseSafariBlock(listingId, blockId);
+            setSafariBlocks((prev) => prev.filter(b => b.id !== blockId));
+        } catch (err) {
+            console.error(err);
+            alert("Failed to release blackout");
+        }
     };
 
     const monthLabel = monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -589,20 +606,39 @@ function SafariListingManager({
                             if (!dateVal) return <div key={`empty-${idx}`} className="aspect-square" />;
 
                             const iso = formatIsoDate(dateVal);
-                            const blackoutReason = blackoutDates[iso];
+                            const activeBlock = safariBlocks.find((b: any) => {
+                                const s = String(b.start_date || b.startDate || "");
+                                const e = String(b.end_date || b.endDate || "");
+                                return iso >= s && iso <= e;
+                            });
+                            const blackoutReason = activeBlock ? (activeBlock.reason || "Blocked") : null;
+                            const dayBookings = safariBookings.filter((b: any) => {
+                                const bDate = String(b.date || b.travel_date || "");
+                                return bDate === iso || bDate.startsWith(iso);
+                            });
+                            const hasBookings = dayBookings.length > 0;
+                            const bookedPassengers = dayBookings.reduce((sum: number, b: any) => sum + (Number(b.passengers) || 1), 0);
                             const isSelected = selectedDate === iso;
 
                             return (
                                 <button
                                     key={iso}
-                                    onClick={() => setSelectedDate(iso)}
+                                    onClick={() => setSelectedDate(curr => curr === iso ? null : iso)}
                                     className="aspect-square rounded-xl p-2 text-left flex flex-col justify-between transition-all relative overflow-hidden"
                                     style={{
-                                        background: blackoutReason ? "rgba(100,116,139,0.15)" : "rgba(34,197,94,0.06)",
+                                        background: isSelected
+                                            ? "var(--active-overlay)"
+                                            : blackoutReason
+                                            ? "rgba(100,116,139,0.15)"
+                                            : hasBookings
+                                            ? "rgba(56,189,248,0.1)"
+                                            : "rgba(34,197,94,0.06)",
                                         border: isSelected
                                             ? "2px solid var(--accent-navy)"
                                             : blackoutReason
                                             ? "1px solid rgba(100,116,139,0.3)"
+                                            : hasBookings
+                                            ? "1px solid rgba(56,189,248,0.35)"
                                             : "1px solid rgba(34,197,94,0.2)",
                                     }}
                                 >
@@ -610,15 +646,29 @@ function SafariListingManager({
                                         <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
                                             {dateVal.getDate()}
                                         </span>
-                                        {blackoutReason && <Lock size={10} style={{ color: "#94a3b8" }} />}
+                                        {blackoutReason ? (
+                                            <Lock size={10} style={{ color: "#94a3b8" }} />
+                                        ) : hasBookings ? (
+                                            <span className="w-2 h-2 rounded-full bg-sky-400" />
+                                        ) : null}
                                     </div>
 
                                     <div>
-                                        <div className="text-[11px] font-bold" style={{ color: blackoutReason ? "#94a3b8" : "#4ade80" }}>
-                                            {blackoutReason ? "Blocked" : "Available"}
+                                        <div
+                                            className="text-[11px] font-bold"
+                                            style={{ color: blackoutReason ? "#94a3b8" : hasBookings ? "#38bdf8" : "#4ade80" }}
+                                        >
+                                            {blackoutReason ? "Blocked" : hasBookings ? `${dayBookings.length} Booked` : "Available"}
                                         </div>
-                                        <div className="text-[9px] truncate opacity-80" style={{ color: blackoutReason ? "#94a3b8" : "#4ade80" }}>
-                                            {blackoutReason ? blackoutReason.slice(0, 12) + "..." : "Jeep Slots Open"}
+                                        <div
+                                            className="text-[9px] truncate opacity-80"
+                                            style={{ color: blackoutReason ? "#94a3b8" : hasBookings ? "#38bdf8" : "#4ade80" }}
+                                        >
+                                            {blackoutReason
+                                                ? blackoutReason.slice(0, 12) + "..."
+                                                : hasBookings
+                                                ? `${bookedPassengers} Passengers`
+                                                : "Jeep Slots Open"}
                                         </div>
                                     </div>
                                 </button>
@@ -629,27 +679,29 @@ function SafariListingManager({
                     {/* Active Blackouts List */}
                     <div className="mt-4 pt-4 border-t border-slate-700/30">
                         <h4 className="text-[12px] font-bold mb-2" style={{ color: "var(--text-primary)" }}>Active Date & Slot Blackouts</h4>
-                        {Object.keys(blackoutDates).length === 0 ? (
+                        {safariBlocks.length === 0 ? (
                             <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>No manual blackout dates set.</p>
                         ) : (
                             <div className="flex flex-wrap gap-2">
-                                {Object.entries(blackoutDates).map(([dStr, rNote]) => (
+                                {safariBlocks.map((blk) => {
+                                    const variantName = safariPackages.find((p: any) => p.id === blk.variant_id)?.name;
+                                    return (
                                     <div
-                                        key={dStr}
+                                        key={blk.id}
                                         className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-2"
                                         style={{ background: "rgba(100,116,139,0.15)", border: "1px solid rgba(100,116,139,0.3)", color: "#cbd5e1" }}
                                     >
-                                        <span className="font-bold">{dStr}:</span>
-                                        <span>"{rNote}"</span>
+                                        <span className="font-bold">{blk.start_date}{blk.start_date !== blk.end_date ? ` to ${blk.end_date}` : ''}:</span>
+                                        <span>"{blk.reason || "Blocked"}" {variantName ? `(${variantName})` : "(All Packages)"}</span>
                                         <button
-                                            onClick={() => handleRemoveBlackout(dStr)}
+                                            onClick={() => handleRemoveBlackout(blk.id)}
                                             className="text-rose-400 hover:text-rose-300 font-bold ml-1"
                                             title="Unblock date"
                                         >
                                             ✕
                                         </button>
                                     </div>
-                                ))}
+                                )})}
                             </div>
                         )}
                     </div>
@@ -662,9 +714,17 @@ function SafariListingManager({
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
             >
                 <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
-                    <h2 className="text-[15px] font-bold" style={{ color: "var(--text-primary)" }}>
-                        Safari Passenger Reservations ({filteredBookings.length})
-                    </h2>
+                    <div className="flex items-center gap-2.5">
+                        <h2 className="text-[15px] font-bold" style={{ color: "var(--text-primary)" }}>
+                            Safari Passenger Reservations ({filteredBookings.length})
+                        </h2>
+                        {selectedDate && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30 flex items-center gap-1.5">
+                                Date: {selectedDate}
+                                <button onClick={() => setSelectedDate(null)} className="hover:text-white font-bold" title="Clear date filter">✕</button>
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -682,21 +742,28 @@ function SafariListingManager({
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredBookings.map((b) => (
-                                <tr key={b.id} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                            {filteredBookings.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="px-4 py-8 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+                                        No safari reservations found{statusFilter !== "ALL" ? ` for status "${statusFilter}"` : ""}.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredBookings.map((b) => (
+                                <tr key={b.id || b.raw_id} style={{ borderBottom: "1px solid var(--border-light)" }}>
                                     <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>{b.id}</td>
                                     <td className="px-4 py-3">
-                                        <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{b.guestName}</div>
-                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.email}</div>
+                                        <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{b.guestName || b.guest_name}</div>
+                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.email || b.phone}</div>
                                     </td>
-                                    <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>{b.package}</td>
+                                    <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>{b.package || "Safari Game Drive"}</td>
                                     <td className="px-4 py-3">
-                                        <div className="font-semibold text-emerald-400">{b.date}</div>
-                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.slot}</div>
+                                        <div className="font-semibold text-emerald-400">{b.date || b.travel_date}</div>
+                                        <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>{b.slot || "Morning Drive"}</div>
                                     </td>
-                                    <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>{b.passengers} Guests</td>
+                                    <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>{b.passengers || 1} Guests</td>
                                     <td className="px-4 py-3 font-bold text-emerald-400">{b.price}</td>
-                                    <td className="px-4 py-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>{b.paymentMethod}</td>
+                                    <td className="px-4 py-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>{b.paymentMethod || "Online"}</td>
                                     <td className="px-4 py-3">
                                         <span
                                             className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
@@ -712,7 +779,7 @@ function SafariListingManager({
                                         </span>
                                     </td>
                                 </tr>
-                            ))}
+                            )))}
                         </tbody>
                     </table>
                 </div>
@@ -731,14 +798,55 @@ function SafariListingManager({
                         </div>
                         <div className="space-y-3">
                             <div>
-                                <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Select Date</label>
-                                <input
-                                    type="date"
-                                    value={blockDateStr}
-                                    onChange={(e) => setBlockDateStr(e.target.value)}
-                                    className="w-full p-2.5 rounded-lg text-[13px] outline-none"
-                                    style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
-                                />
+                                <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Packages to Block</label>
+                                <div className="max-h-32 overflow-y-auto space-y-1 p-2 rounded-lg" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                                    <label className="flex items-center gap-2 cursor-pointer text-[13px]">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={selectedVariantIds.length === 0}
+                                            onChange={() => setSelectedVariantIds([])}
+                                        />
+                                        All Packages
+                                    </label>
+                                    {safariPackages.map((pkg: any) => (
+                                        <label key={pkg.id} className="flex items-center gap-2 cursor-pointer text-[13px]">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedVariantIds.includes(pkg.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedVariantIds(prev => [...prev, pkg.id]);
+                                                    } else {
+                                                        setSelectedVariantIds(prev => prev.filter(id => id !== pkg.id));
+                                                    }
+                                                }}
+                                            />
+                                            {pkg.name}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={blockStartDateStr}
+                                        onChange={(e) => setBlockStartDateStr(e.target.value)}
+                                        className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>End Date</label>
+                                    <input
+                                        type="date"
+                                        value={blockEndDateStr}
+                                        onChange={(e) => setBlockEndDateStr(e.target.value)}
+                                        className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                    />
+                                </div>
                             </div>
                             <div>
                                 <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Blackout Reason</label>
@@ -755,6 +863,7 @@ function SafariListingManager({
                         <div className="flex items-center justify-end gap-3 pt-2">
                             <button
                                 onClick={() => setShowBlockModal(false)}
+                                disabled={submittingBlock}
                                 className="px-4 py-2 rounded-lg text-[12px]"
                                 style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
                             >
@@ -762,10 +871,613 @@ function SafariListingManager({
                             </button>
                             <button
                                 onClick={handleAddBlackout}
-                                className="px-4 py-2 rounded-lg text-[12px] font-semibold"
+                                disabled={submittingBlock || !blockStartDateStr || !blockEndDateStr}
+                                className="px-4 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50"
                                 style={{ background: "var(--accent-navy)", color: "white" }}
                             >
-                                Apply Blackout
+                                {submittingBlock ? "Applying..." : "Apply Blackout"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * TourListingManager — Handles tour, experience, and transfer listings.
+ * Uses the generic listing blocks API instead of stay-specific endpoints.
+ * Same UI structure as SafariListingManager.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function TourListingManager({
+    listing,
+    listingId,
+    isAdmin,
+    navigate,
+}: {
+    listing: any;
+    listingId: string | undefined;
+    isAdmin: boolean;
+    navigate: (path: string) => void;
+}) {
+    const listingName = listing?.name || listing?.title || "Tour Package";
+    const listingLocation = listing?.address || listing?.city || listing?.destination?.name || "Sri Lanka";
+    const listingStatus = listing?.status || "Active";
+    const listingCategory = listing?.category || listing?.listing_type || listing?.listingType || "tour";
+
+    const [monthDate, setMonthDate] = useState(() => new Date());
+    const [statusFilter, setStatusFilter] = useState<BookingStatusFilter>("ALL");
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [showBlockModal, setShowBlockModal] = useState(false);
+    const [blockReason, setBlockReason] = useState("");
+    const [blockStartDateStr, setBlockStartDateStr] = useState("");
+    const [blockEndDateStr, setBlockEndDateStr] = useState("");
+    const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>([]);
+
+    const [tourBookings, setTourBookings] = useState<any[]>([]);
+    const [tourBlocks, setTourBlocks] = useState<any[]>([]);
+    const [loadingData, setLoadingData] = useState(true);
+    const [submittingBlock, setSubmittingBlock] = useState(false);
+
+    useEffect(() => {
+        if (!listingId) return;
+        let cancelled = false;
+        setLoadingData(true);
+        const startStr = formatIsoDate(startOfMonth(monthDate));
+        const endStr = formatIsoDate(endOfMonth(monthDate));
+
+        Promise.all([
+            apiFetch(`/bookings/listing/${listingId}`).catch(() => ({ bookings: [] })),
+            listListingBlocks(listingId, startStr, endStr).catch(() => ({ blocks: [] })),
+        ]).then(([bookingsRes, blocksRes]) => {
+            if (cancelled) return;
+            setTourBookings(Array.isArray(bookingsRes) ? bookingsRes : (bookingsRes.bookings || []));
+            setTourBlocks(blocksRes.blocks || []);
+        }).finally(() => {
+            if (!cancelled) setLoadingData(false);
+        });
+        return () => { cancelled = true; };
+    }, [listingId, monthDate]);
+
+    const tourVariants = listing?.variants || [];
+
+    const counts = useMemo(() => {
+        let pending = 0;
+        let confirmed = 0;
+        let rejected = 0;
+        for (const b of tourBookings) {
+            const st = String(b.status || "").toUpperCase();
+            if (st === "PENDING" || st === "NEW_REQUEST" || st === "SUBMITTED") pending += 1;
+            else if (st === "CONFIRMED" || st === "APPROVED" || st === "COMPLETED") confirmed += 1;
+            else if (st === "REJECTED" || st === "CANCELLED") rejected += 1;
+        }
+        return { pending, confirmed, rejected, total: tourBookings.length };
+    }, [tourBookings]);
+
+    const filteredBookings = useMemo(() => {
+        return tourBookings.filter((b) => {
+            const st = String(b.status || "").toUpperCase();
+            if (statusFilter === "PENDING" && !(st === "PENDING" || st === "NEW_REQUEST" || st === "SUBMITTED")) return false;
+            if (statusFilter === "CONFIRMED" && !(st === "CONFIRMED" || st === "APPROVED" || st === "COMPLETED")) return false;
+            if (statusFilter === "REJECTED" && !(st === "REJECTED" || st === "CANCELLED")) return false;
+            if (selectedDate) {
+                const bDate = String(b.date || b.travel_date || "");
+                if (bDate !== selectedDate && !bDate.startsWith(selectedDate)) return false;
+            }
+            return true;
+        });
+    }, [tourBookings, statusFilter, selectedDate]);
+
+    const handleAddBlackout = async () => {
+        if (!blockStartDateStr || !blockEndDateStr || !listingId) return;
+        setSubmittingBlock(true);
+        try {
+            await createListingBlock(listingId, {
+                variantIds: selectedVariantIds,
+                startDate: blockStartDateStr,
+                endDate: blockEndDateStr,
+                reason: blockReason || "Vendor Blackout",
+                blockType: "vendor_manual",
+            });
+            setShowBlockModal(false);
+            setBlockReason("");
+            setBlockStartDateStr("");
+            setBlockEndDateStr("");
+            setSelectedVariantIds([]);
+
+            const startStr = formatIsoDate(startOfMonth(monthDate));
+            const endStr = formatIsoDate(endOfMonth(monthDate));
+            const blocksRes = await listListingBlocks(listingId, startStr, endStr).catch(() => ({ blocks: [] }));
+            setTourBlocks(blocksRes.blocks || []);
+        } catch (err) {
+            console.error(err);
+            alert("Failed to create blackout");
+        } finally {
+            setSubmittingBlock(false);
+        }
+    };
+
+    const handleRemoveBlackout = async (blockId: string) => {
+        if (!listingId) return;
+        if (!window.confirm("Are you sure you want to release this blackout?")) return;
+        try {
+            await releaseListingBlock(listingId, blockId);
+            setTourBlocks((prev) => prev.filter((b) => b.id !== blockId));
+        } catch (err) {
+            console.error(err);
+            alert("Failed to release blackout");
+        }
+    };
+
+    const monthLabel = monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const categoryLabel = String(listingCategory).charAt(0).toUpperCase() + String(listingCategory).slice(1);
+
+    return (
+        <div className="p-6 space-y-6">
+            {/* Header & Navigation */}
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <button
+                        onClick={() => navigate("/listings")}
+                        className="inline-flex items-center gap-1.5 text-[12px] mb-2 hover:underline"
+                        style={{ color: "var(--text-secondary)" }}
+                    >
+                        <ArrowLeft size={14} /> Back to All Listings
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-[22px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                            {listingName}
+                        </h1>
+                        <span
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                            style={{ background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)" }}
+                        >
+                            {categoryLabel} Listing
+                        </span>
+                        <span
+                            className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                            style={{ background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)" }}
+                        >
+                            {listingStatus}
+                        </span>
+                    </div>
+                    <p className="text-[12px] flex items-center gap-1.5 mt-1" style={{ color: "var(--text-secondary)" }}>
+                        <MapPin size={13} style={{ color: "var(--accent-navy-light)" }} /> {listingLocation}
+                    </p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => navigate(`/listings/${listingId}/edit`)}
+                        className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
+                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                    >
+                        <Edit3 size={14} /> Edit Listing
+                    </button>
+                </div>
+            </div>
+
+            {/* Booking Metrics Cards */}
+            <div>
+                <h2 className="text-[14px] mb-3 font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Booking Status & Reservations Overview
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button
+                        onClick={() => setStatusFilter("ALL")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "ALL" ? "var(--active-overlay)" : "var(--bg-panel)",
+                            border: statusFilter === "ALL" ? "2px solid var(--accent-navy)" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "var(--text-secondary)" }}>Total Reservations</span>
+                            <Filter size={16} style={{ color: "var(--accent-navy-light)" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "var(--text-primary)" }}>{counts.total}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>All bookings for this listing</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("PENDING")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "PENDING" ? "rgba(245,158,11,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "PENDING" ? "2px solid #f59e0b" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#fbbf24" }}>Pending Requests</span>
+                            <Clock size={16} style={{ color: "#f59e0b" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#fbbf24" }}>{counts.pending}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Awaiting confirmation</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("CONFIRMED")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "CONFIRMED" ? "rgba(34,197,94,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "CONFIRMED" ? "2px solid #22c55e" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#4ade80" }}>Confirmed</span>
+                            <CheckCircle2 size={16} style={{ color: "#22c55e" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#4ade80" }}>{counts.confirmed}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Active & confirmed bookings</p>
+                    </button>
+
+                    <button
+                        onClick={() => setStatusFilter("REJECTED")}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                            background: statusFilter === "REJECTED" ? "rgba(239,68,68,0.1)" : "var(--bg-panel)",
+                            border: statusFilter === "REJECTED" ? "2px solid #ef4444" : "1px solid var(--border-light)",
+                            boxShadow: "var(--shadow-sm)",
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[12px] font-medium" style={{ color: "#f87171" }}>Cancelled / Declined</span>
+                            <XCircle size={16} style={{ color: "#ef4444" }} />
+                        </div>
+                        <div className="text-[24px] font-bold" style={{ color: "#f87171" }}>{counts.rejected}</div>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>Cancelled bookings</p>
+                    </button>
+                </div>
+            </div>
+
+            {/* Availability & Blackout Calendar */}
+            <div
+                className="rounded-xl overflow-hidden"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+            >
+                <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                    <div className="flex items-center gap-3">
+                        <CalendarDays size={18} style={{ color: "#818cf8" }} />
+                        <div>
+                            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                                Availability & Blackout Dates
+                            </h2>
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                                Manage date availability or block dates for this listing
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setShowBlockModal(true)}
+                        className="px-3.5 py-1.5 rounded-lg text-[12px] flex items-center gap-1.5 font-semibold"
+                        style={{ background: "var(--accent-navy)", color: "white", boxShadow: "0 0 10px var(--border-accent)" }}
+                    >
+                        <Lock size={13} /> Block Date Range
+                    </button>
+                </div>
+
+                <div className="p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-[14px] font-bold" style={{ color: "var(--text-primary)" }}>{monthLabel}</h3>
+                        <div className="flex gap-1.5">
+                            <button
+                                onClick={() => setMonthDate((curr) => new Date(curr.getFullYear(), curr.getMonth() - 1, 1))}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+                            >
+                                <ChevronLeft size={15} style={{ color: "var(--text-secondary)" }} />
+                            </button>
+                            <button
+                                onClick={() => setMonthDate(new Date())}
+                                className="px-3 py-1 rounded-lg text-[11px] font-semibold"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                            >
+                                Today
+                            </button>
+                            <button
+                                onClick={() => setMonthDate((curr) => new Date(curr.getFullYear(), curr.getMonth() + 1, 1))}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}
+                            >
+                                <ChevronRight size={15} style={{ color: "var(--text-secondary)" }} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2 mb-2 text-center text-[11px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                            <div key={d}>{d}</div>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-2">
+                        {getMonthDays(monthDate).map((dateVal, idx) => {
+                            if (!dateVal) return <div key={`empty-${idx}`} className="aspect-square" />;
+
+                            const iso = formatIsoDate(dateVal);
+                            const activeBlock = tourBlocks.find((b: any) => {
+                                const s = String(b.start_date || b.startDate || "");
+                                const e = String(b.end_date || b.endDate || "");
+                                return iso >= s && iso <= e;
+                            });
+                            const blackoutReason = activeBlock ? (activeBlock.reason || "Blocked") : null;
+                            const dayBookings = tourBookings.filter((b: any) => {
+                                const bDate = String(b.date || b.travel_date || "");
+                                return bDate === iso || bDate.startsWith(iso);
+                            });
+                            const hasBookings = dayBookings.length > 0;
+                            const bookedGuests = dayBookings.reduce((sum: number, b: any) => sum + (Number(b.passengers) || 1), 0);
+                            const isSelected = selectedDate === iso;
+
+                            return (
+                                <button
+                                    key={iso}
+                                    onClick={() => setSelectedDate(curr => curr === iso ? null : iso)}
+                                    className="aspect-square rounded-xl p-2 text-left flex flex-col justify-between transition-all relative overflow-hidden"
+                                    style={{
+                                        background: isSelected
+                                            ? "var(--active-overlay)"
+                                            : blackoutReason
+                                            ? "rgba(100,116,139,0.15)"
+                                            : hasBookings
+                                            ? "rgba(56,189,248,0.1)"
+                                            : "rgba(34,197,94,0.06)",
+                                        border: isSelected
+                                            ? "2px solid var(--accent-navy)"
+                                            : blackoutReason
+                                            ? "1px solid rgba(100,116,139,0.3)"
+                                            : hasBookings
+                                            ? "1px solid rgba(56,189,248,0.35)"
+                                            : "1px solid rgba(34,197,94,0.2)",
+                                    }}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+                                            {dateVal.getDate()}
+                                        </span>
+                                        {blackoutReason ? (
+                                            <Lock size={10} style={{ color: "#94a3b8" }} />
+                                        ) : hasBookings ? (
+                                            <span className="w-2 h-2 rounded-full bg-sky-400" />
+                                        ) : null}
+                                    </div>
+
+                                    <div>
+                                        <div
+                                            className="text-[11px] font-bold"
+                                            style={{ color: blackoutReason ? "#94a3b8" : hasBookings ? "#38bdf8" : "#4ade80" }}
+                                        >
+                                            {blackoutReason ? "Blocked" : hasBookings ? `${dayBookings.length} Booked` : "Available"}
+                                        </div>
+                                        <div
+                                            className="text-[9px] truncate opacity-80"
+                                            style={{ color: blackoutReason ? "#94a3b8" : hasBookings ? "#38bdf8" : "#4ade80" }}
+                                        >
+                                            {blackoutReason
+                                                ? blackoutReason.slice(0, 12) + "..."
+                                                : hasBookings
+                                                ? `${bookedGuests} Guests`
+                                                : "Open"}
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Active Blackouts List */}
+                    <div className="mt-4 pt-4 border-t border-slate-700/30">
+                        <h4 className="text-[12px] font-bold mb-2" style={{ color: "var(--text-primary)" }}>Active Date Blackouts</h4>
+                        {tourBlocks.length === 0 ? (
+                            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>No blackout dates set.</p>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {tourBlocks.map((blk: any) => {
+                                    const variantName = tourVariants.find((v: any) => v.id === blk.variant_id)?.name;
+                                    return (
+                                        <div
+                                            key={blk.id}
+                                            className="px-3 py-1.5 rounded-lg text-[11px] flex items-center gap-2"
+                                            style={{ background: "rgba(100,116,139,0.15)", border: "1px solid rgba(100,116,139,0.3)", color: "#cbd5e1" }}
+                                        >
+                                            <span className="font-bold">{blk.start_date}{blk.start_date !== blk.end_date ? ` to ${blk.end_date}` : ''}:</span>
+                                            <span>"{blk.reason || "Blocked"}" {variantName ? `(${variantName})` : "(All Variants)"}</span>
+                                            <button
+                                                onClick={() => handleRemoveBlackout(blk.id)}
+                                                className="text-rose-400 hover:text-rose-300 font-bold ml-1"
+                                                title="Unblock date"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Reservations List */}
+            <div
+                className="rounded-xl overflow-hidden"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
+            >
+                <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                    <div className="flex items-center gap-2.5">
+                        <h2 className="text-[15px] font-bold" style={{ color: "var(--text-primary)" }}>
+                            Booking Reservations ({filteredBookings.length})
+                        </h2>
+                        {selectedDate && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30 flex items-center gap-1.5">
+                                Date: {selectedDate}
+                                <button onClick={() => setSelectedDate(null)} className="hover:text-white font-bold" title="Clear date filter">✕</button>
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[12px]">
+                        <thead>
+                            <tr style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border-light)", color: "var(--text-tertiary)" }}>
+                                <th className="px-4 py-3">Booking ID</th>
+                                <th className="px-4 py-3">Guest</th>
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Amount</th>
+                                <th className="px-4 py-3">Payment</th>
+                                <th className="px-4 py-3">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredBookings.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-4 py-8 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+                                        No bookings found{statusFilter !== "ALL" ? ` for status "${statusFilter}"` : ""}.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredBookings.map((b: any) => (
+                                    <tr key={b.id || b.booking_id} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                                        <td className="px-4 py-3 font-bold" style={{ color: "var(--text-primary)" }}>
+                                            {b.booking_id || b.id}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                                                {b.guest_name || b.guestName || "—"}
+                                            </div>
+                                            <div className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                                                {b.guest_email || b.guestEmail || ""}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
+                                            {b.check_in_date || b.start_date || b.travel_date || "—"}
+                                        </td>
+                                        <td className="px-4 py-3 font-bold" style={{ color: "#818cf8" }}>
+                                            {b.total_amount != null ? `$${Number(b.total_amount).toFixed(2)}` : b.total_price ? `$${Number(b.total_price).toFixed(2)}` : "—"}
+                                        </td>
+                                        <td className="px-4 py-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                                            {b.payment_method || b.paymentMethod || "—"}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span
+                                                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                                                style={
+                                                    String(b.status || "").toUpperCase() === "CONFIRMED" || String(b.status || "").toUpperCase() === "COMPLETED"
+                                                        ? { background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)" }
+                                                        : String(b.status || "").toUpperCase() === "PENDING" || String(b.status || "").toUpperCase() === "SUBMITTED"
+                                                        ? { background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.25)" }
+                                                        : { background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" }
+                                                }
+                                            >
+                                                {b.status || "UNKNOWN"}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Blackout Modal */}
+            {showBlockModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div
+                        className="w-full max-w-md rounded-2xl p-6 space-y-4"
+                        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}
+                    >
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-[16px] font-bold" style={{ color: "var(--text-primary)" }}>Block Date Range</h3>
+                            <button onClick={() => setShowBlockModal(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="space-y-3">
+                            {tourVariants.length > 0 && (
+                                <div>
+                                    <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Variants to Block</label>
+                                    <div className="max-h-32 overflow-y-auto space-y-1 p-2 rounded-lg" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+                                        <label className="flex items-center gap-2 cursor-pointer text-[13px]">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedVariantIds.length === 0}
+                                                onChange={() => setSelectedVariantIds([])}
+                                            />
+                                            All Variants
+                                        </label>
+                                        {tourVariants.map((v: any) => (
+                                            <label key={v.id} className="flex items-center gap-2 cursor-pointer text-[13px]">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedVariantIds.includes(v.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedVariantIds((prev) => [...prev, v.id]);
+                                                        } else {
+                                                            setSelectedVariantIds((prev) => prev.filter((id) => id !== v.id));
+                                                        }
+                                                    }}
+                                                />
+                                                {v.name}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex gap-3">
+                                <div className="flex-1">
+                                    <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={blockStartDateStr}
+                                        onChange={(e) => setBlockStartDateStr(e.target.value)}
+                                        className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>End Date</label>
+                                    <input
+                                        type="date"
+                                        value={blockEndDateStr}
+                                        onChange={(e) => setBlockEndDateStr(e.target.value)}
+                                        className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[12px] font-semibold block mb-1" style={{ color: "var(--text-secondary)" }}>Blackout Reason</label>
+                                <input
+                                    type="text"
+                                    value={blockReason}
+                                    onChange={(e) => setBlockReason(e.target.value)}
+                                    placeholder="e.g. Holiday closure, fully booked..."
+                                    className="w-full p-2.5 rounded-lg text-[13px] outline-none"
+                                    style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                onClick={() => setShowBlockModal(false)}
+                                disabled={submittingBlock}
+                                className="px-4 py-2 rounded-lg text-[12px]"
+                                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddBlackout}
+                                disabled={submittingBlock || !blockStartDateStr || !blockEndDateStr}
+                                className="px-4 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+                                style={{ background: "var(--accent-navy)", color: "white" }}
+                            >
+                                {submittingBlock ? "Applying..." : "Apply Blackout"}
                             </button>
                         </div>
                     </div>
@@ -829,28 +1541,97 @@ export function SingleListingManager() {
         };
     }, [listingId, isAdmin]);
 
-    // Fetch inventory & bookings for this property
+    const isSafariCategory =
+        listing?.category?.toLowerCase() === "safari" ||
+        listing?.listing_type?.toLowerCase() === "safari" ||
+        listing?.listingType?.toLowerCase() === "safari" ||
+        Boolean(listing?.safariDetail) ||
+        listingId === "safari-1" ||
+        listingId === "lst_001";
+
+    const isTourCategory =
+        listing?.category?.toLowerCase() === "tour" ||
+        listing?.listing_type?.toLowerCase() === "tour" ||
+        listing?.listingType?.toLowerCase() === "tour" ||
+        Boolean(listing?.tourDetail) ||
+        Boolean(listing?.tour_detail);
+
+    const isExperienceCategory =
+        listing?.category?.toLowerCase() === "experience" ||
+        listing?.listing_type?.toLowerCase() === "experience" ||
+        listing?.listingType?.toLowerCase() === "experience" ||
+        Boolean(listing?.activityDetail) ||
+        Boolean(listing?.activity_detail);
+
+    const isTransferCategory =
+        listing?.category?.toLowerCase() === "transfer" ||
+        listing?.listing_type?.toLowerCase() === "transfer" ||
+        listing?.listingType?.toLowerCase() === "transfer" ||
+        Boolean(listing?.transferDetail) ||
+        Boolean(listing?.transfer_detail);
+
+    // Fetch inventory & bookings for this property (STAYS ONLY)
     useEffect(() => {
         if (!listingId) return;
+        if (loadingListing) return;
+        if (listing && (isSafariCategory || isTourCategory || isExperienceCategory || isTransferCategory)) return;
+        const rawType = (listing?.category || listing?.listing_type || listing?.listingType || "").toLowerCase();
+        if (rawType && rawType !== "hotel" && rawType !== "stay") return;
         let cancelled = false;
 
         async function loadData() {
             try {
                 const prefix = isAdmin ? `/admin/stays` : `/vendor/stays`;
-                const [invRes, bookRes] = await Promise.all([
+                const [invRes, bookRes, inqRes] = await Promise.all([
                     apiFetch<StayInventoryResponse>(`${prefix}/${listingId}/inventory`).catch(() =>
                         getStayInventory(listingId),
                     ),
                     apiFetch<any>(`${prefix}/${listingId}/bookings`).catch(() => listStayBookings(listingId)),
+                    apiFetch<any>(`/bookings/listing/${listingId}`).catch(() => []),
                 ]);
                 if (cancelled) return;
 
                 setError(null);
                 setInventory(invRes);
-                const fetchedBookings = Array.isArray(bookRes.bookings) ? bookRes.bookings : Array.isArray(bookRes) ? bookRes : [];
-                setBookings(fetchedBookings);
 
-                const defaultRoomType = invRes.roomTypes[0]?.id ?? "";
+                const stayBookingsList = Array.isArray(bookRes?.bookings)
+                    ? bookRes.bookings
+                    : Array.isArray(bookRes)
+                    ? bookRes
+                    : [];
+                const inquiriesList = Array.isArray(inqRes)
+                    ? inqRes
+                    : Array.isArray(inqRes?.bookings)
+                    ? inqRes.bookings
+                    : [];
+
+                const combined: any[] = [...stayBookingsList];
+                const existingIds = new Set(
+                    stayBookingsList.map((b: any) => String(b.id || b.bookingId || b.booking_id || "").toLowerCase()),
+                );
+
+                for (const inq of inquiriesList) {
+                    const inqId = String(inq.id || inq.booking_id || inq.raw_id || "").toLowerCase();
+                    if (!existingIds.has(inqId)) {
+                        combined.push({
+                            id: inq.id || inq.booking_id || inq.raw_id,
+                            bookingId: inq.booking_id || inq.id,
+                            propertyId: listingId,
+                            guestName: inq.guestName || inq.guest_name || "Guest",
+                            guestEmail: inq.email || inq.guestEmail,
+                            guestPhone: inq.phone || inq.guestPhone,
+                            checkInDate: inq.date || inq.travel_date || "",
+                            checkOutDate: inq.checkout_date || inq.date || inq.travel_date || "",
+                            status: inq.status || "PENDING",
+                            rooms: Array.isArray(inq.rooms) ? inq.rooms : [{ id: inq.id }],
+                        });
+                        existingIds.add(inqId);
+                    }
+                }
+
+                setBookings(combined);
+
+                const defaultRoomType = invRes?.roomTypes?.[0]?.id ?? "";
                 setRoomTypeId((curr) => curr || defaultRoomType);
             } catch (err: any) {
                 if (!cancelled) setError(err?.message || "Failed to load inventory data.");
@@ -861,7 +1642,7 @@ export function SingleListingManager() {
         return () => {
             cancelled = true;
         };
-    }, [listingId, isAdmin]);
+    }, [listingId, listing, loadingListing, isAdmin, isSafariCategory, isTourCategory, isExperienceCategory, isTransferCategory]);
 
     // Fetch room blocks
     useEffect(() => {
@@ -925,10 +1706,16 @@ export function SingleListingManager() {
         [inventory, roomTypeId],
     );
 
-    const roomUnitsForType = useMemo(
-        () => inventory?.roomUnits.filter((unit) => roomType?.roomUnits?.some((r) => r.id === unit.id)) ?? inventory?.roomUnits ?? [],
-        [inventory, roomType],
-    );
+    const roomUnitsForType = useMemo(() => {
+        if (!inventory) return [];
+        if (!roomTypeId || roomTypeId === "all") return inventory.roomUnits || [];
+        const matched = (inventory.roomUnits || []).filter(
+            (unit: any) =>
+                (unit.roomTypeId || unit.room_type_id) === roomTypeId ||
+                roomType?.roomUnits?.some((r: any) => r.id === unit.id),
+        );
+        return matched.length > 0 ? matched : (roomType?.roomUnits || inventory.roomUnits || []);
+    }, [inventory, roomType, roomTypeId]);
 
     const entryByDate = useMemo(() => {
         const map = new Map<string, StayCalendarEntry>();
@@ -1024,16 +1811,14 @@ export function SingleListingManager() {
         }
     }
 
-    const isSafariCategory =
-        listing?.category?.toLowerCase() === "safari" ||
-        listing?.listing_type?.toLowerCase() === "safari" ||
-        listing?.listingType?.toLowerCase() === "safari" ||
-        Boolean(listing?.safariDetail) ||
-        listingId === "safari-1" ||
-        listingId === "lst_001";
-
     if (isSafariCategory) {
         return <SafariListingManager listing={listing} listingId={listingId} isAdmin={isAdmin} navigate={navigate} />;
+    }
+
+    // Tour / Experience / Transfer listings use the generic listing blocks API,
+    // NOT the stay inventory endpoints. Route them to TourListingManager.
+    if (isTourCategory || isExperienceCategory || isTransferCategory) {
+        return <TourListingManager listing={listing} listingId={listingId} isAdmin={isAdmin} navigate={navigate} />;
     }
 
     if (loadingListing && !inventory) {
@@ -1499,21 +2284,26 @@ export function SingleListingManager() {
                                     const st = String(booking.status || "").toUpperCase();
                                     const isPending = st === "PENDING" || st === "SUBMITTED" || st === "NEW_REQUEST";
                                     const isConfirmed = st === "CONFIRMED" || st === "APPROVED" || st === "COMPLETED";
+                                    const checkIn = booking.checkInDate || booking.check_in_date || booking.travel_date || booking.date || "—";
+                                    const checkOut = booking.checkOutDate || booking.check_out_date || checkIn;
+                                    const guestName = booking.guestName || booking.guest_name || "Guest";
+                                    const guestEmail = booking.guestEmail || booking.guest_email || booking.email || "No email";
+                                    const roomCount = Array.isArray(booking.rooms) && booking.rooms.length > 0 ? booking.rooms.length : 1;
 
                                     return (
                                         <tr key={booking.id} className="hover:bg-white/5 transition-colors">
                                             <td className="p-3.5 pl-5 font-mono text-[12px]" style={{ color: "var(--accent-navy-light)" }}>
-                                                {booking.id.slice(0, 8)}...
+                                                {String(booking.id || "").slice(0, 8)}...
                                             </td>
                                             <td className="p-3.5 font-medium" style={{ color: "var(--text-primary)" }}>
-                                                {booking.guestName || "Guest"}
-                                                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{booking.guestEmail || "No email"}</div>
+                                                {guestName}
+                                                <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{guestEmail}</div>
                                             </td>
                                             <td className="p-3.5" style={{ color: "var(--text-secondary)" }}>
-                                                {booking.checkInDate} → {booking.checkOutDate}
+                                                {checkIn} → {checkOut}
                                             </td>
                                             <td className="p-3.5" style={{ color: "var(--text-secondary)" }}>
-                                                {booking.rooms?.length || 1} Room(s)
+                                                {roomCount} Room(s)
                                             </td>
                                             <td className="p-3.5">
                                                 <span

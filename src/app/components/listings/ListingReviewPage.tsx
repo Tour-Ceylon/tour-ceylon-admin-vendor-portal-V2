@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Filter,
@@ -23,6 +23,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { ListingReviewDrawer } from "./ListingReviewDrawer";
+import { apiFetch } from "../api/apiClient";
 
 type ListingStatus = "draft" | "submitted" | "pending_review" | "needs_changes" | "approved" | "rejected" | "archived";
 type Category = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
@@ -92,232 +93,53 @@ const CATEGORY_COLORS: Record<Category, { bg: string; text: string; border: stri
 };
 
 // Sample listing data
-const SAMPLE_LISTINGS: Listing[] = [
-  {
-    id: "LST-8942",
-    thumbnail: "luxury-villa.jpg",
-    name: "Luxury Beach Villa - Mirissa",
-    category: "Stay",
-    vendor: "Ceylon Luxury Retreats",
-    destination: "Mirissa, Sri Lanka",
-    mediaCount: 18,
-    startingPrice: 450,
-    qualityScore: 92,
-    status: "pending_review",
-    submittedDate: "3 hours ago",
-    description: "Spectacular beachfront villa with infinity pool, private beach access, and panoramic ocean views. Features 4 spacious bedrooms, modern amenities, and 24/7 concierge service.",
-    variants: 3,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    categoryData: {
-      roomTypes: ["Deluxe Ocean View", "Master Suite", "Private Pool Villa"],
-      amenities: ["Infinity Pool", "Private Beach", "WiFi", "Air Conditioning", "Restaurant", "Spa"],
-      checkIn: "2:00 PM",
-      checkOut: "11:00 AM",
-      cancellationPolicy: "Free cancellation up to 7 days before check-in",
-    },
-  },
-  {
-    id: "LST-8941",
-    thumbnail: "elephant-safari.jpg",
-    name: "Udawalawe Elephant Safari Experience",
-    category: "Safari",
-    vendor: "Wild Adventures",
-    destination: "Udawalawe, Sri Lanka",
-    mediaCount: 12,
-    startingPrice: 180,
-    qualityScore: 78,
-    status: "needs_changes",
-    submittedDate: "6 hours ago",
-    description: "Full-day elephant safari in Udawalawe National Park with experienced guides. Witness herds of wild elephants in their natural habitat.",
-    variants: 2,
-    hasDescription: true,
-    hasPricing: false,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: false,
-    issues: ["Missing pricing info", "Incomplete itinerary"],
-    categoryData: {
-      parkName: "Udawalawe National Park",
-      vehicleType: "4x4 Safari Jeep",
-      wildlife: ["Elephants", "Water Buffalo", "Crocodiles", "Leopards", "Peacocks"],
-    },
-  },
-  {
-    id: "LST-8940",
-    thumbnail: "food-tour.jpg",
-    name: "Colombo Street Food Evening Tour",
-    category: "Experience",
-    vendor: "Taste of Lanka",
-    destination: "Colombo, Sri Lanka",
-    mediaCount: 8,
-    startingPrice: 45,
-    qualityScore: 88,
-    status: "approved",
-    submittedDate: "1 day ago",
-    description: "Explore Colombo's vibrant street food scene with a local guide. Sample authentic Sri Lankan dishes, snacks, and desserts from the best street vendors.",
-    variants: 1,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    categoryData: {
-      activityType: "Food Tour",
-      maxParticipants: 8,
-      restrictions: ["Not suitable for severe food allergies", "Moderate walking required"],
-    },
-  },
-  {
-    id: "LST-8939",
-    thumbnail: "kandy-temple.jpg",
-    name: "Kandy Temple & Cultural Tour",
-    category: "Tour",
-    vendor: "Heritage Tours Lanka",
-    destination: "Kandy, Sri Lanka",
-    mediaCount: 15,
-    startingPrice: 95,
-    qualityScore: 85,
-    status: "submitted",
-    submittedDate: "1 day ago",
-    description: "Discover the cultural heart of Sri Lanka with visits to the Temple of the Tooth, Royal Botanical Gardens, and traditional dance performances.",
-    variants: 2,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: false,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    issues: ["Missing cancellation policy"],
-    categoryData: {
-      duration: "Full Day (8 hours)",
-      itinerary: [
-        "Temple of the Sacred Tooth Relic",
-        "Royal Botanical Gardens",
-        "Kandy Lake scenic walk",
-        "Traditional Kandyan dance performance",
-        "Local craft market visit",
-      ],
-      inclusions: ["Lunch", "Transportation", "Guide", "Entrance Fees"],
-    },
-  },
-  {
-    id: "LST-8938",
-    thumbnail: "airport-transfer.jpg",
-    name: "CMB Airport Luxury Transfer Service",
-    category: "Transfer",
-    vendor: "Premium Transfers LK",
-    destination: "Colombo, Sri Lanka",
-    mediaCount: 5,
-    startingPrice: 45,
-    qualityScore: 95,
-    status: "approved",
-    submittedDate: "2 days ago",
-    description: "Premium airport transfer service with luxury vehicles, professional drivers, and meet-and-greet service. Available 24/7 for arrivals and departures.",
-    variants: 3,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    categoryData: {
-      vehicleModel: "Mercedes-Benz E-Class",
-      capacity: 4,
-      route: "Colombo Airport (CMB) to Colombo Hotels",
-    },
-  },
-  {
-    id: "LST-8937",
-    thumbnail: "yala-resort.jpg",
-    name: "Cinnamon Wild Yala - Wildlife Resort",
-    category: "Stay",
-    vendor: "Cinnamon Hotels",
-    destination: "Yala, Sri Lanka",
-    mediaCount: 24,
-    startingPrice: 320,
-    qualityScore: 65,
-    status: "needs_changes",
-    submittedDate: "3 days ago",
-    description: "Eco-friendly wildlife resort located on the edge of Yala National Park. Offers comfortable accommodation with nature-immersive experiences.",
-    variants: 4,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: false,
-    hasLocation: true,
-    categoryFieldsComplete: false,
-    issues: ["Poor image quality", "Missing amenities list", "Add room types"],
-    categoryData: {
-      roomTypes: ["Standard Room", "Deluxe Room", "Family Suite", "Cabana"],
-      amenities: ["Pool", "Restaurant", "Bar", "WiFi"],
-      checkIn: "2:00 PM",
-      checkOut: "12:00 PM",
-    },
-  },
-  {
-    id: "LST-8936",
-    thumbnail: "whale-watching.jpg",
-    name: "Mirissa Whale Watching Experience",
-    category: "Experience",
-    vendor: "Ocean Adventures",
-    destination: "Mirissa, Sri Lanka",
-    mediaCount: 10,
-    startingPrice: 75,
-    qualityScore: 82,
-    status: "pending_review",
-    submittedDate: "4 days ago",
-    description: "Early morning whale and dolphin watching tour from Mirissa harbor. Spot blue whales, sperm whales, and playful dolphins in their natural habitat.",
-    variants: 2,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    categoryData: {
-      activityType: "Marine Wildlife Tour",
-      maxParticipants: 25,
-      restrictions: ["Not suitable for pregnant women", "Must be able to swim"],
-    },
-  },
-  {
-    id: "LST-8935",
-    thumbnail: "sigiriya-rock.jpg",
-    name: "Sigiriya Rock Fortress Climbing Tour",
-    category: "Tour",
-    vendor: "Ancient Wonders Tours",
-    destination: "Sigiriya, Sri Lanka",
-    mediaCount: 20,
-    startingPrice: 120,
-    qualityScore: 90,
-    status: "approved",
-    submittedDate: "5 days ago",
-    description: "Climb the ancient Sigiriya Rock Fortress, a UNESCO World Heritage Site. Experience breathtaking views and explore 5th-century frescoes and royal gardens.",
-    variants: 1,
-    hasDescription: true,
-    hasPricing: true,
-    hasPolicies: true,
-    hasLocation: true,
-    categoryFieldsComplete: true,
-    categoryData: {
-      duration: "Half Day (4 hours)",
-      itinerary: [
-        "Sigiriya Rock Fortress climb",
-        "Mirror Wall and frescoes",
-        "Summit palace ruins",
-        "Water gardens exploration",
-      ],
-      inclusions: ["Guide", "Entrance Fees", "Water", "Snacks"],
-    },
-  },
-];
-
 export function ListingReviewPage() {
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedListings, setSelectedListings] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const response: any = await apiFetch("/admin/snapshot");
+        const rawListings = Object.values(response.listings || {}).flat() as any[];
+        rawListings.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        const mappedListings: Listing[] = rawListings.map(l => ({
+          id: l.id,
+          thumbnail: l.coverImage?.url || l.cover_image?.url || l.gallery?.[0]?.url || "",
+          name: l.title || "Untitled",
+          category: (l.category.charAt(0).toUpperCase() + l.category.slice(1)) as Category,
+          vendor: l.vendor_id ? `Vendor ${l.vendor_id.substring(0,6)}` : "Unknown",
+          destination: l.destination?.name || "Unknown",
+          mediaCount: l.gallery?.length || 0,
+          startingPrice: l.fromPrice?.amount || 0,
+          qualityScore: l.title && l.description ? 95 : 60,
+          status: l.status === "published" ? "approved" : l.status === "draft" ? "draft" : l.status === "submitted" ? "pending_review" : "submitted",
+          submittedDate: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : "Just now",
+          description: l.description || "",
+          variants: l.variants?.length || 0,
+          hasDescription: !!l.description,
+          hasPricing: !!(l.fromPrice?.amount),
+          hasPolicies: true,
+          hasLocation: !!l.destination,
+          categoryFieldsComplete: true,
+          categoryData: l.hotelDetail || l.safariDetail || l.activityDetail || l.tourDetail || l.transferDetail
+        }));
+        setListings(mappedListings);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const SAMPLE_LISTINGS = listings;
 
   const statusTabs = [
     { id: "all", label: "All", count: SAMPLE_LISTINGS.length },
@@ -368,16 +190,36 @@ export function ListingReviewPage() {
     setDrawerOpen(true);
   };
 
-  const handleApproveListing = (id: string) => {
+    const handleApproveListing = async (id: string) => {
     console.log("Approving listing:", id);
-    // In production: API call to approve listing
-    // Update listing status to 'approved'
+    try {
+      const listing = listings.find(l => l.id === id);
+      if (!listing) return;
+      await apiFetch(`/admin/listings/${listing.category.toLowerCase()}/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'published' })
+      });
+      setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
+    } catch(err) {
+      console.error('Failed to approve', err);
+    }
   };
 
-  const handleRejectListing = (id: string, reason: string) => {
+  
+
+  const handleRejectListing = async (id: string, reason: string) => {
     console.log("Rejecting listing:", id, "Reason:", reason);
-    // In production: API call to reject listing with reason
-    // Update listing status to 'rejected'
+    try {
+      const listing = listings.find(l => l.id === id);
+      if (!listing) return;
+      await apiFetch(`/admin/listings/${listing.category.toLowerCase()}/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'rejected' })
+      });
+      setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l));
+    } catch(err) {
+      console.error('Failed to reject', err);
+    }
   };
 
   const handleRequestChanges = (id: string, feedback: string[]) => {

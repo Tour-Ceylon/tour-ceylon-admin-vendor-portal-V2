@@ -286,6 +286,7 @@ export function ListingsPage() {
           const rawListings = Array.isArray(response)
             ? response
             : Object.values(response.listings).flat();
+          rawListings.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           const realListings = rawListings.map(adminListingToListing);
           setListings(realListings);
         }
