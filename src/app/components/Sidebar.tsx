@@ -68,7 +68,7 @@ const ROUTE_MAP: Record<string, string> = {
   listings: "/listings",
   "create-listing": "/listings/create",
   "listing-reviews": "/reviews",
-  stays: "/listings",
+  stays: "/hotel/dashboard",
   tours: "/listings",
   safaris: "/listings",
   experiences: "/listings",

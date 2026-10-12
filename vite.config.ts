@@ -36,10 +36,10 @@ export default defineConfig({
 
   server: {
     proxy: {
-      // Forward /api/* from localhost:5173 → EC2 backend
+      // Forward /api/* from localhost:5173 → local backend
       // Browser sees same-origin requests (no CORS), Vite handles forwarding
       '/api': {
-        target: 'http://13.212.151.179:8000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       },
