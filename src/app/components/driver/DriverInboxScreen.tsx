@@ -16,18 +16,11 @@ import {
 import {
   DriverTripSummary,
   acknowledgeTrip,
-  declineTrip,
   fetchMyTrips,
 } from "../api/driverTripApi";
-
-const DECLINE_REASONS = [
-  "Vehicle mechanical issue",
-  "Distance too far / Location unreachable",
-  "Personal emergency",
-  "Schedule conflict / Shift ending",
-  "Traffic / Extreme road conditions",
-  "Other",
-];
+import { DeclineTripModal } from "./DeclineTripModal";
+import { RequestNotes } from "../transport/shared/RequestNotes";
+import { formatMoney } from "../transport/shared/transportFormat";
 
 function formatTime(t?: string | null) {
   if (!t) return "--";
@@ -42,111 +35,6 @@ function formatDate(d: string) {
   });
 }
 
-function DeclineModal({
-  trip,
-  onClose,
-  onConfirm,
-}: {
-  trip: DriverTripSummary;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const [reason, setReason] = useState(DECLINE_REASONS[0]);
-  const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    try {
-      await declineTrip(trip.id, reason, note || undefined);
-      onConfirm();
-    } catch (err: any) {
-      console.error("Failed to decline:", err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <>
-      <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
-        onClick={onClose}
-      />
-      <div className="fixed inset-x-4 bottom-4 lg:inset-0 lg:m-auto lg:max-w-md lg:h-fit z-50 rounded-2xl overflow-hidden bg-[#070E1D] border border-white/[0.08]">
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-white/[0.06] flex items-start justify-between gap-3">
-          <div>
-            <p className="text-white font-bold text-sm">Decline Assignment</p>
-            <p className="text-slate-500 text-xs mt-0.5">
-              Trip {trip.booking_reference} will be returned to dispatch
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors shrink-0"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="px-5 py-4 space-y-3">
-          <p className="text-slate-400 text-xs font-medium">Select reason:</p>
-          <div className="space-y-1.5">
-            {DECLINE_REASONS.map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setReason(r)}
-                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs transition-all flex items-center justify-between ${
-                  reason === r
-                    ? "bg-blue-600/15 border border-blue-500/25 text-blue-300"
-                    : "bg-white/[0.03] border border-white/[0.06] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
-                }`}
-              >
-                <span>{r}</span>
-                {reason === r && (
-                  <CheckCircle2 size={13} className="text-blue-400 shrink-0" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div>
-            <p className="text-slate-400 text-xs font-medium mb-1.5">
-              Additional note (optional):
-            </p>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Provide brief context for dispatch..."
-              rows={2}
-              className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-white/[0.03] border border-white/[0.06] text-slate-300 placeholder-slate-600 outline-none resize-none focus:border-blue-500/40 transition-colors"
-            />
-          </div>
-
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="flex-1 py-3 rounded-xl bg-red-600 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-red-500 disabled:opacity-60 transition-all"
-            >
-              {submitting && <Loader2 size={14} className="animate-spin" />}
-              Confirm Decline
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] text-slate-400 text-sm hover:text-slate-200 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
 function DispatchCard({
   trip,
   onAccepted,
@@ -159,15 +47,17 @@ function DispatchCard({
   const navigate = useNavigate();
   const [accepting, setAccepting] = useState(false);
   const [showDecline, setShowDecline] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const handleAccept = async () => {
     setAccepting(true);
+    setAcceptError(null);
     try {
       await acknowledgeTrip(trip.id);
       onAccepted(trip.id);
       navigate(`/driver/trips/${trip.id}`);
-    } catch (err) {
-      console.error("Failed to accept:", err);
+    } catch (err: any) {
+      setAcceptError(err?.message || "Could not accept this trip. Please try again.");
       setAccepting(false);
     }
   };
@@ -189,8 +79,8 @@ function DispatchCard({
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-emerald-400 font-extrabold text-2xl leading-none">
-              ${Number(trip.total_price).toFixed(2)}
+            <p className="text-emerald-400 font-extrabold text-2xl leading-none tabular-nums">
+              {formatMoney(trip.total_price, trip.currency)}
             </p>
             <p className="text-slate-500 text-[10px] mt-0.5">{trip.currency}</p>
           </div>
@@ -259,11 +149,13 @@ function DispatchCard({
             </span>
           </div>
 
-          {/* Special requests */}
-          {trip.special_requests && (
-            <div className="flex items-start gap-2.5 bg-amber-500/[0.08] border border-amber-500/20 rounded-xl px-3.5 py-2.5">
-              <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-amber-300 text-xs leading-snug">{trip.special_requests}</p>
+          {/* Flight, return trip and customer notes */}
+          <RequestNotes text={trip.special_requests} variant="driver" />
+
+          {acceptError && (
+            <div role="alert" className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" aria-hidden />
+              {acceptError}
             </div>
           )}
 
@@ -293,10 +185,11 @@ function DispatchCard({
       </div>
 
       {showDecline && (
-        <DeclineModal
-          trip={trip}
+        <DeclineTripModal
+          tripId={trip.id}
+          bookingReference={trip.booking_reference}
           onClose={() => setShowDecline(false)}
-          onConfirm={() => {
+          onDeclined={() => {
             setShowDecline(false);
             onDeclined(trip.id);
           }}
@@ -331,6 +224,14 @@ export function DriverInboxScreen() {
 
   useEffect(() => {
     loadInbox();
+    const id = window.setInterval(async () => {
+      try {
+        setTrips(await fetchMyTrips("assigned"));
+      } catch {
+        /* keep showing the last list; the manual refresh button reports errors */
+      }
+    }, 20_000);
+    return () => window.clearInterval(id);
   }, []);
 
   const remove = (id: string) => {

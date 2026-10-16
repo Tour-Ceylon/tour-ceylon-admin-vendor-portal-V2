@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { DriverTripSummary, fetchMyTrips } from "../api/driverTripApi";
+import { formatMoney } from "../transport/shared/transportFormat";
 
 function formatTime(t?: string | null) {
   if (!t) return "--";
@@ -188,7 +189,7 @@ export function DriverTripsScreen() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-emerald-400 font-bold text-base">
-                        ${Number(trip.total_price).toFixed(2)}
+                        {formatMoney(trip.total_price, trip.currency)}
                       </p>
                       {trip.distance_km && (
                         <p className="text-slate-600 text-[10px]">

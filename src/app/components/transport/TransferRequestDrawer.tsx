@@ -1,99 +1,92 @@
-import {
-  X,
-  User,
-  MapPin,
-  Calendar,
-  Clock,
-  Users,
-  Briefcase,
-  Car,
-  DollarSign,
-  CheckCircle,
-  XCircle,
-  Mail,
-  MessageSquare,
-  Navigation,
-  TrendingUp,
-} from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AlertCircle, CheckCircle, Loader2, Mail, Phone, RotateCcw, X, XCircle } from "lucide-react";
 import { DriverAssignmentSection } from "./DriverAssignmentSection";
-import { AdminAssignedDriverInfo, AdminTransportBooking } from "../api/adminTransportApi";
-
-export interface TransferRequestData {
-  id: string;
-  bookingId: string;
-  customer: string;
-  customerEmail: string;
-  pickup: string;
-  destination: string;
-  pickupDate: string;
-  pickupTime: string;
-  passengers: number;
-  luggage: number;
-  vehicleCategory: string;
-  estimatedFare: number;
-  distance: number;
-  duration: string;
-  bookingStatus: string;
-  paymentStatus: string;
-  assignmentStatus: string;
-  assignedAt?: string;
-  createdDate: string;
-  notes?: string;
-  driver?: AdminAssignedDriverInfo | null;
-}
+import {
+  AdminTransportBooking,
+  TransportBookingStatus,
+  updateTransportBookingNotes,
+  updateTransportBookingStatus,
+} from "../api/adminTransportApi";
+import { AssignmentStatusBadge, BookingStatusBadge, PaymentStatusBadge } from "./shared/TransportStatusBadges";
+import {
+  CustomerCard,
+  DeclineHistoryCard,
+  DetailCard,
+  FareCard,
+  RouteCard,
+  TripCard,
+} from "./shared/BookingDetailCards";
 
 interface TransferRequestDrawerProps {
-  request: TransferRequestData;
+  booking: AdminTransportBooking;
   onClose: () => void;
   onRefresh?: () => void;
 }
 
-export function TransferRequestDrawer({ request, onClose, onRefresh }: TransferRequestDrawerProps) {
-  const [customFare, setCustomFare] = useState(request.estimatedFare);
-  const [internalNotes, setInternalNotes] = useState(request.notes || "");
-  const [currentDriver, setCurrentDriver] = useState<AdminAssignedDriverInfo | null | undefined>(
-    request.driver
-  );
-  const [assignmentStatus, setAssignmentStatus] = useState<string>(
-    request.assignmentStatus || "unassigned"
-  );
-  const [assignedAt, setAssignedAt] = useState<string | undefined>(request.assignedAt);
+const actionButton = {
+  base: "flex-1 px-4 py-2.5 text-[13px] rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-60",
+};
 
-  const handleConfirm = () => {
-    console.log("Confirming request:", request.bookingId);
-    onClose();
-  };
+export function TransferRequestDrawer({ booking: initialBooking, onClose, onRefresh }: TransferRequestDrawerProps) {
+  const [booking, setBooking] = useState<AdminTransportBooking>(initialBooking);
+  const [notes, setNotes] = useState(initialBooking.internal_notes || "");
+  const [savedNotes, setSavedNotes] = useState(initialBooking.internal_notes || "");
+  const [busy, setBusy] = useState<"status" | "notes" | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleReject = () => {
-    console.log("Rejecting request:", request.bookingId);
-    onClose();
-  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  const handleDriverAssigned = (updated: AdminTransportBooking) => {
-    setCurrentDriver(updated.driver);
-    setAssignmentStatus(updated.assignment_status);
-    setAssignedAt(updated.assigned_at);
+  const applyUpdate = (updated: AdminTransportBooking) => {
+    setBooking(updated);
     onRefresh?.();
   };
 
-  // Calculate pricing breakdown
-  const baseFare = Math.round(customFare * 0.4);
-  const distanceFare = Math.round(customFare * 0.5);
-  const surcharges = customFare - baseFare - distanceFare;
+  const changeStatus = async (status: TransportBookingStatus) => {
+    setBusy("status");
+    setErrorMsg(null);
+    try {
+      applyUpdate(await updateTransportBookingStatus(booking.id, status));
+      setConfirmingCancel(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Could not update the booking status. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveNotes = async () => {
+    setBusy("notes");
+    setErrorMsg(null);
+    try {
+      const updated = await updateTransportBookingNotes(booking.id, notes);
+      setSavedNotes(updated.internal_notes || "");
+      applyUpdate(updated);
+    } catch (err: any) {
+      setErrorMsg(err.message || "Could not save the notes. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const notesDirty = notes !== savedNotes;
+  const status = booking.booking_status;
 
   return (
     <>
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-        onClick={onClose}
-        style={{ animation: "fadeIn 0.2s ease-out" }}
-      />
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={onClose} style={{ animation: "fadeIn 0.2s ease-out" }} />
 
-      {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[750px] z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Transfer booking ${booking.booking_reference}`}
+        className="fixed right-0 top-0 h-full w-full max-w-[750px] z-50 overflow-y-auto"
         style={{
           background: "var(--bg-main)",
           borderLeft: "1px solid var(--border-light)",
@@ -101,401 +94,178 @@ export function TransferRequestDrawer({ request, onClose, onRefresh }: TransferR
           animation: "slideInRight 0.3s ease-out",
         }}
       >
-        {/* Header */}
         <div
-          className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between"
-          style={{
-            background: "var(--bg-panel)",
-            borderBottom: "1px solid var(--border-light)",
-          }}
+          className="sticky top-0 z-10 px-6 py-4 flex items-start justify-between gap-4"
+          style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border-light)" }}
         >
-          <div>
+          <div className="min-w-0">
             <h2 className="text-[18px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-              Transfer Booking Details
+              Transfer booking
             </h2>
-            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              {request.bookingId}
+            <p className="text-[12px] font-mono mb-2" style={{ color: "var(--text-tertiary)" }}>
+              {booking.booking_reference}
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <BookingStatusBadge status={booking.booking_status} />
+              <PaymentStatusBadge status={booking.payment_status} />
+              <AssignmentStatusBadge status={booking.assignment_status} />
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-            style={{
-              background: "var(--input-background)",
-              border: "1px solid var(--border-light)",
-              color: "var(--text-tertiary)",
-            }}
+            aria-label="Close"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all shrink-0"
+            style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-tertiary)" }}
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Driver Assignment Section */}
-          <DriverAssignmentSection
-            bookingId={request.id}
-            currentDriver={currentDriver}
-            assignmentStatus={assignmentStatus}
-            assignedAt={assignedAt}
-            onDriverAssigned={handleDriverAssigned}
-          />
-
-          {/* Customer Details */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
-            <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              Customer Information
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <User size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Customer Name
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.customer}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Mail size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Email Address
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.customerEmail}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Route Information */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
-            <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              Route Details
-            </h3>
-            <div className="space-y-4">
-              {/* Pickup */}
-              <div className="flex items-start gap-3">
-                <div className="flex flex-col items-center">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ background: "var(--success)", boxShadow: "0 0 0 3px rgba(34, 197, 94, 0.2)" }}
-                  />
-                  <div className="w-0.5 h-12 mt-1" style={{ background: "var(--border-light)" }} />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    Pickup Location
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.pickup}
-                  </p>
-                </div>
-              </div>
-
-              {/* Destination */}
-              <div className="flex items-start gap-3">
-                <div className="flex flex-col items-center">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ background: "var(--error)", boxShadow: "0 0 0 3px rgba(239, 68, 68, 0.2)" }}
-                  />
-                </div>
-                <div className="flex-1">
-                  <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    Destination
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.destination}
-                  </p>
-                </div>
-              </div>
-
-              {/* Distance & Duration */}
-              <div className="grid grid-cols-2 gap-3 pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
-                <div
-                  className="rounded-lg p-3"
-                  style={{
-                    background: "var(--input-background)",
-                    border: "1px solid var(--border-light)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Navigation size={12} style={{ color: "var(--text-tertiary)" }} />
-                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      Distance
-                    </p>
-                  </div>
-                  <p className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                    {request.distance} km
-                  </p>
-                </div>
-                <div
-                  className="rounded-lg p-3"
-                  style={{
-                    background: "var(--input-background)",
-                    border: "1px solid var(--border-light)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <Clock size={12} style={{ color: "var(--text-tertiary)" }} />
-                    <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      Duration
-                    </p>
-                  </div>
-                  <p className="text-[14px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                    {request.duration}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Travel Details */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
-            <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              Travel Information
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-start gap-3">
-                <Calendar size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Pickup Date
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.pickupDate}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Clock size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Pickup Time
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.pickupTime}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Users size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Passengers
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.passengers} persons
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Briefcase size={14} className="shrink-0 mt-0.5" style={{ color: "var(--text-tertiary)" }} />
-                <div className="flex-1">
-                  <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Luggage
-                  </p>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                    {request.luggage} pieces
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Vehicle Category */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "rgba(59, 130, 246, 0.08)",
-              border: "1px solid rgba(59, 130, 246, 0.2)",
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <Car size={18} style={{ color: "#3b82f6" }} />
-              <div>
-                <p className="text-[11px] mb-0.5" style={{ color: "var(--text-tertiary)" }}>
-                  Selected Vehicle Category
-                </p>
-                <p className="text-[14px]" style={{ color: "#3b82f6", fontWeight: 600 }}>
-                  {request.vehicleCategory}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Pricing Breakdown */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
-            <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              Pricing Breakdown
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  Base Fare
-                </p>
-                <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                  LKR {baseFare.toLocaleString()}
-                </p>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  Distance Fare ({request.distance} km)
-                </p>
-                <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                  LKR {distanceFare.toLocaleString()}
-                </p>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  Surcharges
-                </p>
-                <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
-                  LKR {surcharges.toLocaleString()}
-                </p>
-              </div>
-              <div
-                className="pt-3"
-                style={{ borderTop: "1px solid var(--border-light)" }}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                    Estimated Total Fare
-                  </p>
-                  <p className="text-[18px]" style={{ color: "var(--success)", fontWeight: 700 }}>
-                    LKR {customFare.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Internal Notes */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-light)",
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
-            <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-              Internal Notes
-            </h3>
-            <textarea
-              value={internalNotes}
-              onChange={(e) => setInternalNotes(e.target.value)}
-              placeholder="Add operational notes for this transfer..."
-              rows={4}
-              className="w-full px-3 py-2 text-[13px] rounded-lg resize-none"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              }}
-            />
-          </div>
-
-          {/* Admin Actions */}
-          {request.bookingStatus === "pending" && (
-            <div className="flex gap-3">
-              <button
-                onClick={handleConfirm}
-                className="flex-1 px-4 py-2.5 text-[13px] rounded-lg flex items-center justify-center gap-2 transition-all"
-                style={{
-                  background: "var(--success)",
-                  color: "white",
-                  fontWeight: 600,
-                }}
-              >
-                <CheckCircle size={14} />
-                Confirm Transfer
-              </button>
-              <button
-                onClick={handleReject}
-                className="flex-1 px-4 py-2.5 text-[13px] rounded-lg flex items-center justify-center gap-2 transition-all"
-                style={{
-                  background: "var(--error)",
-                  color: "white",
-                  fontWeight: 600,
-                }}
-              >
-                <XCircle size={14} />
-                Reject Request
-              </button>
+          {errorMsg && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-[12px]"
+              style={{ background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "var(--error)" }}
+            >
+              <AlertCircle size={14} className="shrink-0 mt-0.5" aria-hidden />
+              {errorMsg}
             </div>
           )}
 
-          {/* Additional Actions */}
+          {/* Booking decision */}
+          {status !== "completed" && (
+            <DetailCard title="Booking decision">
+              {status === "cancelled" ? (
+                <button
+                  onClick={() => changeStatus("pending")}
+                  disabled={busy === "status"}
+                  className={actionButton.base}
+                  style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)", width: "100%" }}
+                >
+                  {busy === "status" ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  Reopen as pending
+                </button>
+              ) : (
+                <div className="flex gap-3">
+                  {status === "pending" && (
+                    <button
+                      onClick={() => changeStatus("confirmed")}
+                      disabled={busy === "status"}
+                      className={actionButton.base}
+                      style={{ background: "var(--success)", color: "white", fontWeight: 600 }}
+                    >
+                      {busy === "status" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                      Confirm booking
+                    </button>
+                  )}
+                  {confirmingCancel ? (
+                    <>
+                      <button
+                        onClick={() => changeStatus("cancelled")}
+                        disabled={busy === "status"}
+                        className={actionButton.base}
+                        style={{ background: "var(--error)", color: "white", fontWeight: 600 }}
+                      >
+                        {busy === "status" ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                        Yes, cancel booking
+                      </button>
+                      <button
+                        onClick={() => setConfirmingCancel(false)}
+                        className={actionButton.base}
+                        style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+                      >
+                        Keep booking
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingCancel(true)}
+                      className={actionButton.base}
+                      style={{ background: "var(--input-background)", border: "1px solid var(--error)", color: "var(--error)", fontWeight: 600 }}
+                    >
+                      <XCircle size={14} />
+                      Cancel booking
+                    </button>
+                  )}
+                </div>
+              )}
+              {confirmingCancel && booking.driver && (
+                <p className="text-[12px] mt-3" style={{ color: "var(--text-tertiary)" }}>
+                  A driver is assigned. Let them know the trip is off before cancelling.
+                </p>
+              )}
+            </DetailCard>
+          )}
+
+          <DriverAssignmentSection
+            bookingId={booking.id}
+            currentDriver={booking.driver}
+            assignmentStatus={booking.assignment_status || "unassigned"}
+            assignedAt={booking.assigned_at}
+            onDriverAssigned={applyUpdate}
+          />
+
+          <DeclineHistoryCard booking={booking} />
+          <CustomerCard booking={booking} />
+          <RouteCard booking={booking} />
+          <TripCard booking={booking} />
+          <FareCard booking={booking} />
+
+          <DetailCard
+            title="Internal notes"
+            aside={<span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Only your team sees these</span>}
+          >
+            <label htmlFor="internal-notes" className="sr-only">Internal notes</label>
+            <textarea
+              id="internal-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add operational notes for this transfer…"
+              rows={4}
+              className="w-full px-3 py-2 text-[13px] rounded-lg resize-none"
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+            />
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }} aria-live="polite">
+                {notesDirty ? "Unsaved changes" : savedNotes ? "Saved" : ""}
+              </span>
+              <button
+                onClick={saveNotes}
+                disabled={!notesDirty || busy === "notes"}
+                className="px-4 py-2 text-[13px] rounded-lg flex items-center gap-2 disabled:opacity-50"
+                style={{ background: "var(--accent-navy)", color: "white", fontWeight: 600 }}
+              >
+                {busy === "notes" && <Loader2 size={14} className="animate-spin" />}
+                Save notes
+              </button>
+            </div>
+          </DetailCard>
+
           <div className="grid grid-cols-2 gap-3">
-            <button
+            <a
+              href={`mailto:${booking.customer_email}?subject=${encodeURIComponent(`Your transfer ${booking.booking_reference}`)}`}
               className="px-4 py-2.5 text-[13px] rounded-lg flex items-center justify-center gap-2 transition-all"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              }}
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
             >
-              <Mail size={14} />
-              Contact Customer
-            </button>
-            <button
+              <Mail size={14} aria-hidden /> Email customer
+            </a>
+            <a
+              href={`tel:${booking.customer_phone.replace(/\s+/g, "")}`}
               className="px-4 py-2.5 text-[13px] rounded-lg flex items-center justify-center gap-2 transition-all"
-              style={{
-                background: "var(--input-background)",
-                border: "1px solid var(--border-light)",
-                color: "var(--text-primary)",
-              }}
+              style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
             >
-              <MessageSquare size={14} />
-              Add Note
-            </button>
+              <Phone size={14} aria-hidden /> Call customer
+            </a>
           </div>
         </div>
       </div>
 
-      {/* Animations */}
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @media (prefers-reduced-motion: reduce) {
+          [role="dialog"], .fixed.inset-0 { animation: none !important; }
         }
       `}</style>
     </>

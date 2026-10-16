@@ -17,69 +17,29 @@ import {
   AlertCircle,
   Wifi,
   WifiOff,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { TransferRequestDrawer, TransferRequestData } from "./TransferRequestDrawer";
+import { TransferRequestDrawer } from "./TransferRequestDrawer";
 import {
   AdminTransportBooking,
   fetchAdminTransportBookings,
 } from "../api/adminTransportApi";
+import {
+  AssignmentStatusBadge,
+  BookingStatusBadge,
+  PaymentStatusBadge,
+} from "./shared/TransportStatusBadges";
+import { formatClock, formatDay, formatMoney } from "./shared/transportFormat";
 
-const BOOKING_STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string }> = {
-  pending: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", dot: "#f59e0b" },
-  confirmed: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80", dot: "#22c55e" },
-  completed: { bg: "rgba(100, 116, 139, 0.1)", text: "#94a3b8", dot: "#64748b" },
-  cancelled: { bg: "rgba(239, 68, 68, 0.1)", text: "#f87171", dot: "#ef4444" },
-  rejected: { bg: "rgba(239, 68, 68, 0.1)", text: "#f87171", dot: "#ef4444" },
-};
-
-const PAYMENT_STATUS_CONFIG: Record<string, { bg: string; text: string }> = {
-  paid: { bg: "rgba(34, 197, 94, 0.1)", text: "#4ade80" },
-  unpaid: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24" },
-  pay_later: { bg: "rgba(59, 130, 246, 0.1)", text: "#60a5fa" },
-  refunded: { bg: "rgba(100, 116, 139, 0.1)", text: "#94a3b8" },
-};
-
-const ASSIGNMENT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  unassigned: { label: "Unassigned", bg: "rgba(245, 158, 11, 0.12)", text: "#fbbf24", dot: "#f59e0b" },
-  assigned: { label: "Assigned", bg: "rgba(59, 130, 246, 0.12)", text: "#60a5fa", dot: "#3b82f6" },
-  acknowledged: { label: "Accepted", bg: "rgba(168, 85, 247, 0.12)", text: "#c084fc", dot: "#a855f7" },
-  en_route: { label: "En Route", bg: "rgba(14, 165, 233, 0.12)", text: "#38bdf8", dot: "#0ea5e9" },
-  arrived: { label: "Arrived", bg: "rgba(20, 184, 166, 0.12)", text: "#2dd4bf", dot: "#14b8a6" },
-  in_progress: { label: "In Progress", bg: "rgba(99, 102, 241, 0.12)", text: "#818cf8", dot: "#6366f1" },
-  completed: { label: "Completed", bg: "rgba(34, 197, 94, 0.12)", text: "#4ade80", dot: "#22c55e" },
-  declined: { label: "Declined", bg: "rgba(239, 68, 68, 0.12)", text: "#f87171", dot: "#ef4444" },
-};
-
-function formatBookingToRequestData(b: AdminTransportBooking): TransferRequestData {
-  return {
-    id: b.id,
-    bookingId: b.booking_reference,
-    customer: b.customer_name,
-    customerEmail: b.customer_email,
-    pickup: b.pickup_location,
-    destination: b.destination_location,
-    pickupDate: b.travel_date,
-    pickupTime: b.pickup_time ? b.pickup_time.substring(0, 5) : "",
-    passengers: b.passengers_count,
-    luggage: b.luggage_count,
-    vehicleCategory: b.vehicle_category?.name || "Standard",
-    estimatedFare: Number(b.total_price),
-    distance: Number(b.distance_km || 0),
-    duration: b.estimated_duration_minutes ? `${b.estimated_duration_minutes} mins` : "—",
-    bookingStatus: b.booking_status,
-    paymentStatus: b.payment_status,
-    assignmentStatus: b.assignment_status || "unassigned",
-    assignedAt: b.assigned_at,
-    createdDate: b.created_at ? new Date(b.created_at).toLocaleDateString() : "",
-    notes: b.internal_notes || b.special_requests,
-    driver: b.driver,
-  };
-}
+const PAGE_SIZE = 20;
 
 export function TransferRequestsPage() {
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<string>("all");
-  const [selectedRequest, setSelectedRequest] = useState<TransferRequestData | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedRequest, setSelectedRequest] = useState<AdminTransportBooking | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [bookings, setBookings] = useState<AdminTransportBooking[]>([]);
@@ -91,7 +51,25 @@ export function TransferRequestsPage() {
     assigned_count: 0,
     in_progress_count: 0,
     completed_count: 0,
+    pending_count: 0,
+    cancelled_count: 0,
+    paid_revenue_usd: 0,
+    average_fare_usd: 0,
+    total_pages: 0,
   });
+
+  // Search on pause, not on every keystroke; any new filter starts again from page 1.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterTab]);
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -115,8 +93,9 @@ export function TransferRequestsPage() {
       const res = await fetchAdminTransportBookings({
         assignment_status: assignmentStatusParam,
         booking_status: bookingStatusParam,
-        search: search || undefined,
-        per_page: 50,
+        search: debouncedSearch || undefined,
+        page,
+        per_page: PAGE_SIZE,
       });
 
       setBookings(res.bookings || []);
@@ -126,6 +105,11 @@ export function TransferRequestsPage() {
         assigned_count: res.assigned_count || 0,
         in_progress_count: res.in_progress_count || 0,
         completed_count: res.completed_count || 0,
+        pending_count: res.pending_count || 0,
+        cancelled_count: res.cancelled_count || 0,
+        paid_revenue_usd: Number(res.paid_revenue_usd || 0),
+        average_fare_usd: Number(res.average_fare_usd || 0),
+        total_pages: res.total_pages || 0,
       });
     } catch (err: any) {
       console.error("Failed to load admin transport bookings:", err);
@@ -133,14 +117,14 @@ export function TransferRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterTab, search]);
+  }, [filterTab, debouncedSearch, page]);
 
   useEffect(() => {
     loadBookings();
   }, [loadBookings]);
 
   const handleViewRequest = (b: AdminTransportBooking) => {
-    setSelectedRequest(formatBookingToRequestData(b));
+    setSelectedRequest(b);
     setDrawerOpen(true);
   };
 
@@ -150,16 +134,8 @@ export function TransferRequestsPage() {
     { id: "assigned", label: "Assigned", count: statsMeta.assigned_count },
     { id: "in_progress", label: "In Progress", count: statsMeta.in_progress_count },
     { id: "completed", label: "Completed", count: statsMeta.completed_count },
-    { id: "cancelled", label: "Cancelled", count: bookings.filter((b) => b.booking_status === "cancelled").length },
+    { id: "cancelled", label: "Cancelled", count: statsMeta.cancelled_count },
   ];
-
-  const totalRevenue = bookings
-    .filter((b) => b.payment_status === "paid")
-    .reduce((sum, b) => sum + Number(b.total_price), 0);
-
-  const avgFare = bookings.length > 0
-    ? Math.round(bookings.reduce((sum, b) => sum + Number(b.total_price), 0) / bookings.length)
-    : 0;
 
   return (
     <div className="p-6">
@@ -255,10 +231,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Total Paid Revenue
+            Paid revenue (USD)
           </p>
           <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            ${totalRevenue.toLocaleString()}
+            {formatMoney(statsMeta.paid_revenue_usd, "USD")}
           </p>
         </div>
 
@@ -279,10 +255,10 @@ export function TransferRequestsPage() {
             </div>
           </div>
           <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
-            Average Trip Fare
+            Average fare (USD)
           </p>
           <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            ${avgFare.toLocaleString()}
+            {formatMoney(statsMeta.average_fare_usd, "USD")}
           </p>
         </div>
       </div>
@@ -308,8 +284,9 @@ export function TransferRequestsPage() {
             >
               <Search size={14} style={{ color: "var(--text-tertiary)" }} />
               <input
-                type="text"
-                placeholder="Search by booking reference, customer name, email, pickup or destination..."
+                type="search"
+                aria-label="Search bookings"
+                placeholder="Search by reference, customer, email, pickup or destination…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="flex-1 bg-transparent text-[13px] outline-none"
@@ -423,9 +400,6 @@ export function TransferRequestsPage() {
                 </thead>
                 <tbody>
                   {bookings.map((b) => {
-                    const assignConfig = ASSIGNMENT_STATUS_CONFIG[b.assignment_status || "unassigned"] || ASSIGNMENT_STATUS_CONFIG.unassigned;
-                    const bookingStatusConfig = BOOKING_STATUS_CONFIG[b.booking_status] || BOOKING_STATUS_CONFIG.pending;
-
                     return (
                       <tr
                         key={b.id}
@@ -443,15 +417,9 @@ export function TransferRequestsPage() {
                           <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
                             {b.booking_reference}
                           </p>
-                          <span
-                            className="text-[10px] px-1.5 py-0.2 rounded capitalize inline-block mt-0.5"
-                            style={{
-                              background: bookingStatusConfig.bg,
-                              color: bookingStatusConfig.text,
-                            }}
-                          >
-                            {b.booking_status}
-                          </span>
+                          <div className="mt-1">
+                            <BookingStatusBadge status={b.booking_status} />
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-[13px]" style={{ color: "var(--text-primary)" }}>
@@ -471,10 +439,10 @@ export function TransferRequestsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
-                            {b.travel_date}
+                            {formatDay(b.travel_date, "d MMM yyyy")}
                           </p>
                           <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                            {b.pickup_time ? b.pickup_time.substring(0, 5) : ""}
+                            {formatClock(b.pickup_time)}
                           </p>
                         </td>
                         <td className="px-4 py-3">
@@ -485,27 +453,19 @@ export function TransferRequestsPage() {
                               color: "var(--text-secondary)",
                             }}
                           >
-                            {b.vehicle_category?.name || "Standard"}
+                            {b.vehicle_category?.name || "Not set"}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                            ${Number(b.total_price).toFixed(2)}
+                          <p className="text-[13px] tabular-nums" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                            {formatMoney(b.total_price, b.currency)}
                           </p>
+                          <div className="mt-1">
+                            <PaymentStatusBadge status={b.payment_status} />
+                          </div>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className="w-2 h-2 rounded-full"
-                              style={{ background: assignConfig.dot }}
-                            />
-                            <span
-                              className="text-[12px] font-medium"
-                              style={{ color: assignConfig.text }}
-                            >
-                              {assignConfig.label}
-                            </span>
-                          </div>
+                          <AssignmentStatusBadge status={b.assignment_status} />
                         </td>
                         <td className="px-4 py-3">
                           {b.driver ? (
@@ -515,9 +475,9 @@ export function TransferRequestsPage() {
                                   {b.driver.full_name || "Assigned Driver"}
                                 </p>
                                 {b.driver.is_online ? (
-                                  <Wifi size={11} className="text-emerald-400" title="Online" />
+                                  <Wifi size={11} className="text-emerald-400" aria-label="Online" />
                                 ) : (
-                                  <WifiOff size={11} className="text-slate-500" title="Offline" />
+                                  <WifiOff size={11} className="text-slate-500" aria-label="Offline" />
                                 )}
                               </div>
                               <p className="text-[10px] font-mono" style={{ color: "var(--text-tertiary)" }}>
@@ -536,7 +496,8 @@ export function TransferRequestsPage() {
                               e.stopPropagation();
                               handleViewRequest(b);
                             }}
-                            className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                            aria-label={`Open booking ${b.booking_reference}`}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
                             style={{
                               background: "var(--input-background)",
                               border: "1px solid var(--border-light)",
@@ -554,12 +515,42 @@ export function TransferRequestsPage() {
             </div>
           )
         )}
+
+        {!loading && !errorMsg && statsMeta.total_pages > 1 && (
+          <nav
+            aria-label="Pagination"
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderTop: "1px solid var(--border-light)" }}
+          >
+            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Page {page} of {statsMeta.total_pages}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+              >
+                <ChevronLeft size={13} aria-hidden /> Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(statsMeta.total_pages, p + 1))}
+                disabled={page >= statsMeta.total_pages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
+                style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}
+              >
+                Next <ChevronRight size={13} aria-hidden />
+              </button>
+            </div>
+          </nav>
+        )}
       </div>
 
       {/* Transfer Request Drawer */}
       {drawerOpen && selectedRequest && (
         <TransferRequestDrawer
-          request={selectedRequest}
+          booking={selectedRequest}
           onClose={() => setDrawerOpen(false)}
           onRefresh={loadBookings}
         />

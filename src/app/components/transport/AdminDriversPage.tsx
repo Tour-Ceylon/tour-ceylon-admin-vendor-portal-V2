@@ -27,6 +27,7 @@ import {
   updateAdminDriverStatus,
 } from "../api/adminDriverApi";
 import { AdminDriverDetailDrawer } from "./AdminDriverDetailDrawer";
+import { maskAccountNumber } from "./shared/transportFormat";
 
 export function AdminDriversPage() {
   const [drivers, setDrivers] = useState<AdminDriverItem[]>([]);
@@ -496,10 +497,10 @@ export function AdminDriversPage() {
                       <td className="px-4 py-4">
                         <div className="text-[12px]">
                           <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-                            {driver.bank_name || "Bank of Ceylon"}
+                            {driver.bank_name || <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided</span>}
                           </p>
                           <p className="text-[11px] font-mono text-slate-400">
-                            {driver.bank_account_number || "•••• 4821"}
+                            {maskAccountNumber(driver.bank_account_number) || "—"}
                           </p>
                         </div>
                       </td>
