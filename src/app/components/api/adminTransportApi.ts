@@ -72,6 +72,9 @@ export interface AdminTransportBooking {
   driver?: AdminAssignedDriverInfo;
   /** Drivers who declined this booking before it was reassigned. */
   decline_history?: AdminDeclineRecord[];
+  /** A note the admin team wrote for the assigned driver. */
+  driver_note?: string | null;
+  driver_note_updated_at?: string | null;
 }
 
 export interface AdminTransportBookingListResponse {
@@ -187,4 +190,12 @@ export async function fetchApprovedDrivers(isOnlineOnly = false): Promise<Driver
   }
   const res = await apiFetch(`/admin/drivers?${query.toString()}`);
   return res.drivers || [];
+}
+
+/** Write (or, with an empty note, remove) the note passed to the driver assigned to this booking. */
+export async function setDriverNote(bookingId: string, note: string): Promise<AdminTransportBooking> {
+  return apiFetch(`/admin/transport-bookings/${bookingId}/driver-note`, {
+    method: "PUT",
+    body: JSON.stringify({ note }),
+  });
 }

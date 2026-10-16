@@ -6,6 +6,30 @@ export interface LuggageCapacityItem {
   quantity: number;
 }
 
+export interface DriverProfileChange {
+  id: string;
+  driver_id: string;
+  /** pending | approved | rejected | withdrawn */
+  status: string;
+  /** Only the fields the driver changed. */
+  proposed: Record<string, any>;
+  rejection_reason?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DriverAvatarSubmission {
+  id: string;
+  driver_id: string;
+  image_url: string;
+  /** pending | approved | rejected | withdrawn */
+  status: string;
+  rejection_reason?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string | null;
+}
+
 export interface AdminDriverItem {
   id: string;
   user_id: string;
@@ -41,6 +65,12 @@ export interface AdminDriverItem {
   created_at?: string;
   updated_at?: string;
   luggage_capacities: LuggageCapacityItem[];
+  /** The newest profile update the driver sent for review (any status), or null. */
+  latest_profile_change?: DriverProfileChange | null;
+  /** The approved photo shown for this driver, if any. */
+  avatar_url?: string | null;
+  /** The newest photo the driver sent (any status). Only approved photos are ever displayed. */
+  latest_avatar_submission?: DriverAvatarSubmission | null;
 }
 
 export interface AdminDriverListResponse {
@@ -96,4 +126,34 @@ export async function updateAdminDriverStatus(
     method: "PATCH",
     body: JSON.stringify({ status, rejection_reason: rejectionReason }),
   });
+}
+
+/** Approve the driver's pending profile update: its values are saved to the driver's record. */
+export async function approveDriverProfileChange(driverId: string): Promise<AdminDriverItem> {
+  await apiFetch(`/admin/drivers/${driverId}/profile-change/approve`, { method: "POST" });
+  return fetchAdminDriverDetail(driverId);
+}
+
+/** Reject it with a reason the driver will see. */
+export async function rejectDriverProfileChange(driverId: string, reason: string): Promise<AdminDriverItem> {
+  await apiFetch(`/admin/drivers/${driverId}/profile-change/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  return fetchAdminDriverDetail(driverId);
+}
+
+/** Approve the driver's pending profile photo; it then shows across the portals. */
+export async function approveDriverAvatar(driverId: string): Promise<AdminDriverItem> {
+  await apiFetch(`/admin/drivers/${driverId}/avatar/approve`, { method: "POST" });
+  return fetchAdminDriverDetail(driverId);
+}
+
+/** Reject it with a reason the driver will see. */
+export async function rejectDriverAvatar(driverId: string, reason: string): Promise<AdminDriverItem> {
+  await apiFetch(`/admin/drivers/${driverId}/avatar/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  return fetchAdminDriverDetail(driverId);
 }

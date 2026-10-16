@@ -37,6 +37,10 @@ interface AdminDriverDetailDrawerProps {
   onRefresh?: () => void;
 }
 
+import { DriverProfileChangeReview } from "./shared/DriverProfileChangeReview";
+import { DriverAvatarReview } from "./shared/DriverAvatarReview";
+import { UserAvatar } from "../shared/UserAvatar";
+
 const STATUS_BADGE_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   approved: { label: "Approved Partner", bg: "rgba(34, 197, 94, 0.12)", text: "#4ade80", dot: "#22c55e" },
   pending_review: { label: "Pending Review", bg: "rgba(245, 158, 11, 0.12)", text: "#fbbf24", dot: "#f59e0b" },
@@ -114,15 +118,7 @@ export function AdminDriverDetailDrawer({
           }}
         >
           <div className="flex items-center gap-3">
-            <div
-              className="w-11 h-11 rounded-2xl flex items-center justify-center text-[14px] font-bold text-white shrink-0"
-              style={{
-                background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-                boxShadow: "0 0 16px var(--border-accent)",
-              }}
-            >
-              {currentDriver.full_name ? currentDriver.full_name.substring(0, 2).toUpperCase() : "DR"}
-            </div>
+            <UserAvatar name={currentDriver.full_name} src={currentDriver.avatar_url} size={44} className="shrink-0" />
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-[17px] font-bold" style={{ color: "var(--text-primary)" }}>
@@ -229,10 +225,17 @@ export function AdminDriverDetailDrawer({
                 <span>Driver Rating</span>
                 <Star size={14} className="text-amber-400" />
               </div>
-              <p className="text-[22px] font-extrabold text-amber-400">
-                {currentDriver.rating ? currentDriver.rating.toFixed(1) : "5.0"}★
-              </p>
-              <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>Customer rating</p>
+              {currentDriver.rating ? (
+                <>
+                  <p className="text-[22px] font-extrabold text-amber-400">{currentDriver.rating.toFixed(1)}★</p>
+                  <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>Customer rating</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[22px] font-extrabold" style={{ color: "var(--text-tertiary)" }}>—</p>
+                  <p className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>No ratings yet</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -361,6 +364,42 @@ export function AdminDriverDetailDrawer({
             )}
           </div>
 
+          {/* ── Profile photo the driver sent, waiting for approval ── */}
+          <DriverAvatarReview
+            driver={currentDriver}
+            onChanged={(updated) => {
+              setCurrentDriver(updated);
+              onRefresh?.();
+            }}
+          />
+
+          {currentDriver.latest_avatar_submission?.status === "rejected" && (
+            <p className="text-[12px] px-1" style={{ color: "var(--text-tertiary)" }}>
+              The driver's last profile photo was rejected
+              {currentDriver.latest_avatar_submission.rejection_reason
+                ? `: "${currentDriver.latest_avatar_submission.rejection_reason}"`
+                : "."}
+            </p>
+          )}
+
+          {/* ── Profile update the driver sent, waiting for approval ── */}
+          <DriverProfileChangeReview
+            driver={currentDriver}
+            onChanged={(updated) => {
+              setCurrentDriver(updated);
+              onRefresh?.();
+            }}
+          />
+
+          {currentDriver.latest_profile_change?.status === "rejected" && (
+            <p className="text-[12px] px-1" style={{ color: "var(--text-tertiary)" }}>
+              The driver's last profile update was rejected
+              {currentDriver.latest_profile_change.rejection_reason
+                ? `: "${currentDriver.latest_profile_change.rejection_reason}"`
+                : "."}
+            </p>
+          )}
+
           {/* ── Driver Personal Profile ── */}
           <div
             className="rounded-2xl p-5 space-y-4"
@@ -396,7 +435,7 @@ export function AdminDriverDetailDrawer({
               <div>
                 <span className="text-[11px] text-slate-400 block">Base Location:</span>
                 <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                  {currentDriver.base_location || "Western Province, Sri Lanka"}
+                  {currentDriver.base_location || <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided yet</span>}
                 </span>
               </div>
               <div>
@@ -404,13 +443,15 @@ export function AdminDriverDetailDrawer({
                 <span className="font-medium" style={{ color: "var(--text-primary)" }}>
                   {currentDriver.languages_spoken && currentDriver.languages_spoken.length > 0
                     ? currentDriver.languages_spoken.join(", ")
-                    : "English, Sinhala"}
+                    : <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided yet</span>}
                 </span>
               </div>
               <div>
                 <span className="text-[11px] text-slate-400 block">Driving Experience:</span>
                 <span className="font-medium" style={{ color: "var(--text-primary)" }}>
-                  {currentDriver.years_experience ? `${currentDriver.years_experience} Years` : "—"}
+                  {currentDriver.years_experience != null
+                    ? `${currentDriver.years_experience} ${currentDriver.years_experience === 1 ? "year" : "years"}`
+                    : <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided yet</span>}
                 </span>
               </div>
             </div>

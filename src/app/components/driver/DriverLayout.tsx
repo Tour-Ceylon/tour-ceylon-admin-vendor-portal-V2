@@ -14,18 +14,25 @@ import {
   User,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { UserAvatar } from "../shared/UserAvatar";
+import { DriverAccountMenu } from "./DriverAccountMenu";
+import { fetchMyDriverProfile } from "../api/driverProfileApi";
 import {
   fetchMyAvailability,
   fetchMyTrips,
   updateMyAvailability,
 } from "../api/driverTripApi";
 
-const NAV_ITEMS = [
+type NavItem = { to: string; icon: typeof Home; label: string; mobile?: boolean };
+
+const NAV_ITEMS: NavItem[] = [
   { to: "/driver/home", icon: Home, label: "Dashboard" },
   { to: "/driver/inbox", icon: Inbox, label: "Inbox" },
   { to: "/driver/trips", icon: Calendar, label: "Trips" },
   { to: "/driver/history", icon: History, label: "History" },
   { to: "/driver/earnings", icon: DollarSign, label: "Earnings" },
+  // On a phone the profile is reached from the avatar menu, so it is not in the bottom bar.
+  { to: "/driver/profile", icon: User, label: "Profile", mobile: false },
 ];
 
 export function DriverLayout() {
@@ -36,6 +43,29 @@ export function DriverLayout() {
   const [loadingAvailability, setLoadingAvailability] = useState(true);
   const [togglingOnline, setTogglingOnline] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const loadAvatar = useCallback(async () => {
+    try {
+      const profile = await fetchMyDriverProfile();
+      setAvatarUrl(profile.avatar_url || null);
+    } catch {
+      /* the avatar is decoration; keep the initials */
+    }
+  }, []);
+
+  // Load once, and again when the profile page changes the photo or the driver returns to the app
+  // (an admin may have approved a photo meanwhile).
+  useEffect(() => {
+    loadAvatar();
+    const onVisible = () => document.visibilityState === "visible" && loadAvatar();
+    window.addEventListener("driver-profile-updated", loadAvatar);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("driver-profile-updated", loadAvatar);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loadAvatar]);
 
   const loadData = useCallback(async () => {
     try {
@@ -94,9 +124,7 @@ export function DriverLayout() {
         {/* Driver Card */}
         <div className="mx-4 my-4 p-3.5 rounded-xl bg-[#070E1D] border border-white/[0.06]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-900/60 border border-blue-700/40 flex items-center justify-center shrink-0">
-              <User size={16} className="text-blue-300" />
-            </div>
+            <UserAvatar name={user?.name} src={avatarUrl} size={36} className="shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-white text-xs font-semibold truncate">
                 {user?.name || "Approved Driver"}
@@ -203,10 +231,8 @@ export function DriverLayout() {
               {isOnline ? "Online" : "Offline"}
             </button>
 
-            {/* Avatar */}
-            <div className="w-7 h-7 rounded-full bg-blue-900/60 border border-blue-700/40 flex items-center justify-center">
-              <User size={13} className="text-blue-300" />
-            </div>
+            {/* Avatar with the account menu */}
+            <DriverAccountMenu name={user?.name} email={user?.email} avatarUrl={avatarUrl} onLogout={logout} />
           </div>
         </header>
 
@@ -218,7 +244,7 @@ export function DriverLayout() {
         {/* Mobile bottom nav */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#050B16] border-t border-white/[0.06] z-50">
           <div className="flex">
-            {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+            {NAV_ITEMS.filter((item) => item.mobile !== false).map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}

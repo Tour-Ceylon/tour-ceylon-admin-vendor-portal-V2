@@ -20,6 +20,7 @@ import {
 } from "../api/driverTripApi";
 import { DeclineTripModal } from "./DeclineTripModal";
 import { RequestNotes } from "../transport/shared/RequestNotes";
+import { DispatchNote } from "../transport/shared/DispatchNote";
 import { formatMoney } from "../transport/shared/transportFormat";
 
 function formatTime(t?: string | null) {
@@ -149,7 +150,8 @@ function DispatchCard({
             </span>
           </div>
 
-          {/* Flight, return trip and customer notes */}
+          {/* Message from dispatch, then the customer's flight number, return trip and notes */}
+          <DispatchNote text={trip.dispatch_note} updatedAt={trip.dispatch_note_updated_at} />
           <RequestNotes text={trip.special_requests} variant="driver" />
 
           {acceptError && (

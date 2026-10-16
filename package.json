@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "dev:lan": "vite --host"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.7",

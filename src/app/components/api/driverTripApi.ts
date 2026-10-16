@@ -27,6 +27,9 @@ export interface DriverTripSummary {
   created_at?: string;
   customer_name: string;
   customer_phone: string;
+  /** A note from the admin team for this driver. */
+  dispatch_note?: string | null;
+  dispatch_note_updated_at?: string | null;
 }
 
 export interface DriverTripCustomer {
@@ -66,6 +69,8 @@ export interface DriverTripDetail {
   created_at?: string;
   customer: DriverTripCustomer;
   vehicle_category_name?: string;
+  dispatch_note?: string | null;
+  dispatch_note_updated_at?: string | null;
 }
 
 export interface DriverTripDeclineRecord {

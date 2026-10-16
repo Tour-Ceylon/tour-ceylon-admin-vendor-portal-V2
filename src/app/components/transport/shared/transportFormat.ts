@@ -129,3 +129,32 @@ export function parseRequestNotes(raw?: string | null): ParsedRequestNotes | nul
   if (combined) result.notes = combined;
   return result;
 }
+
+export interface FlightTrackLink {
+  /** The flight number as it is looked up, e.g. "UL504". */
+  flight: string;
+  url: string;
+}
+
+// An airline code (2 letters, or letter+digit like "6E", or a 3-letter ICAO code) followed by the flight number,
+// with an optional letter suffix: UL504, 6E123, IGO793, IGO793Y.
+const FLIGHT_NUMBER = /^(?:[A-Z]{2,3}|[A-Z]\d|\d[A-Z])\d{1,4}[A-Z]?$/;
+
+/**
+ * Turns the flight number a customer typed into Flightradar24 links. Several flights ("UL504 / EK650") each get a link.
+ * Anything that is not a plausible flight number (for example "will send later") gives no link rather than a broken one.
+ *
+ * The link is https://www.flightradar24.com/<FLIGHT>/ (for example /IGO793Y/), with the flight number in capitals.
+ */
+export function flightTrackLinks(raw?: string | null): FlightTrackLink[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const links: FlightTrackLink[] = [];
+  for (const part of raw.split(/[\/,;&]|\band\b/i)) {
+    const flight = part.replace(/[\s-]+/g, "").toUpperCase();
+    if (!FLIGHT_NUMBER.test(flight) || seen.has(flight)) continue;
+    seen.add(flight);
+    links.push({ flight, url: `https://www.flightradar24.com/${flight}/` });
+  }
+  return links.slice(0, 3);
+}
