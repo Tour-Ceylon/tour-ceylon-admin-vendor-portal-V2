@@ -14,12 +14,25 @@ import {
   Car,
   ExternalLink,
   AlertTriangle,
+  Calendar,
+  X,
 } from "lucide-react";
 import {
   DriverTripDetail,
+  acknowledgeTrip,
   fetchMyTripDetail,
   updateTripProgressStatus,
 } from "../api/driverTripApi";
+import { DeclineTripModal } from "./DeclineTripModal";
+import { RequestNotes } from "../transport/shared/RequestNotes";
+import {
+  formatClock,
+  formatDay,
+  formatDuration,
+  formatMoney,
+  hasCoordinates,
+  mapsDirectionsUrl,
+} from "../transport/shared/transportFormat";
 
 type AssignmentStatus =
   | "acknowledged"
@@ -56,17 +69,19 @@ const CTA_LABEL: Record<AssignmentStatus, string> = {
   completed: "",
 };
 
-function formatTime(t?: string | null) {
-  if (!t) return "--";
-  return t.substring(0, 5);
-}
-
-function buildMapsUrl(trip: DriverTripDetail, status: AssignmentStatus) {
-  const target =
-    status === "acknowledged" || status === "en_route"
-      ? trip.pickup_location
-      : trip.destination_location;
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(target)}`;
+function navigationTarget(trip: DriverTripDetail, status: string) {
+  const toPickup = status === "assigned" || status === "acknowledged" || status === "en_route";
+  return toPickup
+    ? {
+        label: "Navigate to pickup",
+        url: mapsDirectionsUrl(trip.pickup_lat, trip.pickup_lng, trip.pickup_location),
+        exact: hasCoordinates(trip.pickup_lat, trip.pickup_lng),
+      }
+    : {
+        label: "Navigate to drop-off",
+        url: mapsDirectionsUrl(trip.destination_lat, trip.destination_lng, trip.destination_location),
+        exact: hasCoordinates(trip.destination_lat, trip.destination_lng),
+      };
 }
 
 export function DriverTripDetailScreen() {
@@ -76,6 +91,8 @@ export function DriverTripDetailScreen() {
   const [trip, setTrip] = useState<DriverTripDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [advancing, setAdvancing] = useState(false);
+  const [responding, setResponding] = useState(false);
+  const [showDecline, setShowDecline] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const loadTrip = async () => {
@@ -130,9 +147,24 @@ export function DriverTripDetailScreen() {
       : null;
 
   const isTripFinished = trip.assignment_status === "completed";
+  const awaitingResponse = trip.assignment_status === "assigned";
+  const navTarget = navigationTarget(trip, trip.assignment_status);
+
+  const accept = async () => {
+    if (!bookingId) return;
+    setResponding(true);
+    setErrorMsg(null);
+    try {
+      setTrip(await acknowledgeTrip(bookingId));
+    } catch (err: any) {
+      setErrorMsg(err.message || "Could not accept this trip. Please try again.");
+    } finally {
+      setResponding(false);
+    }
+  };
 
   const advance = async () => {
-    if (!nextStatus || !bookingId) return;
+    if (!nextStatus || nextStatus === "acknowledged" || !bookingId) return;
     setAdvancing(true);
     setErrorMsg(null);
     try {
@@ -177,14 +209,43 @@ export function DriverTripDetailScreen() {
           </div>
           <p className="text-white font-bold text-lg">Trip Completed!</p>
           <p className="text-emerald-300 text-sm">
-            ${Number(trip.total_price).toFixed(2)} has been recorded to your
+            {formatMoney(trip.total_price, trip.currency)} has been recorded to your
             payout balance.
           </p>
         </div>
       )}
 
+      {/* Respond to a new assignment */}
+      {awaitingResponse && (
+        <div className="rounded-2xl bg-[#070E1D] border border-blue-500/25 overflow-hidden">
+          <div className="px-5 pt-4 pb-3 border-b border-white/[0.06]">
+            <p className="text-white font-bold text-sm">New assignment</p>
+            <p className="text-slate-500 text-xs mt-0.5">
+              Dispatch is waiting for your answer. You can decline until you accept.
+            </p>
+          </div>
+          <div className="px-5 py-4 grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowDecline(true)}
+              className="py-3.5 rounded-xl border border-red-500/30 text-red-400 text-sm font-bold hover:bg-red-500/[0.08] transition-all flex items-center justify-center gap-2"
+            >
+              <X size={15} aria-hidden />
+              Decline
+            </button>
+            <button
+              onClick={accept}
+              disabled={responding}
+              className="py-3.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+            >
+              {responding ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} aria-hidden />}
+              {responding ? "Accepting…" : "Accept trip"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Milestone stepper */}
-      {!isTripFinished && (
+      {!isTripFinished && !awaitingResponse && (
         <div className="rounded-2xl bg-[#070E1D] border border-white/[0.06] overflow-hidden">
           <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between">
             <div>
@@ -298,30 +359,35 @@ export function DriverTripDetailScreen() {
 
           {/* Distance + duration */}
           <div className="flex gap-2 pt-0.5">
-            {trip.distance_km && (
+            {Number(trip.distance_km) > 0 && (
               <span className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.06] px-3 py-1.5 rounded-full text-xs text-slate-400">
-                <Navigation size={11} />
+                <Navigation size={11} aria-hidden />
                 {trip.distance_km} km
               </span>
             )}
-            {trip.estimated_duration_minutes && (
+            {Number(trip.estimated_duration_minutes) > 0 && (
               <span className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.06] px-3 py-1.5 rounded-full text-xs text-slate-400">
-                <Clock size={11} />
-                ~{trip.estimated_duration_minutes} mins
+                <Clock size={11} aria-hidden />
+                About {formatDuration(trip.estimated_duration_minutes)}
               </span>
             )}
           </div>
 
           {/* Maps button */}
           <a
-            href={buildMapsUrl(trip, trip.assignment_status as AssignmentStatus)}
+            href={navTarget.url}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0284C7]/15 border border-[#0284C7]/30 text-sky-400 text-sm font-semibold hover:bg-[#0284C7]/25 transition-all"
           >
-            <ExternalLink size={15} />
-            Open in Google Maps
+            <ExternalLink size={15} aria-hidden />
+            {navTarget.label} in Google Maps
           </a>
+          {!navTarget.exact && (
+            <p className="text-[11px] text-slate-500 -mt-1">
+              This booking has no saved map point, so Maps will search by the place name. Check the pin before you set off.
+            </p>
+          )}
         </div>
       </div>
 
@@ -354,29 +420,31 @@ export function DriverTripDetailScreen() {
           <p className="text-white font-bold text-sm">Vehicle & Trip Specs</p>
         </div>
         <div className="px-5 py-4 space-y-3">
-          {/* Vehicle + pickup time */}
+          {/* Pickup date and time */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/[0.03] rounded-xl p-3">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
-                Pickup Time
-              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Pickup date</p>
               <div className="flex items-center gap-1.5">
-                <Clock size={13} className="text-slate-400" />
-                <p className="text-slate-200 text-sm font-semibold">
-                  {formatTime(trip.pickup_time)}
-                </p>
+                <Calendar size={13} className="text-slate-400" aria-hidden />
+                <p className="text-slate-200 text-sm font-semibold">{formatDay(trip.travel_date, "EEE d MMM")}</p>
               </div>
             </div>
             <div className="bg-white/[0.03] rounded-xl p-3">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">
-                Vehicle
-              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Pickup time</p>
               <div className="flex items-center gap-1.5">
-                <Car size={13} className="text-slate-400" />
-                <p className="text-slate-200 text-xs font-semibold leading-snug">
-                  {trip.vehicle_category_name || "Standard Sedan"}
-                </p>
+                <Clock size={13} className="text-slate-400" aria-hidden />
+                <p className="text-slate-200 text-sm font-semibold">{formatClock(trip.pickup_time)}</p>
               </div>
+            </div>
+          </div>
+
+          <div className="bg-white/[0.03] rounded-xl p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Vehicle</p>
+            <div className="flex items-center gap-1.5">
+              <Car size={13} className="text-slate-400" aria-hidden />
+              <p className="text-slate-200 text-sm font-semibold leading-snug">
+                {trip.vehicle_category_name || "Not specified"}
+              </p>
             </div>
           </div>
 
@@ -400,21 +468,14 @@ export function DriverTripDetailScreen() {
               <div className="flex items-center gap-1.5">
                 <Luggage size={13} className="text-blue-400" />
                 <p className="text-slate-200 text-sm font-semibold">
-                  {trip.luggage_count} items
+                  {trip.luggage_count} {trip.luggage_count === 1 ? "bag" : "bags"}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Special requests */}
-          {trip.special_requests && (
-            <div className="flex items-start gap-2.5 bg-amber-500/[0.08] border border-amber-500/20 rounded-xl px-3.5 py-2.5">
-              <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-amber-300 text-xs leading-snug">
-                {trip.special_requests}
-              </p>
-            </div>
-          )}
+          {/* Flight number, return trip and customer notes */}
+          <RequestNotes text={trip.special_requests} variant="driver" />
         </div>
 
         {/* Fare footer */}
@@ -423,8 +484,8 @@ export function DriverTripDetailScreen() {
             <p className="text-slate-500 text-[10px] uppercase tracking-wide">
               Total Trip Fare
             </p>
-            <p className="text-white font-extrabold text-2xl mt-0.5">
-              ${Number(trip.total_price).toFixed(2)}
+            <p className="text-white font-extrabold text-2xl mt-0.5 tabular-nums">
+              {formatMoney(trip.total_price, trip.currency)}
             </p>
           </div>
           <span
@@ -438,6 +499,15 @@ export function DriverTripDetailScreen() {
           </span>
         </div>
       </div>
+
+      {showDecline && (
+        <DeclineTripModal
+          tripId={trip.id}
+          bookingReference={trip.booking_reference}
+          onClose={() => setShowDecline(false)}
+          onDeclined={() => navigate("/driver/inbox", { replace: true })}
+        />
+      )}
     </div>
   );
 }

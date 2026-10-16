@@ -147,6 +147,10 @@ export async function updateTripProgressStatus(
   });
 }
 
+export async function fetchMyDeclines(): Promise<DriverTripDeclineRecord[]> {
+  return apiFetch("/drivers/me/declines");
+}
+
 export async function fetchMyEarnings(
   period: "today" | "week" | "month" = "today"
 ): Promise<DriverEarningsData> {

@@ -436,13 +436,13 @@ export function AdminDriverDetailDrawer({
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Bank Name</span>
                 <span className="font-bold" style={{ color: "var(--text-primary)" }}>
-                  {currentDriver.bank_name || "Commercial Bank of Ceylon"}
+                  {currentDriver.bank_name || <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided</span>}
                 </span>
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Account Number</span>
                 <span className="font-mono font-bold text-sky-400">
-                  {currentDriver.bank_account_number || "•••••••• 4821"}
+                  {currentDriver.bank_account_number || <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>Not provided</span>}
                 </span>
               </div>
               <div>

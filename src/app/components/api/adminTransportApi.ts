@@ -24,6 +24,17 @@ export interface AdminVehicleCategoryInfo {
   luggage_capacity: number;
 }
 
+export interface AdminDeclineRecord {
+  id: string;
+  driver_id: string;
+  driver_name?: string;
+  reason: string;
+  note?: string;
+  created_at?: string;
+}
+
+export type TransportBookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
+
 export interface AdminTransportBooking {
   id: string;
   booking_reference: string;
@@ -59,6 +70,8 @@ export interface AdminTransportBooking {
   internal_notes?: string;
   vehicle_category?: AdminVehicleCategoryInfo;
   driver?: AdminAssignedDriverInfo;
+  /** Drivers who declined this booking before it was reassigned. */
+  decline_history?: AdminDeclineRecord[];
 }
 
 export interface AdminTransportBookingListResponse {
@@ -71,6 +84,10 @@ export interface AdminTransportBookingListResponse {
   assigned_count: number;
   in_progress_count: number;
   completed_count: number;
+  pending_count: number;
+  cancelled_count: number;
+  paid_revenue_usd: number | string;
+  average_fare_usd: number | string;
 }
 
 export interface FetchAdminTransportBookingsParams {
@@ -107,6 +124,32 @@ export async function fetchAdminTransportBookings(
 
 export async function fetchAdminTransportBookingDetail(bookingId: string): Promise<AdminTransportBooking> {
   return apiFetch(`/admin/transport-bookings/${bookingId}`);
+}
+
+/**
+ * Confirm, complete or cancel a booking. The status endpoint returns the customer-level view, so the
+ * full dispatch view (driver, decline history) is fetched again for the caller.
+ */
+export async function updateTransportBookingStatus(
+  bookingId: string,
+  status: TransportBookingStatus
+): Promise<AdminTransportBooking> {
+  await apiFetch(`/admin/transport/bookings/${bookingId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ booking_status: status }),
+  });
+  return fetchAdminTransportBookingDetail(bookingId);
+}
+
+export async function updateTransportBookingNotes(
+  bookingId: string,
+  internalNotes: string
+): Promise<AdminTransportBooking> {
+  await apiFetch(`/admin/transport/bookings/${bookingId}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ internal_notes: internalNotes }),
+  });
+  return fetchAdminTransportBookingDetail(bookingId);
 }
 
 export async function assignDriverToBooking(

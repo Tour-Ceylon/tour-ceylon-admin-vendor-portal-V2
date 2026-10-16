@@ -22,6 +22,7 @@ import {
   fetchMyTrips,
   fetchMyEarnings,
 } from "../api/driverTripApi";
+import { formatMoney } from "../transport/shared/transportFormat";
 
 function formatTime(t?: string) {
   if (!t) return "--";
@@ -187,7 +188,7 @@ export function DriverHomeScreen() {
                   activeTrip.assignment_status}
               </span>
               <span className="text-emerald-400 font-extrabold text-lg">
-                ${Number(activeTrip.total_price).toFixed(2)}
+                {formatMoney(activeTrip.total_price, activeTrip.currency)}
               </span>
             </div>
 
@@ -281,7 +282,7 @@ export function DriverHomeScreen() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-emerald-400 font-semibold text-sm">
-                    ${Number(trip.total_price).toFixed(2)}
+                    {formatMoney(trip.total_price, trip.currency)}
                   </p>
                   <ChevronRight
                     size={13}
