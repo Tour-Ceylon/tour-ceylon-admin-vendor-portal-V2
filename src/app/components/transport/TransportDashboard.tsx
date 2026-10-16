@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { format } from "date-fns";
 import { Link } from "react-router";
 import {
   Car,
@@ -44,10 +45,27 @@ import {
   AdminDriverItem,
   fetchAdminDrivers,
 } from "../api/adminDriverApi";
-import {
-  TransferRequestData,
-  TransferRequestDrawer,
-} from "./TransferRequestDrawer";
+import { TransferRequestDrawer } from "./TransferRequestDrawer";
+import { AssignmentStatusBadge } from "./shared/TransportStatusBadges";
+import { formatClock, formatDay, formatMoney } from "./shared/transportFormat";
+
+const EMPTY_SUMMARY = {
+  total: 0,
+  unassigned_count: 0,
+  assigned_count: 0,
+  in_progress_count: 0,
+  completed_count: 0,
+  cancelled_count: 0,
+  paid_revenue_usd: 0,
+};
+
+function ChartEmpty({ message }: { message: string }) {
+  return (
+    <div className="h-[240px] flex items-center justify-center text-center px-6">
+      <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>{message}</p>
+    </div>
+  );
+}
 
 export function TransportDashboard() {
   const [bookings, setBookings] = useState<AdminTransportBooking[]>([]);
@@ -55,7 +73,8 @@ export function TransportDashboard() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "all">("all");
-  const [selectedRequest, setSelectedRequest] = useState<TransferRequestData | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<AdminTransportBooking | null>(null);
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
@@ -65,7 +84,16 @@ export function TransportDashboard() {
         fetchAdminTransportBookings({ per_page: 100 }),
         fetchAdminDrivers({ per_page: 100 }),
       ]);
-      setBookings(Array.isArray(bookingsRes) ? bookingsRes : (bookingsRes as any)?.bookings || []);
+      setBookings(bookingsRes.bookings || []);
+      setSummary({
+        total: bookingsRes.total || 0,
+        unassigned_count: bookingsRes.unassigned_count || 0,
+        assigned_count: bookingsRes.assigned_count || 0,
+        in_progress_count: bookingsRes.in_progress_count || 0,
+        completed_count: bookingsRes.completed_count || 0,
+        cancelled_count: bookingsRes.cancelled_count || 0,
+        paid_revenue_usd: Number(bookingsRes.paid_revenue_usd || 0),
+      });
       setDrivers(Array.isArray(driversRes) ? driversRes : (driversRes as any)?.drivers || []);
     } catch (err: any) {
       console.error("Failed to load transport dashboard data:", err);
@@ -84,208 +112,121 @@ export function TransportDashboard() {
   // Date filtering logic
   const filteredBookings = useMemo(() => {
     const list = Array.isArray(bookings) ? bookings : [];
-    const today = new Date().toISOString().split("T")[0];
+    const today = format(new Date(), "yyyy-MM-dd");
     if (timeRange === "today") {
       return list.filter((b) => b.travel_date === today);
     }
     if (timeRange === "week") {
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
-      const weekStr = weekAgo.toISOString().split("T")[0];
+      const weekStr = format(weekAgo, "yyyy-MM-dd");
       return list.filter((b) => b.travel_date >= weekStr);
     }
     if (timeRange === "month") {
       const monthAgo = new Date();
       monthAgo.setDate(monthAgo.getDate() - 30);
-      const monthStr = monthAgo.toISOString().split("T")[0];
+      const monthStr = format(monthAgo, "yyyy-MM-dd");
       return list.filter((b) => b.travel_date >= monthStr);
     }
     return list;
   }, [bookings, timeRange]);
 
-  // Real-time KPI Stats
+  // Real-time KPI stats. Dispatch counts come from the server so they cover every booking,
+  // not just the first page that is loaded here.
   const stats = useMemo(() => {
     const list = Array.isArray(bookings) ? bookings : [];
     const driverList = Array.isArray(drivers) ? drivers : [];
 
-    const unassigned = list.filter(
-      (b) => !b.driver_id || b.assignment_status === "unassigned" || b.assignment_status === "declined"
-    ).length;
-
-    const inProgress = list.filter((b) =>
-      ["assigned", "acknowledged", "en_route", "arrived", "in_progress"].includes(b.assignment_status)
-    ).length;
-
-    const completed = list.filter((b) => b.assignment_status === "completed").length;
-
     const onlineDrivers = driverList.filter((d) => d.is_online).length;
     const approvedDrivers = driverList.filter((d) => d.status === "approved").length;
 
-    const airportTrips = list.filter(
-      (b) =>
-        (b.pickup_location || "").toLowerCase().includes("airport") ||
-        (b.pickup_location || "").toLowerCase().includes("cmb") ||
-        (b.destination_location || "").toLowerCase().includes("airport") ||
-        (b.destination_location || "").toLowerCase().includes("cmb")
-    ).length;
-
-    const totalRevenue = list
-      .filter((b) => b.assignment_status === "completed" || b.booking_status === "completed" || b.payment_status === "paid")
-      .reduce((sum, b) => sum + (Number(b.total_price) || 0), 0);
-
-    const cancelled = list.filter((b) => b.booking_status === "cancelled").length;
+    const airportTrips = list.filter((b) => {
+      const route = `${b.pickup_location} ${b.destination_location}`.toLowerCase();
+      return route.includes("airport") || route.includes("cmb");
+    }).length;
 
     return {
-      unassigned,
-      inProgress,
-      completed,
+      unassigned: summary.unassigned_count,
+      inProgress: summary.assigned_count + summary.in_progress_count,
+      completed: summary.completed_count,
+      cancelled: summary.cancelled_count,
       onlineDrivers,
       approvedDrivers,
       airportTrips,
-      totalRevenue,
-      cancelled,
-      totalBookings: list.length,
+      totalRevenue: summary.paid_revenue_usd,
+      totalBookings: summary.total,
     };
-  }, [bookings, drivers]);
+  }, [bookings, drivers, summary]);
 
   // Live Transfer Requests (Unassigned Only - Needs Driver Dispatch)
   const pendingRequests = useMemo(() => {
-    const list = Array.isArray(bookings) ? bookings : [];
-    return list
-      .filter((b) => {
-        const isUnassigned = !b.driver_id || b.assignment_status === "unassigned" || b.assignment_status === "declined";
-        const isNotFinished = b.booking_status !== "cancelled" && b.assignment_status !== "completed";
-        return isUnassigned && isNotFinished;
-      })
+    return filteredBookings
+      .filter((b) => !b.driver && b.assignment_status === "unassigned" && b.booking_status !== "cancelled")
       .slice(0, 5);
-  }, [bookings]);
+  }, [filteredBookings]);
 
   // Upcoming Pickups (Scheduled / En Route)
   const upcomingPickups = useMemo(() => {
-    const list = Array.isArray(bookings) ? bookings : [];
-    return list
+    return filteredBookings
       .filter((b) => ["acknowledged", "en_route", "arrived", "in_progress", "assigned"].includes(b.assignment_status))
       .sort((a, b) => (a.travel_date > b.travel_date ? 1 : -1))
       .slice(0, 5);
-  }, [bookings]);
+  }, [filteredBookings]);
 
-  // Route Popularity Distribution Chart Data
+  // Chart data. Only USD bookings are summed so mixed currencies are never added together;
+  // an empty list renders an empty state rather than invented figures.
+  const usdBookings = useMemo(
+    () => filteredBookings.filter((b) => (b.currency || "USD").toUpperCase() === "USD" && b.booking_status !== "cancelled"),
+    [filteredBookings]
+  );
+
   const routePopularityData = useMemo(() => {
-    const list = Array.isArray(bookings) ? bookings : [];
     const routeCounts: Record<string, { bookings: number; revenue: number }> = {};
-
-    list.forEach((b) => {
+    usdBookings.forEach((b) => {
       const from = (b.pickup_location || "Unknown").split(",")[0].trim();
       const to = (b.destination_location || "Unknown").split(",")[0].trim();
       const routeKey = `${from} → ${to}`;
-
-      if (!routeCounts[routeKey]) {
-        routeCounts[routeKey] = { bookings: 0, revenue: 0 };
-      }
+      routeCounts[routeKey] = routeCounts[routeKey] || { bookings: 0, revenue: 0 };
       routeCounts[routeKey].bookings += 1;
       routeCounts[routeKey].revenue += Number(b.total_price || 0);
     });
+    return Object.entries(routeCounts)
+      .map(([route, val]) => ({ route, bookings: val.bookings, revenue: Math.round(val.revenue) }))
+      .sort((a, b) => b.bookings - a.bookings)
+      .slice(0, 5);
+  }, [usdBookings]);
 
-    const items = Object.entries(routeCounts).map(([route, val]) => ({
-      route,
-      bookings: val.bookings,
-      revenue: Math.round(val.revenue),
-    }));
-
-    items.sort((a, b) => b.bookings - a.bookings);
-    return items.length > 0
-      ? items.slice(0, 5)
-      : [
-          { route: "Airport (CMB) → Colombo", bookings: 12, revenue: 710 },
-          { route: "Colombo → Nuwara Eliya", bookings: 8, revenue: 1980 },
-          { route: "Airport (CMB) → Galle Fort", bookings: 6, revenue: 980 },
-          { route: "Kandy → Sigiriya", bookings: 4, revenue: 520 },
-        ];
-  }, [bookings]);
-
-  // Revenue by Vehicle Category
   const vehicleRevenueData = useMemo(() => {
-    const list = Array.isArray(bookings) ? bookings : [];
     const catMap: Record<string, { revenue: number; bookings: number }> = {};
-
-    list.forEach((b) => {
-      const catName = b.vehicle_category?.name || "Standard Sedan";
-      if (!catMap[catName]) {
-        catMap[catName] = { revenue: 0, bookings: 0 };
-      }
+    usdBookings.forEach((b) => {
+      const catName = b.vehicle_category?.name || "No category";
+      catMap[catName] = catMap[catName] || { revenue: 0, bookings: 0 };
       catMap[catName].bookings += 1;
       catMap[catName].revenue += Number(b.total_price || 0);
     });
-
-    const items = Object.entries(catMap).map(([category, val]) => ({
+    return Object.entries(catMap).map(([category, val]) => ({
       category,
       revenue: Math.round(val.revenue),
       bookings: val.bookings,
     }));
+  }, [usdBookings]);
 
-    return items.length > 0
-      ? items
-      : [
-          { category: "Sedan Standard", revenue: 59, bookings: 1 },
-          { category: "Luxury Van", revenue: 266, bookings: 1 },
-          { category: "SUV", revenue: 164, bookings: 1 },
-        ];
-  }, [bookings]);
-
-  // Booking Trend Timeline Data
   const bookingTrendData = useMemo(() => {
     const dayMap: Record<string, { month: string; bookings: number; revenue: number }> = {};
-
-    // Group bookings by travel date
-    bookings.forEach((b) => {
-      const dateKey = b.travel_date || "Today";
-      if (!dayMap[dateKey]) {
-        dayMap[dateKey] = { month: dateKey, bookings: 0, revenue: 0 };
-      }
+    usdBookings.forEach((b) => {
+      const dateKey = b.travel_date;
+      if (!dateKey) return;
+      dayMap[dateKey] = dayMap[dateKey] || { month: dateKey, bookings: 0, revenue: 0 };
       dayMap[dateKey].bookings += 1;
       dayMap[dateKey].revenue += Number(b.total_price || 0);
     });
+    return Object.values(dayMap)
+      .sort((a, b) => (a.month > b.month ? 1 : -1))
+      .slice(-7)
+      .map((row) => ({ ...row, month: formatDay(row.month, "d MMM") }));
+  }, [usdBookings]);
 
-    const list = Object.values(dayMap);
-    list.sort((a, b) => (a.month > b.month ? 1 : -1));
-
-    return list.length > 0
-      ? list.slice(-7)
-      : [
-          { month: "Aug 25", bookings: 1, revenue: 130 },
-          { month: "Aug 27", bookings: 1, revenue: 45 },
-          { month: "Aug 28", bookings: 1, revenue: 59 },
-          { month: "Aug 29", bookings: 2, revenue: 325 },
-        ];
-  }, [bookings]);
-
-  // Convert booking to drawer data format
-  const handleOpenBookingDrawer = (b: AdminTransportBooking) => {
-    const drawerData: TransferRequestData = {
-      id: b.id,
-      bookingId: b.booking_reference,
-      customer: b.customer_name,
-      customerEmail: b.customer_email || "customer@example.com",
-      pickup: b.pickup_location,
-      destination: b.destination_location,
-      pickupDate: b.travel_date,
-      pickupTime: b.pickup_time ? b.pickup_time.substring(0, 5) : "12:00",
-      passengers: b.passengers_count,
-      luggage: b.luggage_count,
-      vehicleCategory: b.vehicle_category?.name || "Standard Sedan",
-      estimatedFare: Number(b.total_price),
-      distance: b.distance_km || 0,
-      duration: b.estimated_duration_minutes ? `${b.estimated_duration_minutes} min` : "—",
-      bookingStatus: b.booking_status,
-      paymentStatus: b.payment_status,
-      assignmentStatus: b.assignment_status,
-      assignedAt: b.assigned_at,
-      createdDate: b.created_at,
-      notes: b.special_requests,
-      driver: b.driver,
-    };
-    setSelectedRequest(drawerData);
-  };
+  const handleOpenBookingDrawer = (b: AdminTransportBooking) => setSelectedRequest(b);
 
   // Export CSV Handler
   const handleExportCSV = () => {
@@ -519,9 +460,9 @@ export function TransportDashboard() {
             </div>
           </div>
           <div className="mt-3">
-            <p className="text-[11px] uppercase font-bold text-white/70">Transfer Revenue</p>
-            <p className="text-[22px] font-extrabold text-white">${stats.totalRevenue.toFixed(2)}</p>
-            <p className="text-[10px] text-white/60">Gross fare volume</p>
+            <p className="text-[11px] uppercase font-bold text-white/70">Paid revenue</p>
+            <p className="text-[22px] font-extrabold text-white">{formatMoney(stats.totalRevenue, "USD")}</p>
+            <p className="text-[10px] text-white/60">Paid USD bookings, all time</p>
           </div>
         </div>
 
@@ -589,7 +530,7 @@ export function TransportDashboard() {
                   className="rounded-xl p-4 cursor-pointer transition-all hover:bg-white/5 flex flex-col justify-between space-y-2.5"
                   style={{
                     background: "var(--input-background)",
-                    border: !req.driver_id ? "1px solid rgba(245,158,11,0.3)" : "1px solid var(--border-light)",
+                    border: !req.driver ? "1px solid rgba(245,158,11,0.3)" : "1px solid var(--border-light)",
                   }}
                 >
                   <div className="flex items-center justify-between">
@@ -601,8 +542,8 @@ export function TransportDashboard() {
                         {req.customer_name}
                       </span>
                     </div>
-                    <span className="text-[14px] font-bold text-emerald-400">
-                      ${Number(req.total_price).toFixed(2)}
+                    <span className="text-[14px] font-bold text-emerald-400 tabular-nums">
+                      {formatMoney(req.total_price, req.currency)}
                     </span>
                   </div>
 
@@ -615,7 +556,7 @@ export function TransportDashboard() {
 
                   <div className="flex items-center justify-between pt-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                     <span>
-                      {req.travel_date} at {req.pickup_time ? req.pickup_time.substring(0, 5) : ""} • {req.passengers_count} pax
+                      {formatDay(req.travel_date, "d MMM yyyy")} at {formatClock(req.pickup_time)} · {req.passengers_count} passengers
                     </span>
                     <span className="text-sky-400 font-bold flex items-center gap-1 hover:underline">
                       Assign Driver <ArrowUpRight size={12} />
@@ -683,9 +624,7 @@ export function TransportDashboard() {
                         {pickup.customer_name}
                       </span>
                     </div>
-                    <span className="text-[11px] capitalize px-2 py-0.5 rounded-full font-bold bg-sky-500/10 text-sky-300">
-                      {pickup.assignment_status.replace("_", " ")}
-                    </span>
+                    <AssignmentStatusBadge status={pickup.assignment_status} />
                   </div>
 
                   <div className="space-y-1 text-[12px]">
@@ -701,10 +640,10 @@ export function TransportDashboard() {
 
                   <div className="flex items-center justify-between pt-1 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                     <span>
-                      {pickup.travel_date} at {pickup.pickup_time ? pickup.pickup_time.substring(0, 5) : ""}
+                      {formatDay(pickup.travel_date, "d MMM yyyy")} at {formatClock(pickup.pickup_time)}
                     </span>
                     <span className="font-semibold text-purple-400">
-                      {pickup.driver ? `Driver: ${pickup.driver.full_name}` : "Vehicle: " + (pickup.vehicle_category?.name || "Standard")}
+                      {pickup.driver ? `Driver: ${pickup.driver.full_name}` : "Vehicle: " + (pickup.vehicle_category?.name || "Not set")}
                     </span>
                   </div>
                 </div>
@@ -734,6 +673,9 @@ export function TransportDashboard() {
             </span>
           </div>
 
+          {bookingTrendData.length === 0 ? (
+            <ChartEmpty message="No USD bookings in this period yet." />
+          ) : (
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={bookingTrendData}>
@@ -767,7 +709,7 @@ export function TransportDashboard() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </div>)}
         </div>
 
         {/* Busiest Routes Chart */}
@@ -788,6 +730,9 @@ export function TransportDashboard() {
             </span>
           </div>
 
+          {routePopularityData.length === 0 ? (
+            <ChartEmpty message="Routes appear here once bookings come in." />
+          ) : (
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={routePopularityData} layout="vertical">
@@ -811,7 +756,7 @@ export function TransportDashboard() {
                 <Bar dataKey="bookings" name="Bookings" fill="#0891b2" radius={[0, 8, 8, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </div>)}
         </div>
       </div>
 
@@ -841,6 +786,9 @@ export function TransportDashboard() {
           </Link>
         </div>
 
+        {vehicleRevenueData.length === 0 ? (
+          <ChartEmpty message="Revenue by vehicle category appears here once bookings come in." />
+        ) : (
         <div className="h-[240px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={vehicleRevenueData}>
@@ -858,7 +806,7 @@ export function TransportDashboard() {
               <Bar dataKey="revenue" name="Total Revenue ($)" fill="#10b981" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </div>)}
       </div>
 
       {/* ── Transport Alerts & Fleet Health ── */}
@@ -929,7 +877,7 @@ export function TransportDashboard() {
       {/* ── Slide-Over Transfer Request Drawer for Dispatching ── */}
       {selectedRequest && (
         <TransferRequestDrawer
-          request={selectedRequest}
+          booking={selectedRequest}
           onClose={() => setSelectedRequest(null)}
           onRefresh={loadDashboardData}
         />
