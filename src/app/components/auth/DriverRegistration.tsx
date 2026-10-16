@@ -33,37 +33,8 @@ interface VehiclePreset {
   default_luggage_capacity: Record<string, number>;
 }
 
-// Fallback luggage size types if server is cold/offline
-const DEFAULT_LUGGAGE_TYPES: LuggageSizeType[] = [
-  {
-    id: "11111111-1111-1111-1111-111111111101",
-    name: "Small",
-    dimensions_display: "55 x 35 x 20 cm",
-    description: "Cabin / Carry-on (up to 10kg)",
-    sort_order: 1,
-  },
-  {
-    id: "11111111-1111-1111-1111-111111111102",
-    name: "Medium",
-    dimensions_display: "65 x 45 x 25 cm",
-    description: "Medium suitcase (up to 20kg)",
-    sort_order: 2,
-  },
-  {
-    id: "11111111-1111-1111-1111-111111111103",
-    name: "Large",
-    dimensions_display: "75 x 50 x 30 cm",
-    description: "Large check-in suitcase (up to 30kg)",
-    sort_order: 3,
-  },
-  {
-    id: "11111111-1111-1111-1111-111111111104",
-    name: "Extra Large",
-    dimensions_display: "85 x 60 x 35 cm",
-    description: "Oversized / heavy luggage (30kg+)",
-    sort_order: 4,
-  },
-];
+// There is deliberately no fallback list of luggage sizes: their IDs must exist in the database,
+// so inventing them here made sign-up fail. Luggage sizes come from the server or not at all.
 
 // Fallback vehicle presets
 const DEFAULT_VEHICLE_PRESETS: VehiclePreset[] = [
@@ -111,7 +82,7 @@ export function DriverRegistration({ onBackToRoleSelect }: DriverRegistrationPro
   const [showPassword, setShowPassword] = useState(false);
 
   // Luggage Tiers & Vehicle Presets from API
-  const [luggageTypes, setLuggageTypes] = useState<LuggageSizeType[]>(DEFAULT_LUGGAGE_TYPES);
+  const [luggageTypes, setLuggageTypes] = useState<LuggageSizeType[]>([]);
   const [presets, setPresets] = useState<VehiclePreset[]>(DEFAULT_VEHICLE_PRESETS);
   const [isPresetsLoading, setIsPresetsLoading] = useState(true);
 
@@ -185,7 +156,7 @@ export function DriverRegistration({ onBackToRoleSelect }: DriverRegistrationPro
       try {
         setIsPresetsLoading(true);
         const [loadedLuggage, loadedPresets] = await Promise.all([
-          apiFetch<LuggageSizeType[]>("/luggage-size-types").catch(() => DEFAULT_LUGGAGE_TYPES),
+          apiFetch<LuggageSizeType[]>("/luggage-size-types").catch(() => [] as LuggageSizeType[]),
           apiFetch<VehiclePreset[]>("/vehicle-model-presets").catch(() => DEFAULT_VEHICLE_PRESETS),
         ]);
 
