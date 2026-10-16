@@ -169,6 +169,13 @@ export function DriverTripsScreen() {
                     </span>
                   </div>
 
+                  {trip.dispatch_note && (
+                    <p className="flex items-start gap-2 text-xs text-blue-200 bg-blue-500/[0.09] border border-blue-500/25 rounded-lg px-3 py-2">
+                      <span className="font-semibold shrink-0">Dispatch:</span>
+                      <span className="line-clamp-2 break-words">{trip.dispatch_note}</span>
+                    </p>
+                  )}
+
                   {/* Route */}
                   <div className="flex items-center gap-2.5 text-xs">
                     <div className="flex flex-col items-center gap-0.5">
