@@ -74,6 +74,7 @@ import { DriverTripsScreen } from "./components/driver/DriverTripsScreen";
 import { DriverTripDetailScreen } from "./components/driver/DriverTripDetailScreen";
 import { DriverHistoryScreen } from "./components/driver/DriverHistoryScreen";
 import { DriverEarningsScreen } from "./components/driver/DriverEarningsScreen";
+import { DriverProfileScreen } from "./components/driver/DriverProfileScreen";
 
 export const router = createBrowserRouter([
   {
@@ -110,6 +111,7 @@ export const router = createBrowserRouter([
               { path: "trips/:bookingId", Component: DriverTripDetailScreen },
               { path: "history", Component: DriverHistoryScreen },
               { path: "earnings", Component: DriverEarningsScreen },
+              { path: "profile", Component: DriverProfileScreen },
             ],
           },
 

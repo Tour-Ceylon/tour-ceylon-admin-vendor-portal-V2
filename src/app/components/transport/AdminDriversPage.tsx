@@ -28,6 +28,7 @@ import {
 } from "../api/adminDriverApi";
 import { AdminDriverDetailDrawer } from "./AdminDriverDetailDrawer";
 import { maskAccountNumber } from "./shared/transportFormat";
+import { UserAvatar } from "../shared/UserAvatar";
 
 export function AdminDriversPage() {
   const [drivers, setDrivers] = useState<AdminDriverItem[]>([]);
@@ -393,23 +394,31 @@ export function AdminDriversPage() {
                       {/* Driver Profile */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-10 h-10 rounded-2xl flex items-center justify-center text-[12px] font-bold text-white shrink-0"
-                            style={{
-                              background: isApproved
-                                ? "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))"
-                                : "linear-gradient(135deg, #475569, #334155)",
-                              boxShadow: isApproved ? "0 0 10px var(--border-accent)" : "none",
-                            }}
-                          >
-                            {driver.full_name ? driver.full_name.substring(0, 2).toUpperCase() : "DR"}
-                          </div>
+                          <UserAvatar name={driver.full_name} src={driver.avatar_url} size={40} className="shrink-0" />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold text-[14px]" style={{ color: "var(--text-primary)" }}>
                                 {driver.full_name || "Unnamed Driver"}
                               </span>
                               {isApproved && <ShieldCheck size={14} className="text-emerald-400" />}
+                              {driver.latest_avatar_submission?.status === "pending" && (
+                                <span
+                                  className="text-[10px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap"
+                                  style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fbbf24" }}
+                                  title="This driver uploaded a profile photo that is waiting for your approval"
+                                >
+                                  Photo to review
+                                </span>
+                              )}
+                              {driver.latest_profile_change?.status === "pending" && (
+                                <span
+                                  className="text-[10px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap"
+                                  style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fbbf24" }}
+                                  title="This driver sent profile details that are waiting for your review"
+                                >
+                                  Update to review
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] truncate" style={{ color: "var(--text-secondary)" }}>
                               {driver.email || driver.phone || "No contact info"}

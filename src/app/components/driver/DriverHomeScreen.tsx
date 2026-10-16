@@ -23,6 +23,7 @@ import {
   fetchMyEarnings,
 } from "../api/driverTripApi";
 import { formatMoney } from "../transport/shared/transportFormat";
+import { ProfileCompletionNudge } from "./ProfileCompletionNudge";
 
 function formatTime(t?: string) {
   if (!t) return "--";
@@ -95,6 +96,8 @@ export function DriverHomeScreen() {
 
   return (
     <div className="px-4 lg:px-8 py-6 max-w-2xl lg:max-w-none mx-auto space-y-4">
+      <ProfileCompletionNudge />
+
       {/* Availability Hero Banner */}
       <div
         className={`rounded-2xl p-5 border flex items-center justify-between gap-4 ${

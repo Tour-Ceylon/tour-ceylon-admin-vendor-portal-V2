@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle, Loader2, Mail, Phone, RotateCcw, X, XCircle } from "lucide-react";
 import { DriverAssignmentSection } from "./DriverAssignmentSection";
+import { DriverNoteEditor } from "./shared/DriverNoteEditor";
 import {
   AdminTransportBooking,
   TransportBookingStatus,
@@ -205,6 +206,8 @@ export function TransferRequestDrawer({ booking: initialBooking, onClose, onRefr
             assignedAt={booking.assigned_at}
             onDriverAssigned={applyUpdate}
           />
+
+          <DriverNoteEditor booking={booking} onSaved={applyUpdate} />
 
           <DeclineHistoryCard booking={booking} />
           <CustomerCard booking={booking} />

@@ -25,6 +25,7 @@ import {
 } from "../api/driverTripApi";
 import { DeclineTripModal } from "./DeclineTripModal";
 import { RequestNotes } from "../transport/shared/RequestNotes";
+import { DispatchNote } from "../transport/shared/DispatchNote";
 import {
   formatClock,
   formatDay,
@@ -474,7 +475,8 @@ export function DriverTripDetailScreen() {
             </div>
           </div>
 
-          {/* Flight number, return trip and customer notes */}
+          {/* Message from dispatch, then the customer's flight number, return trip and notes */}
+          <DispatchNote text={trip.dispatch_note} updatedAt={trip.dispatch_note_updated_at} />
           <RequestNotes text={trip.special_requests} variant="driver" />
         </div>
 
