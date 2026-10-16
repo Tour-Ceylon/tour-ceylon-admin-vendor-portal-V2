@@ -3,6 +3,19 @@ import { useNavigate } from "react-router";
 import { useSignIn } from "@clerk/clerk-react";
 import { Compass, Eye, EyeOff, ArrowRight } from "lucide-react";
 
+type FactorStage = "first" | "second";
+type CodeStrategy = "email_code" | "phone_code" | "totp" | "backup_code";
+
+// The order we prefer when Clerk offers several ways to verify.
+const CODE_STRATEGIES: CodeStrategy[] = ["email_code", "phone_code", "totp", "backup_code"];
+
+const FACTOR_COPY: Record<CodeStrategy, { label: string; hint: (email: string) => string }> = {
+  email_code: { label: "Email verification code", hint: (email) => `A verification code was sent to ${email}. Enter it below to continue.` },
+  phone_code: { label: "SMS verification code", hint: () => "A verification code was sent to your phone. Enter it below to continue." },
+  totp: { label: "Authenticator app code", hint: () => "Open your authenticator app and enter the current 6-digit code." },
+  backup_code: { label: "Backup code", hint: () => "Enter one of your saved backup codes." },
+};
+
 export function LoginScreen() {
   const navigate = useNavigate();
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -16,8 +29,62 @@ export function LoginScreen() {
 
   // ── Step 2: OTP / second-factor state ──────────────────────────────────
   const [pendingVerification, setPendingVerification] = useState(false);
+  const [factor, setFactor] = useState<{ stage: FactorStage; strategy: CodeStrategy }>({
+    stage: "first",
+    strategy: "email_code",
+  });
   const [verificationCode, setVerificationCode] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
+
+  // Work out what Clerk is waiting for and move the sign-in forward. Called with the result of every
+  // Clerk step, so a first factor followed by a second factor is handled too.
+  const advance = async (result: any): Promise<void> => {
+    if (result.status === "complete") {
+      await setActive!({ session: result.createdSessionId });
+      navigate("/dashboard");
+      return;
+    }
+
+    if (result.status !== "needs_first_factor" && result.status !== "needs_second_factor") {
+      console.warn("Unexpected sign-in status:", result.status, result);
+      setError("Sign-in requires additional steps. Please try again or contact support.");
+      return;
+    }
+
+    const stage: FactorStage = result.status === "needs_first_factor" ? "first" : "second";
+    const factors: any[] = (stage === "first" ? result.supportedFirstFactors : result.supportedSecondFactors) || [];
+    console.info(`Clerk sign-in needs ${result.status}:`, factors.map((f) => f.strategy));
+
+    // Clerk can ask for the password again as the first factor; we already have it.
+    if (stage === "first" && factors.some((f) => f.strategy === "password") && password) {
+      await advance(await signIn!.attemptFirstFactor({ strategy: "password", password }));
+      return;
+    }
+
+    const strategy = CODE_STRATEGIES.find((s) => factors.some((f) => f.strategy === s));
+    if (!strategy) {
+      const offered = factors.map((f) => f.strategy).join(", ") || "nothing this screen supports";
+      setError(
+        `Clerk wants another verification step (${result.status.replace(/_/g, " ")}: ${offered}), ` +
+          "which this screen cannot complete. Turn that step off in the Clerk dashboard, or sign in another way."
+      );
+      return;
+    }
+
+    const chosen = factors.find((f) => f.strategy === strategy);
+    // Email and SMS codes have to be sent first; authenticator and backup codes do not.
+    if (strategy === "email_code") {
+      if (stage === "first") await signIn!.prepareFirstFactor({ strategy, emailAddressId: chosen.emailAddressId });
+      else await signIn!.prepareSecondFactor({ strategy });
+    } else if (strategy === "phone_code") {
+      if (stage === "first") await signIn!.prepareFirstFactor({ strategy, phoneNumberId: chosen.phoneNumberId });
+      else await signIn!.prepareSecondFactor({ strategy });
+    }
+
+    setFactor({ stage, strategy });
+    setVerificationCode("");
+    setPendingVerification(true);
+  };
 
   // ── Email + Password Sign-in ────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,50 +95,7 @@ export function LoginScreen() {
     setError(null);
 
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
-      });
-
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        navigate("/dashboard");
-      } else if (
-        result.status === "needs_first_factor" ||
-        result.status === "needs_second_factor"
-      ) {
-        // Clerk requires an extra verification step (email code / TOTP / SMS).
-        // Determine which strategy to use and prepare the factor.
-        const factors =
-          result.status === "needs_first_factor"
-            ? result.supportedFirstFactors
-            : result.supportedSecondFactors;
-
-        // Prefer email_code → phone_code → totp, in that order
-        const emailFactor = factors?.find((f: any) => f.strategy === "email_code");
-        const phoneFactor = factors?.find((f: any) => f.strategy === "phone_code");
-        const totpFactor = factors?.find((f: any) => f.strategy === "totp");
-
-        if (emailFactor) {
-          // Trigger Clerk to send the verification email
-          await signIn.prepareFirstFactor({
-            strategy: "email_code",
-            emailAddressId: (emailFactor as any).emailAddressId,
-          });
-        } else if (phoneFactor) {
-          await signIn.prepareFirstFactor({
-            strategy: "phone_code",
-            phoneNumberId: (phoneFactor as any).phoneNumberId,
-          });
-        } else if (totpFactor) {
-          // TOTP doesn't need preparation — user opens their authenticator app
-        }
-
-        setPendingVerification(true);
-      } else {
-        console.warn("Unexpected sign-in status:", result.status, result);
-        setError("Sign-in requires additional steps. Please try again or contact support.");
-      }
+      await advance(await signIn.create({ identifier: email, password }));
     } catch (err: any) {
       const message =
         err?.errors?.[0]?.longMessage ||
@@ -83,7 +107,7 @@ export function LoginScreen() {
     }
   };
 
-  // ── Verify OTP / TOTP code ──────────────────────────────────────────────
+  // ── Verify the code Clerk asked for ─────────────────────────────────────
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isLoaded || !signIn) return;
@@ -92,17 +116,18 @@ export function LoginScreen() {
     setError(null);
 
     try {
-      // Try first-factor attempt first; fall through to second-factor if needed
-      const attempt = await signIn.attemptFirstFactor({
-        strategy: "email_code",
-        code: verificationCode,
-      });
+      const code = verificationCode.trim();
+      const attempt =
+        factor.stage === "first"
+          ? await signIn.attemptFirstFactor({ strategy: factor.strategy as "email_code" | "phone_code", code })
+          : await signIn.attemptSecondFactor({ strategy: factor.strategy, code } as any);
 
       if (attempt.status === "complete") {
-        await setActive({ session: attempt.createdSessionId });
-        navigate("/dashboard");
+        await advance(attempt);
       } else {
-        setError("Verification failed. Please check your code and try again.");
+        // Clerk may want a further step after this one.
+        setPendingVerification(false);
+        await advance(attempt);
       }
     } catch (err: any) {
       const message =
@@ -181,7 +206,7 @@ export function LoginScreen() {
               Verify your identity
             </h2>
             <p className="text-[12px] mb-5" style={{ color: "var(--text-tertiary)" }}>
-              A verification code was sent to <strong>{email}</strong>. Enter it below to continue.
+              {FACTOR_COPY[factor.strategy].hint(email)}
             </p>
 
             <form onSubmit={handleVerify} className="space-y-4">
@@ -190,16 +215,17 @@ export function LoginScreen() {
                   className="block text-[12px] mb-1.5"
                   style={{ color: "var(--text-secondary)", fontWeight: 500 }}
                 >
-                  Verification Code
+                  {FACTOR_COPY[factor.strategy].label}
                 </label>
                 <input
                   type="text"
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value)}
-                  placeholder="Enter 6-digit code"
+                  placeholder={factor.strategy === "backup_code" ? "Enter backup code" : "Enter 6-digit code"}
                   required
                   autoComplete="one-time-code"
-                  maxLength={6}
+                  inputMode={factor.strategy === "backup_code" ? "text" : "numeric"}
+                  maxLength={factor.strategy === "backup_code" ? 12 : 6}
                   className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none tracking-widest text-center"
                   style={{
                     background: "var(--input-background)",
@@ -225,16 +251,16 @@ export function LoginScreen() {
 
               <button
                 type="submit"
-                disabled={verifyLoading || verificationCode.length < 6}
+                disabled={verifyLoading || verificationCode.trim().length < 6}
                 className="w-full py-2.5 rounded-lg text-[13px] flex items-center justify-center gap-2 transition-all"
                 style={{
                   background:
-                    verifyLoading || verificationCode.length < 6
+                    verifyLoading || verificationCode.trim().length < 6
                       ? "var(--border-medium)"
                       : "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
                   color: "white",
                   boxShadow:
-                    verifyLoading || verificationCode.length < 6
+                    verifyLoading || verificationCode.trim().length < 6
                       ? "none"
                       : "0 0 16px var(--border-accent)",
                   border: "1px solid var(--border-accent)",
