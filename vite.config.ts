@@ -37,8 +37,9 @@ export default defineConfig({
   server: {
     proxy: {
       // Forward /api/* from localhost:5173 → local backend
-      // Browser sees same-origin requests (no CORS), Vite handles forwarding
-      '/api': {
+      // Browser sees same-origin requests (no CORS), Vite handles forwarding.
+      // The pattern stops at "/api/" so the /api-integration page is not sent to the backend.
+      '^/api(/|$)': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,

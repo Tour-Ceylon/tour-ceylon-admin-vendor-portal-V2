@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { ListingEditor } from "./ListingEditor";
+import { ListingViewDrawer } from "./listings/ListingViewDrawer";
 import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "./api/apiClient";
 import {
@@ -71,7 +73,7 @@ interface AdminSnapshotResponse {
 }
 
 type AdminCategoryQuery = "all" | "stay" | "tour" | "safari" | "experience" | "transfer";
-type VendorCategoryQuery = "all" | "stay" | "safari" | "experience";
+type VendorCategoryQuery = "stay";
 
 const CATEGORY_COLORS: Record<Exclude<Category, "All">, { bg: string; text: string; border: string }> = {
   Stay: { bg: "rgba(37, 99, 235, 0.12)", text: "#60a5fa", border: "rgba(37,99,235,0.25)" },
@@ -91,7 +93,8 @@ const STATUS_COLORS: Record<Status, { bg: string; text: string; dot: string }> =
 };
 
 const CATEGORIES: Category[] = ["All", "Stay", "Tour", "Safari", "Experience", "Transfer"];
-const VENDOR_CATEGORIES: Category[] = ["All", "Stay", "Safari", "Experience"];
+// Vendors are Stay partners only; tours, safaris and experiences are managed by admins.
+const VENDOR_CATEGORIES: Category[] = ["Stay"];
 const STATUS_OPTIONS: Status[] = ["Draft", "Pending Review", "Approved", "Rejected", "Archived"];
 const PAGE_SIZE = 10;
 
@@ -160,11 +163,8 @@ function normalizeAdminCategoryQuery(value: string | null): AdminCategoryQuery {
   return "all";
 }
 
-function normalizeVendorCategoryQuery(value: string | null): VendorCategoryQuery {
-  if (value === "stay" || value === "safari" || value === "experience" || value === "all") {
-    return value;
-  }
-  return "all";
+function normalizeVendorCategoryQuery(_value: string | null): VendorCategoryQuery {
+  return "stay";
 }
 
 function mapListingStatus(listing: AdminListingResponse): Status {
@@ -261,6 +261,52 @@ export function ListingsPage() {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  // Stay, Tour, Safari and Experience listings are created and edited in a drawer; which one is open lives in the URL
+  // (?edit=<id> or ?create=<category>), so a refresh or a shared link reopens it.
+  const editingId = searchParams.get("edit");
+  const creatingParam = searchParams.get("create");
+  const creatingCategory: Category | null =
+    creatingParam === "stay" ? "Stay" : creatingParam === "tour" ? "Tour" : creatingParam === "safari" ? "Safari" : creatingParam === "experience" ? "Experience" : null;
+  const [reloadKey, setReloadKey] = useState(0);
+  const silentReload = useRef(false);
+  // The listing whose read-only details are open in the side drawer.
+  const [viewingId, setViewingId] = useState<string | null>(null);
+
+  const openEditor = (listing: Listing) => {
+    if (listing.category === "Safari" || listing.category === "Experience" || listing.category === "Stay" || listing.category === "Tour") {
+      const next = new URLSearchParams(searchParams);
+      next.set("edit", listing.id);
+      setSearchParams(next);
+    } else {
+      navigate(`/listings/${listing.id}/edit`);
+    }
+  };
+
+  const closeEditor = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next);
+  };
+
+  const openCreator = () => {
+    const next = new URLSearchParams(searchParams);
+    // "new" opens the drawer on the "what do you want to create?" step; a category opens it on that form
+    const tab = activeCategory === "Stay" || activeCategory === "Tour" || activeCategory === "Safari" || activeCategory === "Experience" ? activeCategory.toLowerCase() : "new";
+    next.set("create", isVendor ? "stay" : tab);
+    setSearchParams(next);
+  };
+
+  const closeCreator = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
+    setSearchParams(next);
+  };
+
+  // Refresh the table behind the drawer after a save, without flashing the loading state.
+  const refreshAfterSave = () => {
+    silentReload.current = true;
+    setReloadKey((key) => key + 1);
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -276,7 +322,7 @@ export function ListingsPage() {
     let cancelled = false;
 
     async function loadListings() {
-      setLoading(true);
+      if (!silentReload.current) setLoading(true);
       setLoadError(null);
       try {
         const queryCategory = isAdmin ? adminQueryCategory : vendorQueryCategory;
@@ -297,6 +343,7 @@ export function ListingsPage() {
         }
       } finally {
         if (!cancelled) setLoading(false);
+        silentReload.current = false;
       }
     }
 
@@ -304,7 +351,7 @@ export function ListingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [adminQueryCategory, isAdmin, vendorQueryCategory]);
+  }, [adminQueryCategory, isAdmin, vendorQueryCategory, reloadKey]);
 
   const handleCategoryChange = (category: Category) => {
     setActiveCategory(category);
@@ -570,7 +617,7 @@ export function ListingsPage() {
           </div>
         ) : (
           <button
-            onClick={() => navigate("/listings/create")}
+            onClick={openCreator}
             className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[12px] transition-all shrink-0"
             style={{
               background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
@@ -668,6 +715,7 @@ export function ListingsPage() {
               <div
                 key={listing.id}
                 className="grid items-center px-4 py-3 transition-all group cursor-pointer"
+                onClick={() => setViewingId(listing.id)}
                 style={{
                   gridTemplateColumns: "36px 2fr 1fr 1fr 80px 80px 100px 110px 80px",
                   borderBottom: i < paginatedListings.length - 1 ? "1px solid var(--border-light)" : "none",
@@ -814,116 +862,77 @@ export function ListingsPage() {
                   {listing.lastUpdated}
                 </div>
 
-                {/* Actions */}
-                <div className={`flex items-center gap-1 transition-opacity ${openActionId === listing.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                {/* Actions: one three-dots button (as on Transfer Requests) that opens the options */}
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    title="Manage Calendar & Bookings"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/listings/${listing.id}/manage`);
-                    }}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ color: "var(--accent-navy-light)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
+                    aria-label={`Actions for ${listing.title}`}
+                    aria-haspopup="menu"
+                    aria-expanded={openActionId === listing.id}
+                    onClick={() => setOpenActionId((current) => (current === listing.id ? null : listing.id))}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                    style={{
+                      background: "var(--input-background)",
+                      border: "1px solid var(--border-light)",
+                      color: openActionId === listing.id ? "var(--text-primary)" : "var(--text-secondary)",
                     }}
                   >
-                    <CalendarDays size={13} />
+                    <MoreHorizontal size={14} />
                   </button>
-                  <button
-                    type="button"
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--accent-navy-light)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                    }}
-                  >
-                    <Eye size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/listings/${listing.id}/edit`);
-                    }}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "var(--active-overlay)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--accent-navy-light)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                    }}
-                  >
-                    <Edit2 size={13} />
-                  </button>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenActionId((current) => (current === listing.id ? null : listing.id));
-                      }}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{
-                        color: openActionId === listing.id ? "var(--text-primary)" : "var(--text-secondary)",
-                        background: openActionId === listing.id ? "var(--hover-overlay)" : "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                        (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (openActionId !== listing.id) {
-                          (e.currentTarget as HTMLElement).style.background = "transparent";
-                          (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                        }
-                      }}
-                    >
-                      <MoreHorizontal size={13} />
-                    </button>
-                    {openActionId === listing.id && (
+                  {openActionId === listing.id && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setOpenActionId(null)} />
                       <div
-                        className="absolute right-0 top-8 z-30 w-44 rounded-lg p-1 space-y-0.5"
-                        onClick={(e) => e.stopPropagation()}
+                        role="menu"
+                        className="absolute right-0 top-9 z-30 w-52 rounded-lg p-1 space-y-0.5"
                         style={{
                           background: "var(--bg-panel)",
                           border: "1px solid var(--border-light)",
                           boxShadow: "var(--shadow-md)",
                         }}
                       >
+                        {[
+                          {
+                            label: "View details",
+                            icon: <Eye size={13} style={{ color: "var(--accent-navy-light)" }} />,
+                            run: () => setViewingId(listing.id),
+                          },
+                          {
+                            label: "Edit listing",
+                            icon: <Edit2 size={13} style={{ color: "var(--accent-navy-light)" }} />,
+                            run: () => openEditor(listing),
+                          },
+                          {
+                            label: "Manage calendar & bookings",
+                            icon: <CalendarDays size={13} style={{ color: "var(--accent-navy-light)" }} />,
+                            run: () => navigate(`/listings/${listing.id}/manage`),
+                          },
+                        ].map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setOpenActionId(null);
+                              item.run();
+                            }}
+                            className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-all"
+                            style={{ color: "var(--text-primary)" }}
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLElement).style.background = "transparent";
+                            }}
+                          >
+                            {item.icon}
+                            {item.label}
+                          </button>
+                        ))}
+                        <div style={{ borderTop: "1px solid var(--border-light)", margin: "4px 0" }} />
                         <button
                           type="button"
-                          onClick={() => {
-                            setOpenActionId(null);
-                            navigate(`/listings/${listing.id}/manage`);
-                          }}
-                          className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-all"
-                          style={{ color: "var(--text-primary)" }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.background = "transparent";
-                          }}
-                        >
-                          <CalendarDays size={13} style={{ color: "var(--accent-navy-light)" }} />
-                          Manage Calendar
-                        </button>
-                        <button
-                          type="button"
+                          role="menuitem"
                           disabled={deletingListingId === listing.id}
                           onClick={() => deleteListing(listing)}
                           className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-all disabled:opacity-50"
@@ -939,8 +948,8 @@ export function ListingsPage() {
                           Delete
                         </button>
                       </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -1001,6 +1010,45 @@ export function ListingsPage() {
           </div>
         </div>
       </div>
+
+      {creatingParam && !editingId && (
+        <ListingEditor
+          key={`create-${creatingParam}`}
+          mode="create"
+          presentation="drawer"
+          initialCategory={creatingCategory}
+          onClose={closeCreator}
+          onSaved={refreshAfterSave}
+        />
+      )}
+
+      {viewingId && !editingId && !creatingParam && (() => {
+        const viewing = listings.find((item) => item.id === viewingId);
+        if (!viewing) return null;
+        return (
+          <ListingViewDrawer
+            listing={viewing}
+            onClose={() => setViewingId(null)}
+            onEdit={() => {
+              setViewingId(null);
+              openEditor(viewing);
+            }}
+            onManage={() => navigate(`/listings/${viewing.id}/manage`)}
+          />
+        );
+      })()}
+
+      {editingId && (
+        <ListingEditor
+          key={editingId}
+          mode="edit"
+          listingId={editingId}
+          presentation="drawer"
+          onClose={closeEditor}
+          onSaved={refreshAfterSave}
+          onUnsupportedCategory={() => navigate(`/listings/${editingId}/edit`, { replace: true })}
+        />
+      )}
     </div>
   );
 }

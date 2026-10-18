@@ -40,6 +40,7 @@ export function AdminDashboard() {
   const operationalAlerts = [
     {
       label: "Vendor Approvals",
+      to: "/vendor-approvals",
       value: 7,
       urgent: 3,
       color: "#f59e0b",
@@ -48,6 +49,7 @@ export function AdminDashboard() {
     },
     {
       label: "Listings Pending",
+      to: "/reviews",
       value: 12,
       urgent: 5,
       color: "#3b82f6",
@@ -56,6 +58,7 @@ export function AdminDashboard() {
     },
     {
       label: "Transport Requests",
+      to: "/transport/requests",
       value: 4,
       urgent: 2,
       color: "#8b5cf6",
@@ -64,6 +67,7 @@ export function AdminDashboard() {
     },
     {
       label: "Support Tickets",
+      to: "/support/tickets",
       value: 9,
       urgent: 1,
       color: "#ef4444",
@@ -478,7 +482,7 @@ export function AdminDashboard() {
               <p className="text-[11px] mb-2" style={{ color: "var(--text-secondary)" }}>
                 {alert.label}
               </p>
-              <button
+              <button type="button" onClick={(e) => { e.stopPropagation(); navigate(alert.to); }}
                 className="text-[10px] px-2 py-1 rounded transition-all"
                 style={{
                   background: "var(--active-overlay)",
@@ -551,7 +555,7 @@ export function AdminDashboard() {
                 Live Booking Operations
               </h2>
             </div>
-            <button
+            <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/bookings"); }}
               className="text-[11px] px-3 py-1.5 rounded-lg transition-all"
               style={{
                 background: "var(--input-background)",
@@ -567,6 +571,7 @@ export function AdminDashboard() {
               <div
                 key={booking.id}
                 className="px-5 py-3.5 group cursor-pointer transition-all"
+                onClick={() => navigate("/bookings")}
                 style={{
                   borderBottom: index < liveBookings.length - 1 ? "1px solid var(--border-light)" : "none",
                 }}
@@ -625,8 +630,8 @@ export function AdminDashboard() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/bookings"); }}
                     className="text-[10px] px-2.5 py-1 rounded transition-all"
                     style={{
                       background: "var(--active-overlay)",
@@ -636,7 +641,7 @@ export function AdminDashboard() {
                   >
                     View
                   </button>
-                  <button
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/bookings"); }}
                     className="text-[10px] px-2.5 py-1 rounded transition-all"
                     style={{
                       background: "rgba(34, 197, 94, 0.1)",
@@ -646,7 +651,7 @@ export function AdminDashboard() {
                   >
                     Confirm
                   </button>
-                  <button
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/vendors"); }}
                     className="text-[10px] px-2.5 py-1 rounded transition-all"
                     style={{
                       color: "var(--text-tertiary)",
@@ -820,7 +825,7 @@ export function AdminDashboard() {
                   </span>
                 </div>
                 <div className="flex gap-2">
-                  <button
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/vendor-approvals"); }}
                     className="flex-1 text-[11px] px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
                     style={{
                       background: "rgba(34, 197, 94, 0.1)",
@@ -832,7 +837,7 @@ export function AdminDashboard() {
                     <ThumbsUp size={12} />
                     Approve
                   </button>
-                  <button
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/vendor-approvals"); }}
                     className="flex-1 text-[11px] px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
                     style={{
                       background: "rgba(239, 68, 68, 0.1)",
@@ -844,7 +849,7 @@ export function AdminDashboard() {
                     <ThumbsDown size={12} />
                     Reject
                   </button>
-                  <button
+                  <button type="button" aria-label="Open vendor approvals" onClick={(e) => { e.stopPropagation(); navigate("/vendor-approvals"); }}
                     className="text-[11px] px-3 py-2 rounded-lg transition-all"
                     style={{
                       background: "var(--input-background)",
@@ -949,7 +954,7 @@ export function AdminDashboard() {
                     </div>
                   </div>
                 </div>
-                <button
+                <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/reviews"); }}
                   className="w-full text-[11px] px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
                   style={{
                     background: "var(--active-overlay)",
@@ -1049,7 +1054,7 @@ export function AdminDashboard() {
                   )}
                 </div>
                 {req.status === "pending" && (
-                  <button
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate("/transport/requests"); }}
                     className="w-full text-[11px] px-3 py-1.5 rounded-lg transition-all"
                     style={{
                       background: "rgba(139, 92, 246, 0.1)",

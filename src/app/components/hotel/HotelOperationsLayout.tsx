@@ -263,31 +263,6 @@ function StayVendorLayoutInner() {
               ))}
             </div>
           </div>
-
-          {/* Support */}
-          <div>
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>
-              Support
-            </p>
-            <div className="space-y-0.5">
-              <NavLink
-                to="/vendor/support"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
-                    isActive
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/25 font-semibold"
-                      : "hover:bg-white/[0.04]"
-                  }`
-                }
-                style={({ isActive }) => ({
-                  color: isActive ? "var(--accent-navy-light)" : "var(--text-secondary)",
-                })}
-              >
-                <HeadphonesIcon size={16} />
-                <span className="truncate">Vendor Support</span>
-              </NavLink>
-            </div>
-          </div>
         </div>
 
         {/* Admin Dev Mode Switcher */}

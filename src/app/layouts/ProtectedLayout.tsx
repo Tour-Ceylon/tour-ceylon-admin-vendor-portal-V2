@@ -195,72 +195,30 @@ export function ProtectedLayout() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 6. Stay Vendor Experience Handling
-  // Approved stay vendors operate in their dedicated StayVendorLayout (/hotel/*)
-  const isStayVendor =
-    effectiveUser?.role === "vendor" &&
-    (effectiveUser?.approvedCategories?.includes("Stay") ||
-      (effectiveUser?.approvedCategories?.length === 0));
-
-  if (isStayVendor) {
-    // If a stay vendor accesses root, general dashboard, or general vendor business center, route to stay hotel dashboard
-    if (
-      location.pathname === "/" ||
-      location.pathname === "/dashboard" ||
-      location.pathname.startsWith("/vendor/") ||
-      location.pathname === "/vendor"
-    ) {
-      return <Navigate to="/hotel/dashboard" replace />;
+  // 6. Vendor Experience Handling
+  // Vendors are Stay vendors only and work in their own portal under /hotel. Tours, safaris and
+  // experiences are created and managed by admins alone, so a vendor never sees those pages.
+  if (effectiveUser?.role === "vendor") {
+    const path = location.pathname;
+    if (path.startsWith("/hotel")) {
+      return <Outlet />;
     }
-
-    // Direct listings requests to hotel-scoped routes so they stay inside the StayVendorLayout
-    if (location.pathname === "/listings") {
+    if (path === "/listings") {
       return <Navigate to="/hotel/listings?category=stay" replace />;
     }
-    if (location.pathname === "/listings/create") {
+    if (path === "/listings/create") {
       return <Navigate to="/hotel/listings/create" replace />;
     }
-    if (location.pathname.startsWith("/listings/") && location.pathname.endsWith("/manage")) {
-      const parts = location.pathname.split("/");
-      return <Navigate to={`/hotel/listings/${parts[2]}/manage`} replace />;
+    const listingPage = path.match(/^\/listings\/([^/]+)\/(manage|edit)$/);
+    if (listingPage) {
+      return <Navigate to={`/hotel/listings/${listingPage[1]}/${listingPage[2]}`} replace />;
     }
-    if (location.pathname.startsWith("/listings/") && location.pathname.endsWith("/edit")) {
-      const parts = location.pathname.split("/");
-      return <Navigate to={`/hotel/listings/${parts[2]}/edit`} replace />;
-    }
+    return <Navigate to="/hotel/dashboard" replace />;
   }
 
-  // Hotel operations routes render in the dedicated StayVendorLayout
+  // The hotel portal is also open to admins (the "View as Vendor" preview and the Admin Console link)
   if (location.pathname.startsWith("/hotel")) {
     return <Outlet />;
-  }
-
-  // 7. Vendor Route Authorization Guard
-  // Prevent vendors from navigating to admin-only pages
-  const isAdminPath =
-    location.pathname.startsWith("/users") ||
-    location.pathname.startsWith("/vendor-approvals") ||
-    location.pathname.startsWith("/vendors") ||
-    location.pathname.startsWith("/admins") ||
-    location.pathname.startsWith("/finance") ||
-    location.pathname.startsWith("/payments") ||
-    location.pathname.startsWith("/payouts") ||
-    location.pathname.startsWith("/refunds") ||
-    location.pathname.startsWith("/commission") ||
-    location.pathname.startsWith("/transport") ||
-    location.pathname.startsWith("/support") ||
-    location.pathname.startsWith("/activity") ||
-    location.pathname.startsWith("/audit-logs") ||
-    location.pathname.startsWith("/analytics") ||
-    location.pathname.startsWith("/workflows") ||
-    location.pathname.startsWith("/api-integration") ||
-    location.pathname.startsWith("/system-architecture") ||
-    location.pathname.startsWith("/qa-checklist") ||
-    location.pathname.startsWith("/settings/");
-
-  if (effectiveUser?.role === "vendor" && isAdminPath) {
-    console.warn(`Vendor unauthorized for admin path: ${location.pathname}`);
-    return <Navigate to={isStayVendor ? "/hotel/dashboard" : "/dashboard"} replace />;
   }
 
   return (

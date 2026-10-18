@@ -131,7 +131,7 @@ export const router = createBrowserRouter([
 
           // Listings
           { path: "listings", Component: ListingsPage },
-          { path: "listings/create", Component: () => <ListingEditor mode="create" /> },
+          { path: "listings/create", Component: () => <Navigate to="/listings?create=new" replace /> },
           { path: "listings/:id/edit", Component: () => <ListingEditor mode="edit" /> },
           { path: "listings/:id/manage", Component: SingleListingManager },
 
@@ -165,7 +165,7 @@ export const router = createBrowserRouter([
               { path: "settings", Component: PropertySettings },
               { path: "policies", Component: Policies },
               { path: "listings", Component: ListingsPage },
-              { path: "listings/create", Component: () => <ListingEditor mode="create" /> },
+              { path: "listings/create", Component: () => <Navigate to="/hotel/listings?create=stay" replace /> },
               { path: "listings/:id/edit", Component: () => <ListingEditor mode="edit" /> },
               { path: "listings/:id/manage", Component: SingleListingManager },
             ],
