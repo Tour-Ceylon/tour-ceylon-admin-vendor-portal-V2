@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useListingDraftStore } from "../stores/listingDraftStore";
 import { useParams, useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
@@ -47,6 +47,7 @@ import {
   TagInput,
   Toggle,
 } from "./listings/listingEditorShared";
+import { ListingEditDrawer } from "./listings/ListingEditDrawer";
 import {
   CategoryDetailsTab,
   BasicInfoTab,
@@ -68,6 +69,15 @@ type StayEditTabId = "property" | "rooms" | "rates" | "images" | "summary";
 
 interface ListingEditorProps {
   mode: ListingMode;
+  /** Edit this listing instead of the one in the URL (used when the editor is opened in a drawer). */
+  listingId?: string | null;
+  /** "drawer" shows the Safari / Experience / Stay edit form in a panel that slides in from the right. */
+  presentation?: "page" | "drawer";
+  onClose?: () => void;
+  /** Called after the listing was saved, so the list behind the drawer can refresh. */
+  onSaved?: () => void;
+  /** The drawer only edits Safari, Experience and Stay listings; anything else should open the full editor. */
+  onUnsupportedCategory?: () => void;
 }
 
 interface StayPropertyResponse {
@@ -81,6 +91,8 @@ interface StayPropertyResponse {
   latitude?: number | string | null;
   longitude?: number | string | null;
   status: string;
+  applicationNote?: string | null;
+  paymentPolicy?: string | null;
   contact?: Record<string, any>;
   policies?: Record<string, any>;
   media?: Array<Record<string, any>>;
@@ -314,6 +326,7 @@ function stayPropertyToRoomType(roomType: NonNullable<StayPropertyResponse["room
   return {
     id: roomType.id,
     type: roomType.name,
+    description: roomType.description ?? "",
     count: String(roomType.totalUnits ?? roomType.roomUnits?.length ?? 1),
     beds: String(bedConfiguration.beds ?? 0),
     hasBeds: Boolean(bedConfiguration.hasBeds),
@@ -345,7 +358,23 @@ function hydrateStayDraft(property: StayPropertyResponse) {
     lat: property.latitude != null ? String(property.latitude) : "",
     lng: property.longitude != null ? String(property.longitude) : "",
     categoryData: {
-      paymentPolicy: property.payment_policy || (policies as any).paymentPolicy || "pay_at_property",
+      paymentPolicy: property.paymentPolicy || (property as any).payment_policy || (policies as any).paymentPolicy || "pay_at_property",
+      // What the database already holds that the editor must write back unchanged (the update replaces whole columns).
+      stayProfile: {
+        propertyType: property.propertyType ?? "",
+        address: property.address ?? "",
+        city: property.city ?? "",
+        district: property.district ?? "",
+        phone: property.contact?.phone ?? "",
+        email: property.contact?.email ?? "",
+        website: property.contact?.website ?? "",
+        applicationNote: property.applicationNote ?? "",
+      },
+      stayOriginal: {
+        contact: property.contact ?? {},
+        policies: property.policies ?? {},
+        metadata: property.metadata ?? {},
+      },
       propertyDetails: {
         propertyName: property.name,
         propertyLocation: property.address || property.city || "",
@@ -503,6 +532,8 @@ function hydrateGeneralListingDraft(listingData: any) {
       maxPassengers: transDet.max_passengers != null ? String(transDet.max_passengers) : "4",
       maxLuggage: transDet.max_luggage != null ? String(transDet.max_luggage) : "4",
       airConditioned: transDet.air_conditioned ?? true,
+      // Experience (activity) fields come from the saved activity detail, not the tour/safari fallbacks above
+      ...(category === "Experience" ? hydrateExperienceCategoryData(actDet) : {}),
     },
   };
 }
@@ -518,6 +549,78 @@ function normalizeSafariTypeEnum(val?: string): "morning" | "evening" | "full_da
   if (lower.includes("afternoon") || lower.includes("evening") || lower.includes("night")) return "evening";
   if (lower.includes("shared") || lower.includes("seat")) return "shared";
   return "private";
+}
+
+/** The activity (Experience) fields from the saved listing, in the shape the edit form uses. */
+function hydrateExperienceCategoryData(act: any): Record<string, any> {
+  const text = (value: unknown) => (value == null ? undefined : String(value));
+  const time = (value: unknown) => (typeof value === "string" && value ? value.slice(0, 5) : "");
+  const list = (value: unknown) => (Array.isArray(value) ? value : []);
+  return {
+    activityType: act.activity_type || undefined,
+    meetingPoint: act.meeting_point ?? "",
+    durationMinutes: text(act.duration_minutes) ?? "180",
+    difficultyLevel: act.difficulty_level ?? "Easy",
+    ageRestriction: act.age_restriction ?? "",
+    minGroupSize: text(act.group_size_min) ?? "1",
+    maxGroupSize: text(act.group_size_max) ?? "10",
+    startTime: time(act.start_time),
+    endTime: time(act.end_time),
+    privateAvailable: act.private_available ?? undefined,
+    pickupSupported: act.pickup_supported ?? undefined,
+    highlights: list(act.highlights),
+    includedItems: list(act.included_items),
+    excludedItems: list(act.excluded_items),
+    languages: list(act.languages),
+    whatToBring: list(act.what_to_bring),
+    pickupNotes: act.pickup_notes ?? "",
+    availabilityNotes: act.availability_notes ?? "",
+    cancellationPolicy: act.cancellation_policy ?? "",
+    accessibilityInfo: act.accessibility_info ?? "",
+  };
+}
+
+/** Builds the activityDetail the server receives from what is in the Experience form (not fixed placeholder values). */
+function buildActivityDetailPayload(data: Record<string, any>, subcategory: string | null | undefined, destination: string) {
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const freeText = (value: unknown) => (typeof value === "string" ? value.trim() : undefined);
+  const list = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim()) : [];
+  const whole = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+  };
+  const languages = list(data.languages);
+
+  const detail: Record<string, any> = {
+    activityType: text(data.activityType) || subcategory || "Sightseeing",
+    durationMinutes: whole(data.durationMinutes) ?? 180,
+    meetingPoint: text(data.meetingPoint) || destination || "City Center",
+    includedItems: list(data.includedItems),
+    excludedItems: list(data.excludedItems),
+    languages: languages.length > 0 ? languages : ["English"],
+    whatToBring: list(data.whatToBring),
+    highlights: list(data.highlights),
+  };
+
+  const optional: Record<string, unknown> = {
+    startTime: text(data.startTime),
+    endTime: text(data.endTime),
+    difficultyLevel: text(data.difficultyLevel),
+    ageRestriction: freeText(data.ageRestriction),
+    groupSizeMin: whole(data.minGroupSize),
+    groupSizeMax: whole(data.maxGroupSize),
+    privateAvailable: typeof data.privateAvailable === "boolean" ? data.privateAvailable : undefined,
+    pickupSupported: typeof data.pickupSupported === "boolean" ? data.pickupSupported : undefined,
+    pickupNotes: freeText(data.pickupNotes),
+    availabilityNotes: freeText(data.availabilityNotes),
+    cancellationPolicy: freeText(data.cancellationPolicy),
+    accessibilityInfo: freeText(data.accessibilityInfo),
+  };
+  for (const [key, value] of Object.entries(optional)) {
+    if (value !== undefined) detail[key] = value;
+  }
+  return detail;
 }
 
 function toOptionalNumber(value: unknown) {
@@ -560,7 +663,7 @@ function buildStayApplicationPayload({
     return {
       id: room.id && isUuid(room.id) ? room.id : undefined,
       name: roomType,
-      description: "",
+      description: room.description ?? "",
       count: Number(room.count) || 1,
       unitPrefix: roomType
         .split(/\s+/)
@@ -592,23 +695,37 @@ function buildStayApplicationPayload({
     };
   });
 
-  const propertyName = propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
+  const profile = (categoryData.stayProfile ?? {}) as Record<string, any>;
+  const original = (categoryData.stayOriginal ?? {}) as Record<string, any>;
+  // The drawer edits the title as the property name and address / city / district as separate fields.
+  const drawerFields = profile.titleIsName === true;
+  const orNull = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+
+  const propertyName = drawerFields
+    ? title || propertyDetails.propertyName || "Untitled stay"
+    : propertyDetails.propertyName || title || getTreeOptionLabel("Stay", subcategory) || "Untitled stay";
   const propertyLocation = propertyDetails.propertyLocation || destination;
+
+  const contact: Record<string, any> = { ...(original.contact ?? {}), languages: propertyDetails.languages ?? [] };
+  if (profile.phone !== undefined) contact.phone = orNull(profile.phone);
+  if (profile.email !== undefined) contact.email = orNull(profile.email);
+  if (profile.website !== undefined) contact.website = orNull(profile.website);
 
   return {
     name: propertyName,
-    propertyType: subcategory || "hotel",
+    propertyType: profile.propertyType || subcategory || "hotel",
     description,
-    address: propertyLocation,
-    city: propertyLocation,
+    address: drawerFields ? orNull(profile.address) : propertyLocation,
+    city: drawerFields ? orNull(profile.city) : propertyLocation,
+    district: drawerFields ? orNull(profile.district) : (profile.district ? orNull(profile.district) : undefined),
+    applicationNote: orNull(profile.applicationNote) ?? undefined,
     latitude: toOptionalNumber(lat),
     longitude: toOptionalNumber(lng),
     status: active ? (isAdmin ? "approved" : "submitted") : "draft",
     paymentPolicy: categoryData.paymentPolicy || "pay_at_property",
-    contact: {
-      languages: propertyDetails.languages ?? [],
-    },
+    contact,
     policies: {
+      ...(original.policies ?? {}),
       checkInTime: propertyDetails.checkInTime || null,
       checkOutTime: propertyDetails.checkOutTime || null,
       houseRules: propertyDetails.houseRules ?? {},
@@ -630,6 +747,7 @@ function buildStayApplicationPayload({
     roomTypes: rooms,
     metadata: {
       source: "vendor_portal_v2",
+      ...(original.metadata ?? {}),
       hostProfile: categoryData.hostProfile ?? {},
       selectedSubtype: subcategory,
     },
@@ -973,14 +1091,7 @@ function CreateListingWizard({
             accessibilityInfo: draftCatData.accessibilityInfo || "",
           };
         } else if (catLower === "experience") {
-          payload.activityDetail = {
-            activityType: subcategory || "Sightseeing",
-            durationMinutes: 180,
-            meetingPoint: destination || "City Center",
-            includedItems: ["Equipment", "Instructor"],
-            languages: ["English"],
-            highlights: ["Exciting Adventure"],
-          };
+          payload.activityDetail = buildActivityDetailPayload(draftCatData, subcategory, destination);
         } else if (catLower === "transport" || catLower === "transfer") {
           payload.transferDetail = {
             originType: "airport",
@@ -1096,7 +1207,7 @@ function CreateListingWizard({
               selectedValues={selectedFeatures}
               onChange={(values) => {
                 setSelectedFeatures(values);
-                setDraft({ categoryData: { ...(draftCategoryData || {}), amenities: values } });
+                setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), amenities: values } });
               }}
             />
             <MediaTab />
@@ -1237,7 +1348,7 @@ function RatePlansStep() {
   useEffect(() => {
     setDraft({
       categoryData: {
-        ...(draftCategoryData || {}),
+        ...(useListingDraftStore.getState().categoryData || {}),
         ratePlans,
       },
     });
@@ -1834,12 +1945,12 @@ function StayEditPanel({
   );
 }
 
-export function ListingEditor({ mode }: ListingEditorProps) {
+export function ListingEditor({ mode, listingId: listingIdProp, presentation = "page", onClose, onSaved, onUnsupportedCategory }: ListingEditorProps) {
   const navigate = useNavigate();
   const params = useParams();
   const { effectiveUser } = useAuth();
   const isAdmin = effectiveUser?.role === "admin";
-  const listingId = params.id || null;
+  const listingId = listingIdProp ?? params.id ?? null;
   const [category, setCategory] = useState<Category | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("basic");
   const [title, setTitle] = useState("");
@@ -1872,6 +1983,30 @@ export function ListingEditor({ mode }: ListingEditorProps) {
   const [editError, setEditError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Unsaved-changes tracking for the drawer. Every edit writes to the draft store, so listening to the store catches
+  // all of them; it is only armed once the listing has finished loading so loading itself does not count.
+  const [dirty, setDirty] = useState(false);
+  const armedRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = useListingDraftStore.subscribe(() => {
+      if (armedRef.current) setDirty(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  // A drawer never leaves its draft behind for the next listing that is opened.
+  useEffect(() => {
+    return () => {
+      if (presentation === "drawer") useListingDraftStore.getState().clearDraft();
+    };
+  }, [presentation]);
+
+  // The drawer is for Safari, Experience and Stay listings.
+  useEffect(() => {
+    if (presentation !== "drawer" || editLoading || loadError || !category) return;
+    if (category !== "Safari" && category !== "Experience" && category !== "Stay") onUnsupportedCategory?.();
+  }, [presentation, editLoading, loadError, category, onUnsupportedCategory]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -1996,13 +2131,24 @@ export function ListingEditor({ mode }: ListingEditorProps) {
         if (cancelled) return;
         setLoadError(error?.message || "Unable to load this listing.");
       } finally {
-        if (!cancelled) setEditLoading(false);
+        if (!cancelled) {
+          setEditLoading(false);
+          // Start counting edits a moment after the listing has been put into the form.
+          armedRef.current = false;
+          setDirty(false);
+          armTimer = window.setTimeout(() => {
+            armedRef.current = true;
+          }, 400);
+        }
       }
     }
 
+    let armTimer: number | undefined;
     loadListing();
     return () => {
       cancelled = true;
+      armedRef.current = false;
+      if (armTimer !== undefined) window.clearTimeout(armTimer);
     };
   }, [listingId, mode]);
 
@@ -2254,14 +2400,11 @@ export function ListingEditor({ mode }: ListingEditorProps) {
             }
           }
         } else if (catLower === "experience") {
-          payload.activityDetail = {
-            activityType: useListingDraftStore.getState().subcategory || "Sightseeing",
-            durationMinutes: 180,
-            meetingPoint: destination || "City Center",
-            includedItems: ["Equipment"],
-            languages: ["English"],
-            highlights: ["Exciting Adventure"],
-          };
+          payload.activityDetail = buildActivityDetailPayload(
+            draftCatData,
+            useListingDraftStore.getState().subcategory,
+            destination,
+          );
           if (variants && variants.length > 0) {
             let foundDefault = false;
             payload.variants = variants.map((v, i) => {
@@ -2325,6 +2468,8 @@ export function ListingEditor({ mode }: ListingEditorProps) {
       }
 
       setSaveSuccess(true);
+      setDirty(false);
+      onSaved?.();
       setTimeout(() => setSaveSuccess(false), 5000);
     } catch (error: any) {
       setEditError(error?.message || `Unable to save this listing.`);
@@ -2336,6 +2481,43 @@ export function ListingEditor({ mode }: ListingEditorProps) {
     setVariants(v);
     useListingDraftStore.getState().setDraft({ variants: v });
   };
+
+  // Safari, Experience and Stay edit in a drawer that slides in from the right.
+  if (mode === "edit" && presentation === "drawer") {
+    return (
+      <ListingEditDrawer
+        category={category}
+        listingId={listingId}
+        loading={editLoading}
+        loadError={loadError}
+        title={title}
+        setTitle={setTitlePersist}
+        active={active}
+        setActive={setActivePersist}
+        description={description}
+        setDescription={setDescriptionPersist}
+        destination={destination}
+        setDestination={setDestinationPersist}
+        lat={lat}
+        setLat={setLatPersist}
+        lng={lng}
+        setLng={setLngPersist}
+        variants={variants}
+        setVariants={setVariantsPersist}
+        saving={saving}
+        saveSuccess={saveSuccess}
+        saveError={editError}
+        dirty={dirty}
+        onSave={saveStayListing}
+        ratePlansSection={<RatePlansStep />}
+        onClose={() => onClose?.()}
+        onDismissMessages={() => {
+          setSaveSuccess(false);
+          setEditError(null);
+        }}
+      />
+    );
+  }
 
   if (mode === "create") {
     return (

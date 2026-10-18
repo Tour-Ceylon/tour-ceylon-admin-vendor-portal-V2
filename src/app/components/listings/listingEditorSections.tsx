@@ -204,6 +204,8 @@ export interface RoomType {
     pricePerNight: string;
     currency: string;
     discounts: RoomDiscount[];
+    /** Shown to guests on the room card; kept as stored so saving the form never blanks it. */
+    description?: string;
     bedBreakdown?: Record<string, number>;
     coverImage?: string;
     gallery?: string[];
@@ -282,7 +284,8 @@ export function DestinationTab({
     );
 }
 
-export function MediaTab() {
+/** `profileMode` hides the name and location inputs, which the Stay drawer edits in its own "Property & contact" section. */
+export function MediaTab({ profileMode = false }: { profileMode?: boolean } = {}) {
     const setDraft = useListingDraftStore((s) => s.setDraft);
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const draftPropertyDetails = draftCategoryData.propertyDetails ?? {};
@@ -309,7 +312,7 @@ export function MediaTab() {
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 propertyDetails: {
                     propertyLocation,
                     propertyName,
@@ -330,20 +333,24 @@ export function MediaTab() {
         <div>
             <SectionCard title="Property Details">
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <FieldLabel required>Where is the property</FieldLabel>
-                        <FormInput value={propertyLocation} onChange={setPropertyLocation} placeholder="City, area" />
-                    </div>
+                    {!profileMode && (
+                        <div>
+                            <FieldLabel required>Where is the property</FieldLabel>
+                            <FormInput value={propertyLocation} onChange={setPropertyLocation} placeholder="City, area" />
+                        </div>
+                    )}
                     <div>
                         <FieldLabel>Breakfast included</FieldLabel>
                         <div className="flex items-center gap-3 h-9">
                             <Toggle value={breakfastIncluded} onChange={setBreakfastIncluded} />
                         </div>
                     </div>
-                    <div>
-                        <FieldLabel required>Property Name</FieldLabel>
-                        <FormInput value={propertyName} onChange={setPropertyName} placeholder="Name" />
-                    </div>
+                    {!profileMode && (
+                        <div>
+                            <FieldLabel required>Property Name</FieldLabel>
+                            <FormInput value={propertyName} onChange={setPropertyName} placeholder="Name" />
+                        </div>
+                    )}
                     <div>
                         <FieldLabel>Parking?</FieldLabel>
                         <div className="flex items-center gap-3 h-9">
@@ -740,7 +747,7 @@ function SafariPackagesSection() {
         <div className="space-y-6">
             {/* Step 1: Game Drive Time Slots */}
             <SectionCard title="1. Game Drive Time Slots Availability">
-                <p className="text-xs text-slate-500 mb-4">
+                <p className="text-xs text-[var(--text-secondary)] mb-4">
                     Enable the standard Sri Lankan national park safari session time slots offered for this listing:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -752,13 +759,13 @@ function SafariPackagesSection() {
                                 onClick={() => toggleSlot(slot.key)}
                                 className={`p-4 rounded-xl border-2 transition cursor-pointer flex items-center justify-between ${
                                     isEnabled
-                                        ? "border-[#051f36] bg-slate-50 shadow-sm"
-                                        : "border-slate-200 bg-white opacity-60"
+                                        ? "border-[var(--accent-navy-light)] bg-[var(--active-overlay)] shadow-sm"
+                                        : "border-[var(--border-light)] bg-[var(--input-background)] opacity-60"
                                 }`}
                             >
                                 <div>
-                                    <h4 className="font-bold text-slate-900 text-sm">{slot.label}</h4>
-                                    <p className="text-xs text-slate-500 mt-0.5">{slot.time}</p>
+                                    <h4 className="font-bold text-[var(--text-primary)] text-sm">{slot.label}</h4>
+                                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">{slot.time}</p>
                                 </div>
                                 <Toggle value={isEnabled} onChange={() => toggleSlot(slot.key)} />
                             </div>
@@ -769,7 +776,7 @@ function SafariPackagesSection() {
 
             {/* Step 2: Vehicle Packages & Pricing Grouped by Time Slot */}
             <SectionCard title="2. Safari Jeep Vehicle Packages & Pricing by Time Slot">
-                <p className="text-xs text-slate-500 mb-4">
+                <p className="text-xs text-[var(--text-secondary)] mb-4">
                     Configure the available Jeep vehicle types, max passenger capacities, and rates under each active time slot.
                 </p>
 
@@ -778,41 +785,41 @@ function SafariPackagesSection() {
                         const slotPackages = packages.filter((p) => p.timeSlot.includes(slotObj.key));
 
                         return (
-                            <div key={slotObj.key} className="p-4 rounded-2xl border border-slate-200 bg-white space-y-4">
-                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div key={slotObj.key} className="p-4 rounded-2xl border border-[var(--border-light)] bg-[var(--input-background)] space-y-4">
+                                <div className="flex items-center justify-between pb-3 border-b border-[var(--border-light)]">
                                     <div>
-                                        <h3 className="font-extrabold text-[#051f36] text-sm flex items-center gap-2">
+                                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm flex items-center gap-2">
                                             <span>📅</span> {slotObj.label} ({slotObj.time})
                                         </h3>
-                                        <span className="text-xs text-slate-500 font-medium">
+                                        <span className="text-xs text-[var(--text-secondary)] font-medium">
                                             {slotPackages.length} vehicle package{slotPackages.length === 1 ? "" : "s"} configured
                                         </span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => handleAddPackageForSlot(slotObj)}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#051f36] text-white hover:bg-[#0a2f4c] transition"
+                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--accent-navy)] text-white hover:opacity-90 transition"
                                     >
                                         + Add Vehicle Package for {slotObj.key}
                                     </button>
                                 </div>
 
                                 {slotPackages.length === 0 ? (
-                                    <div className="p-4 rounded-xl border border-dashed border-slate-300 text-center bg-slate-50 text-xs text-slate-500">
+                                    <div className="p-4 rounded-xl border border-dashed border-[var(--border-light)] text-center bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)]">
                                         No vehicle packages added for {slotObj.label} yet. Click "+ Add Vehicle Package" to add one.
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {slotPackages.map((pkg, idx) => (
-                                            <div key={pkg.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                                            <div key={pkg.id} className="p-4 rounded-xl border border-[var(--border-light)] bg-[var(--bg-panel)] space-y-3">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-xs font-black uppercase text-slate-700">
+                                                    <span className="text-xs font-black uppercase text-[var(--text-primary)]">
                                                         Vehicle Option #{idx + 1} — {slotObj.key} Session
                                                     </span>
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemovePackage(pkg.id)}
-                                                        className="text-xs font-bold text-rose-600 hover:text-rose-700"
+                                                        className="text-xs font-bold text-rose-500 hover:text-rose-400"
                                                     >
                                                         Remove Vehicle Option
                                                     </button>
@@ -877,8 +884,8 @@ function SafariPackagesSection() {
                                                     />
                                                 </div>
 
-                                                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                                                    <span className="text-xs font-semibold text-slate-700">Includes National Park Entrance Fees</span>
+                                                <div className="flex items-center justify-between pt-2 border-t border-[var(--border-light)]">
+                                                    <span className="text-xs font-semibold text-[var(--text-primary)]">Includes National Park Entrance Fees</span>
                                                     <Toggle
                                                         value={pkg.includesParkFees}
                                                         onChange={(v) => handleUpdatePackage(pkg.id, "includesParkFees", v)}
@@ -1130,7 +1137,7 @@ function StayDetails() {
     );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms, paymentPolicy]);
 
@@ -2254,6 +2261,127 @@ export function CategoryDetailsTab({ category }: { category: Category }) {
     return <Component />;
 }
 
+const STAY_PROPERTY_TYPES = [
+    "hotel",
+    "boutique-hotel",
+    "villa",
+    "resort",
+    "guesthouse",
+    "bungalow",
+    "eco-lodge",
+    "apartment",
+    "bed-breakfast",
+    "homestay",
+];
+
+const stayTypeLabel = (value: string) => value.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+/**
+ * The stay fields the database keeps that the other Stay sections do not edit: type, address, city, district,
+ * coordinates, contact details, amenities and the admin note. Values live in the draft store as
+ * `categoryData.stayProfile` and `categoryData.amenities`; ListingEditor turns them into the save payload.
+ */
+export function StayProfileSection({
+    lat,
+    setLat,
+    lng,
+    setLng,
+}: {
+    lat: string;
+    setLat: (value: string) => void;
+    lng: string;
+    setLng: (value: string) => void;
+}) {
+    const stored = useListingDraftStore((s) => s.categoryData ?? {});
+    const initial = (stored.stayProfile ?? {}) as Record<string, string>;
+    const subcategory = useListingDraftStore((s) => s.subcategory);
+
+    const [propertyType, setPropertyType] = useState(String(initial.propertyType || subcategory || "hotel"));
+    const [address, setAddress] = useState(String(initial.address ?? ""));
+    const [city, setCity] = useState(String(initial.city ?? ""));
+    const [district, setDistrict] = useState(String(initial.district ?? ""));
+    const [phone, setPhone] = useState(String(initial.phone ?? ""));
+    const [email, setEmail] = useState(String(initial.email ?? ""));
+    const [website, setWebsite] = useState(String(initial.website ?? ""));
+    const [applicationNote, setApplicationNote] = useState(String(initial.applicationNote ?? ""));
+    const [amenities, setAmenities] = useState<string[]>(() => (Array.isArray(stored.amenities) ? (stored.amenities as string[]) : []));
+
+    useEffect(() => {
+        const current = useListingDraftStore.getState();
+        current.setDraft({
+            categoryData: {
+                ...(current.categoryData || {}),
+                // titleIsName: in the drawer the listing title is the property name.
+                stayProfile: { propertyType, address, city, district, phone, email, website, applicationNote, titleIsName: true },
+                amenities,
+            },
+        });
+    }, [propertyType, address, city, district, phone, email, website, applicationNote, amenities]);
+
+    const typeOptions = STAY_PROPERTY_TYPES.includes(propertyType) ? STAY_PROPERTY_TYPES : [propertyType, ...STAY_PROPERTY_TYPES];
+
+    return (
+        <div className="space-y-4">
+            <SectionCard title="Property type & location">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <FieldLabel required>Property type</FieldLabel>
+                        <SelectField value={stayTypeLabel(propertyType)} onChange={(label) => setPropertyType(typeOptions.find((option) => stayTypeLabel(option) === label) ?? propertyType)} options={typeOptions.map(stayTypeLabel)} />
+                    </div>
+                    <div>
+                        <FieldLabel>City</FieldLabel>
+                        <FormInput value={city} onChange={setCity} placeholder="e.g. Galle" />
+                    </div>
+                    <div className="col-span-2">
+                        <FieldLabel>Address</FieldLabel>
+                        <FormInput value={address} onChange={setAddress} placeholder="Street address" />
+                    </div>
+                    <div>
+                        <FieldLabel>District</FieldLabel>
+                        <FormInput value={district} onChange={setDistrict} placeholder="e.g. Galle District" />
+                    </div>
+                    <div />
+                    <div>
+                        <FieldLabel>Latitude</FieldLabel>
+                        <FormInput value={lat} onChange={setLat} placeholder="e.g. 6.0329" />
+                    </div>
+                    <div>
+                        <FieldLabel>Longitude</FieldLabel>
+                        <FormInput value={lng} onChange={setLng} placeholder="e.g. 80.2168" />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Contact details">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <FieldLabel>Phone</FieldLabel>
+                        <FormInput value={phone} onChange={setPhone} type="tel" placeholder="+94 ..." />
+                    </div>
+                    <div>
+                        <FieldLabel>Email</FieldLabel>
+                        <FormInput value={email} onChange={setEmail} type="email" placeholder="reservations@example.com" />
+                    </div>
+                    <div className="col-span-2">
+                        <FieldLabel>Website</FieldLabel>
+                        <FormInput value={website} onChange={setWebsite} type="url" placeholder="https://" />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Amenities">
+                <FieldLabel>Property amenities</FieldLabel>
+                <TagInput tags={amenities} onChange={setAmenities} placeholder="Add amenity (e.g. Pool, Free WiFi)..." />
+            </SectionCard>
+
+            <SectionCard title="Application note">
+                <FieldLabel>Note kept with this property's application</FieldLabel>
+                <FormTextarea value={applicationNote} onChange={setApplicationNote} rows={3} placeholder="e.g. why a change was requested or approved" />
+            </SectionCard>
+        </div>
+    );
+}
+
 export function RoomsSection() {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
@@ -2274,7 +2402,7 @@ export function RoomsSection() {
     );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms, paymentPolicy]);
 
@@ -2447,6 +2575,15 @@ export function RoomsSection() {
                                         </div>
                                     ) : null}
 
+                                    <div className="mb-2">
+                                        <FieldLabel>Room description</FieldLabel>
+                                        <FormTextarea
+                                            value={room.description ?? ""}
+                                            onChange={(v) => updateRoom(room.id, { description: v })}
+                                            rows={2}
+                                            placeholder="What guests should know about this room"
+                                        />
+                                    </div>
                                     <div className="grid grid-cols-3 gap-4 mb-2">
                                         <div>
                                             <FieldLabel required>Max Guests</FieldLabel>
@@ -2471,7 +2608,7 @@ export function RoomsSection() {
                                             <TagInput tags={room.bathroomItems} onChange={(tags) => updateRoom(room.id, { bathroomItems: tags })} placeholder="Type and press Enter..." />
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4 mb-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
                                         <div>
                                             <FieldLabel>Guest Access</FieldLabel>
                                             <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
@@ -2484,7 +2621,7 @@ export function RoomsSection() {
                                         </div>
                                         <div>
                                             <FieldLabel required>Price per night</FieldLabel>
-                                            <div className="grid grid-cols-[1fr_110px] gap-2">
+                                            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
                                                 <input
                                                     value={room.pricePerNight}
                                                     onChange={(e) => updateRoom(room.id, { pricePerNight: e.target.value })}
@@ -2710,7 +2847,7 @@ export function ImagesSection() {
     });
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), images: { cover, gallery } } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), images: { cover, gallery } } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cover, gallery]);
 

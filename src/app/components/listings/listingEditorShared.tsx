@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import {
     Check,
     ChevronDown,
@@ -200,7 +200,28 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
     );
 }
 
+/** "panel" gives section cards the look of the cards in the Transfer Request drawer. */
+export const SectionCardVariantContext = createContext<"default" | "panel">("default");
+
 export function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+    const variant = useContext(SectionCardVariantContext);
+    if (variant === "panel") {
+        return (
+            <section
+                className="rounded-xl p-5 mb-4"
+                style={{
+                    background: "var(--bg-panel)",
+                    border: "1px solid var(--border-light)",
+                    boxShadow: "var(--shadow-md)",
+                }}
+            >
+                <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                    {title}
+                </h3>
+                {children}
+            </section>
+        );
+    }
     return (
         <div
             className="rounded-xl p-5 mb-4"
