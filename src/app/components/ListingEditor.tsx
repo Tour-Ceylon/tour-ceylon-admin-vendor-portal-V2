@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useListingDraftStore } from "../stores/listingDraftStore";
-import { useParams, useNavigate } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import type { Category } from "../stores/listingDraftStore";
 import { apiFetch } from "./api/apiClient";
@@ -60,7 +60,16 @@ import {
   normalizeStayRoomType,
   type PricingVariant,
   type RoomType,
+  type DestinationOption,
 } from "./listings/listingEditorSections";
+import {
+  buildListingPayload,
+  validateListing,
+  type ListingDraftSnapshot,
+  type ListingFormCategory,
+  type ListingIssue,
+} from "./listings/listingPayload";
+import { useToast } from "./shared/Toast";
 
 type ListingMode = "create" | "edit";
 type TabId = "basic" | "destination" | "media" | "pricing" | "category" | "policies";
@@ -71,13 +80,15 @@ interface ListingEditorProps {
   mode: ListingMode;
   /** Edit this listing instead of the one in the URL (used when the editor is opened in a drawer). */
   listingId?: string | null;
-  /** "drawer" shows the Safari / Experience / Stay edit form in a panel that slides in from the right. */
+  /** "drawer" shows the Stay / Tour / Safari / Experience form in a panel that slides in from the right. */
   presentation?: "page" | "drawer";
   onClose?: () => void;
   /** Called after the listing was saved, so the list behind the drawer can refresh. */
   onSaved?: () => void;
-  /** The drawer only edits Safari, Experience and Stay listings; anything else should open the full editor. */
+  /** The drawer only edits Safari, Tour, Experience and Stay listings; anything else should open the full editor. */
   onUnsupportedCategory?: () => void;
+  /** Create mode: open with this kind of listing already chosen. */
+  initialCategory?: Category | null;
 }
 
 interface StayPropertyResponse {
@@ -352,7 +363,7 @@ function hydrateStayDraft(property: StayPropertyResponse) {
     category: "Stay" as Category,
     subcategory: property.propertyType,
     title: property.name,
-    active: property.status === "approved" || property.status === "published",
+    active: ["approved", "published", "submitted"].includes(String(property.status || "").toLowerCase()),
     description: property.description ?? "",
     destination: property.city || property.address || "",
     lat: property.latitude != null ? String(property.latitude) : "",
@@ -371,6 +382,8 @@ function hydrateStayDraft(property: StayPropertyResponse) {
         applicationNote: property.applicationNote ?? "",
       },
       stayOriginal: {
+        status: String(property.status || "").toLowerCase(),
+        activeAtLoad: ["approved", "published", "submitted"].includes(String(property.status || "").toLowerCase()),
         contact: property.contact ?? {},
         policies: property.policies ?? {},
         metadata: property.metadata ?? {},
@@ -409,21 +422,43 @@ function hydrateGeneralListingDraft(listingData: any) {
   const category: Category = categoryMap[rawType] || "Stay";
 
   const cover = listingData.cover_image?.url || listingData.coverMedia?.secure_url || "";
-  const gallery = (listingData.gallery || []).map((img: any) => img.url || img.secure_url).filter(Boolean);
+  const galleryItems: any[] = (listingData.gallery || []).filter((img: any) => img?.url || img?.secure_url);
+  const gallery = galleryItems.map((img: any) => img.url || img.secure_url);
+  // The ids of the photos already stored, so that removing one in the form can delete it on save.
+  const imageIds: Record<string, string> = {};
+  for (const img of [listingData.cover_image, ...galleryItems]) {
+    const url = img?.url || img?.secure_url;
+    if (url && img?.id) imageIds[url] = img.id;
+  }
 
+  const unitFromApi = (unit: string | undefined) =>
+    unit === "per_vehicle" ? "Per Vehicle" : unit === "per_group" ? "Per Group" : unit === "per_day" ? "Per Day" : "Per Person";
   const variants: PricingVariant[] = (listingData.variants || []).map((v: any, index: number) => ({
     id: v.id || `var_${index + 1}`,
     name: v.name || `Option ${index + 1}`,
-    unit: v.booking_unit === "per_person" ? "Per Person" : v.booking_unit === "per_vehicle" ? "Per Vehicle" : v.booking_unit === "per_group" ? "Per Group" : "Per Person",
-    minCapacity: v.capacity_min != null ? String(v.capacity_min) : "1",
-    maxCapacity: v.capacity_max != null ? String(v.capacity_max) : "6",
-    price: v.pricing?.amount != null ? String(v.pricing.amount) : "100",
+    unit: unitFromApi(v.booking_unit ?? v.bookingUnit),
+    minCapacity: (v.capacity_min ?? v.capacityMin) != null ? String(v.capacity_min ?? v.capacityMin) : "",
+    maxCapacity: (v.capacity_max ?? v.capacityMax) != null ? String(v.capacity_max ?? v.capacityMax) : "",
+    price: v.pricing?.amount != null ? String(v.pricing.amount) : "",
     currency: v.pricing?.currency || listingData.base_currency || "USD",
     priority: index + 1,
-    isDefault: v.is_default ?? (index === 0),
+    isDefault: (v.is_default ?? v.isDefault) ?? (index === 0),
   }));
 
   const safariDet = listingData.safari_detail || listingData.safariDetail || {};
+  const tourDet = listingData.tour_detail || listingData.tourDetail || {};
+  const actDet = listingData.activity_detail || listingData.activityDetail || {};
+  const transDet = listingData.transfer_detail || listingData.transferDetail || {};
+  const hotelDet = listingData.hotel_detail || listingData.hotelDetail || {};
+
+  // Read a saved value under either spelling; anything missing stays empty instead of being filled with a sample value.
+  const pick = (detail: any, ...keys: string[]) => {
+    for (const key of keys) if (detail?.[key] !== undefined && detail?.[key] !== null) return detail[key];
+    return undefined;
+  };
+  const str = (value: unknown) => (value === undefined || value === null ? "" : String(value));
+  const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item) => typeof item === "string") : []);
+
   const safariPackages = (safariDet.jeep_packages && safariDet.jeep_packages.length > 0)
     ? safariDet.jeep_packages
     : variants.map((v, idx) => {
@@ -437,21 +472,18 @@ function hydrateGeneralListingDraft(listingData: any) {
       return {
         id: v.id || `pkg_${idx + 1}`,
         name: v.name || `Safari Package ${idx + 1}`,
-        type: v.unit === "Per Person" ? "shared_seat" : "private_jeep",
+        type: v.unit === "Per Person" ? "shared_seat" : timeSlot.startsWith("Full") ? "full_day" : "private_jeep",
         capacityMax: Number(v.maxCapacity) || 6,
-        price: Number(v.price) || 95,
+        price: Number(v.price) || 0,
         currency: v.currency || "USD",
         timeSlot,
         durationLabel: timeSlot.includes("Full Day") ? "12 Hours (06:00 AM – 06:00 PM)" : "4 Hours",
-        description: "Experienced naturalist guide, open-roof 4WD jeep, and park entry included.",
+        description: "",
         includesParkFees: true,
       };
     });
 
-  const tourDet = listingData.tour_detail || listingData.tourDetail || {};
-  const actDet = listingData.activity_detail || listingData.activityDetail || {};
-  const transDet = listingData.transfer_detail || listingData.transferDetail || {};
-  const hotelDet = listingData.hotel_detail || listingData.hotelDetail || {};
+  const shared = category === "Safari" ? safariDet : category === "Tour" ? tourDet : {};
 
   return {
     category,
@@ -460,6 +492,7 @@ function hydrateGeneralListingDraft(listingData: any) {
     active: listingData.is_active ?? (listingData.status === "PUBLISHED"),
     description: listingData.description || "",
     destination: listingData.destination?.name || "",
+    destinationId: listingData.destination?.id || listingData.destination_id || listingData.destinationId || "",
     lat: listingData.latitude != null ? String(listingData.latitude) : "",
     lng: listingData.longitude != null ? String(listingData.longitude) : "",
     variants,
@@ -476,24 +509,39 @@ function hydrateGeneralListingDraft(listingData: any) {
       amenities: hotelDet.amenities || [],
       roomTypes: hotelDet.room_types || [],
       images: { cover, gallery },
-      // Safari specific hydration
-      nationalPark: safariDet.national_park || safariDet.nationalPark || listingData.destination?.name || listingData.title || "Yala National Park",
-      safariType: safariDet.safari_type || safariDet.safariType || "Jeep Safari",
-      durationMinutes: safariDet.duration_minutes != null ? String(safariDet.duration_minutes) : safariDet.durationMinutes != null ? String(safariDet.durationMinutes) : "360",
-      ageRestriction: safariDet.age_restriction || safariDet.ageRestriction || "5+",
-      bestSeason: safariDet.best_season || safariDet.bestSeason || "February–July, September–December",
-      guideIncluded: safariDet.guide_included ?? safariDet.guideIncluded ?? true,
-      pickupSupported: safariDet.pickup_supported ?? safariDet.pickupSupported ?? true,
-      wildlifeHighlights: safariDet.wildlife_highlights || safariDet.wildlifeHighlights || ["Sri Lankan Leopard", "Asian Elephant", "Sloth Bear"],
+      imageIds,
+      // Fields shared by Safari and Tour
+      difficultyLevel: str(pick(shared, "difficulty_level", "difficultyLevel")),
+      minGroupSize: str(pick(shared, "group_size_min", "groupSizeMin")),
+      maxGroupSize: str(pick(shared, "group_size_max", "groupSizeMax")),
+      startTime: str(pick(shared, "start_time", "startTime")),
+      endTime: str(pick(shared, "end_time", "endTime")),
+      privateAvailable: Boolean(pick(shared, "private_available", "privateAvailable")),
+      includedItems: strings(pick(shared, "included_items", "includedItems")),
+      excludedItems: strings(pick(shared, "excluded_items", "excludedItems")),
+      languages: strings(pick(shared, "languages")),
+      whatToBring: strings(pick(shared, "what_to_bring", "whatToBring")),
+      pickupNotes: str(pick(shared, "pickup_notes", "pickupNotes")),
+      cancellationPolicy: str(pick(shared, "cancellation_policy", "cancellationPolicy")),
+      accessibilityInfo: str(pick(shared, "accessibility_info", "accessibilityInfo")),
+      // Safari
+      nationalPark: str(pick(safariDet, "national_park", "nationalPark")),
+      safariType: str(pick(safariDet, "safari_type", "safariType")),
+      durationMinutes: str(pick(safariDet, "duration_minutes", "durationMinutes")),
+      ageRestriction: str(pick(safariDet, "age_restriction", "ageRestriction")),
+      bestSeason: str(pick(safariDet, "best_season", "bestSeason")),
+      guideIncluded: Boolean(pick(safariDet, "guide_included", "guideIncluded") ?? true),
+      pickupSupported: Boolean(pick(safariDet, "pickup_supported", "pickupSupported") ?? true),
+      wildlifeHighlights: strings(pick(safariDet, "wildlife_highlights", "wildlifeHighlights")),
       safariPackages,
-      // Tour specific hydration
-      durationDays: (tourDet.duration_days != null ? String(tourDet.duration_days) : tourDet.durationDays != null ? String(tourDet.durationDays) : "1"),
-      routeSummary: tourDet.route_summary || tourDet.routeSummary || "",
-      meetingPoint: tourDet.meeting_point || tourDet.meetingPoint || "",
-      categoryId: tourDet.category_id || tourDet.categoryId || "honeymoon",
-      additionalCategories: tourDet.additional_categories || tourDet.additionalCategories || [],
-      itinerary: tourDet.itinerary || [],
-      itineraryHighlights: tourDet.itinerary_highlights || tourDet.itineraryHighlights || listingData.highlights || [],
+      // Tour
+      durationDays: str(pick(tourDet, "duration_days", "durationDays")),
+      routeSummary: str(pick(tourDet, "route_summary", "routeSummary")),
+      meetingPoint: str(pick(tourDet, "meeting_point", "meetingPoint")),
+      categoryId: str(pick(tourDet, "category_id", "categoryId")),
+      additionalCategories: strings(pick(tourDet, "additional_categories", "additionalCategories")),
+      itinerary: Array.isArray(tourDet.itinerary) ? tourDet.itinerary : [],
+      itineraryHighlights: strings(pick(tourDet, "itinerary_highlights", "itineraryHighlights")),
       signatureDestinations: (tourDet.signature_destinations && tourDet.signature_destinations.length > 0)
         ? tourDet.signature_destinations
         : (tourDet.signatureDestinations && tourDet.signatureDestinations.length > 0)
@@ -504,24 +552,10 @@ function hydrateGeneralListingDraft(listingData: any) {
                 .map((s: string) => s.trim())
                 .filter(Boolean)
             : [],
-      pickupAvailable: tourDet.pickup_available ?? tourDet.pickupAvailable ?? false,
-      dropoffAvailable: tourDet.dropoff_available ?? tourDet.dropoffAvailable ?? false,
-      childPolicy: tourDet.child_policy || tourDet.childPolicy || "",
-      dropoffNotes: tourDet.dropoff_notes || tourDet.dropoffNotes || "",
-      // Shared hydration (safari, tour, activity)
-      difficultyLevel: tourDet.difficulty_level || tourDet.difficultyLevel || safariDet.difficulty_level || safariDet.difficultyLevel || "Couple Friendly",
-      minGroupSize: tourDet.group_size_min != null ? String(tourDet.group_size_min) : tourDet.groupSizeMin != null ? String(tourDet.groupSizeMin) : safariDet.group_size_min != null ? String(safariDet.group_size_min) : "1",
-      maxGroupSize: tourDet.group_size_max != null ? String(tourDet.group_size_max) : tourDet.groupSizeMax != null ? String(tourDet.groupSizeMax) : safariDet.group_size_max != null ? String(safariDet.group_size_max) : "15",
-      startTime: tourDet.start_time || tourDet.startTime || safariDet.start_time || safariDet.startTime || "09:00",
-      endTime: tourDet.end_time || tourDet.endTime || safariDet.end_time || safariDet.endTime || "13:00",
-      privateAvailable: tourDet.private_available ?? tourDet.privateAvailable ?? safariDet.private_available ?? false,
-      includedItems: tourDet.included_items || tourDet.includedItems || safariDet.included_items || safariDet.includedItems || [],
-      excludedItems: tourDet.excluded_items || tourDet.excludedItems || safariDet.excluded_items || safariDet.excludedItems || [],
-      languages: tourDet.languages || safariDet.languages || ["English"],
-      whatToBring: tourDet.what_to_bring || tourDet.whatToBring || safariDet.what_to_bring || safariDet.whatToBring || [],
-      pickupNotes: tourDet.pickup_notes || tourDet.pickupNotes || safariDet.pickup_notes || safariDet.pickupNotes || "",
-      cancellationPolicy: tourDet.cancellation_policy || tourDet.cancellationPolicy || safariDet.cancellation_policy || safariDet.cancellationPolicy || "",
-      accessibilityInfo: tourDet.accessibility_info || tourDet.accessibilityInfo || safariDet.accessibility_info || safariDet.accessibilityInfo || "",
+      pickupAvailable: Boolean(pick(tourDet, "pickup_available", "pickupAvailable")),
+      dropoffAvailable: Boolean(pick(tourDet, "dropoff_available", "dropoffAvailable")),
+      childPolicy: str(pick(tourDet, "child_policy", "childPolicy")),
+      dropoffNotes: str(pick(tourDet, "dropoff_notes", "dropoffNotes")),
       // Activity details hydration
       activityType: actDet.activity_type || "",
       // Transfer details hydration
@@ -532,7 +566,7 @@ function hydrateGeneralListingDraft(listingData: any) {
       maxPassengers: transDet.max_passengers != null ? String(transDet.max_passengers) : "4",
       maxLuggage: transDet.max_luggage != null ? String(transDet.max_luggage) : "4",
       airConditioned: transDet.air_conditioned ?? true,
-      // Experience (activity) fields come from the saved activity detail, not the tour/safari fallbacks above
+      // Experience (activity) fields come from the saved activity detail
       ...(category === "Experience" ? hydrateExperienceCategoryData(actDet) : {}),
     },
   };
@@ -752,589 +786,6 @@ function buildStayApplicationPayload({
       selectedSubtype: subcategory,
     },
   };
-}
-
-function CreateListingWizard({
-  category,
-  setCategory,
-  title,
-  setTitle,
-  active,
-  setActive,
-  description,
-  setDescription,
-  destination,
-  setDestination,
-  lat,
-  setLat,
-  lng,
-  setLng,
-  variants,
-  setVariants,
-}: {
-  category: Category | null;
-  setCategory: (value: Category) => void;
-  title: string;
-  setTitle: (value: string) => void;
-  active: boolean;
-  setActive: (value: boolean) => void;
-  description: string;
-  setDescription: (value: string) => void;
-  destination: string;
-  setDestination: (value: string) => void;
-  lat: string;
-  setLat: (value: string) => void;
-  lng: string;
-  setLng: (value: string) => void;
-  variants: PricingVariant[];
-  setVariants: (value: PricingVariant[]) => void;
-}) {
-  const navigate = useNavigate();
-  const [step, setStep] = useState<WizardStep>(1);
-  const [stepErrors, setStepErrors] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const { effectiveUser } = useAuth();
-  const isAdmin = effectiveUser?.role === "admin";
-  const flow = category ? getFlow(category) : null;
-  const steps = getCreateSteps(category);
-  const subcategory = useListingDraftStore((state) => state.subcategory ?? null);
-  const setDraft = useListingDraftStore((state) => state.setDraft);
-  const draftCategoryData = useListingDraftStore((state) => state.categoryData ?? {});
-
-  const [selectedFeatures, setSelectedFeatures] = useState<string[]>(() => (draftCategoryData.amenities ?? []));
-
-  const isPositiveNumber = (value: string) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0;
-  };
-
-  const validateStep = (currentStep: WizardStep): string[] => {
-    const errors: string[] = [];
-
-    if (currentStep === 1) {
-      if (!category) {
-        errors.push("Select a listing type before continuing.");
-      }
-      return errors;
-    }
-
-    if (currentStep === 2) {
-      if (flow?.step2Layout === "tree-selector") {
-        if (!subcategory) {
-          errors.push("Select a subtype before continuing.");
-        } else if (!isImplementedStaySubtype(category, subcategory)) {
-          errors.push("This stay subtype is not available yet. Please choose Hotel or Bed and Breakfast.");
-        }
-      } else {
-        if (!title.trim()) errors.push("Title is required.");
-        if (!destination.trim()) errors.push("Destination is required.");
-      }
-      return errors;
-    }
-
-    if (currentStep === 3) {
-      if (flow?.step3MultiSelect || category === "Stay" || category === "Safari") {
-        if (category === "Stay") {
-          const propertyDetails = draftCategoryData.propertyDetails ?? {};
-          if (!String(propertyDetails.propertyName ?? "").trim()) {
-            errors.push("Property name is required.");
-          }
-          if (!String(propertyDetails.propertyLocation ?? "").trim()) {
-            errors.push("Property location is required.");
-          }
-          if (!String(propertyDetails.checkInTime ?? "").trim()) {
-            errors.push("Check-in time is required.");
-          }
-          if (!String(propertyDetails.checkOutTime ?? "").trim()) {
-            errors.push("Check-out time is required.");
-          }
-        }
-        return errors;
-      }
-
-      if (!variants.length) {
-        errors.push("Add at least one pricing variant.");
-      } else if (variants.some((variant) => !variant.price || !variant.price.trim() || !isPositiveNumber(variant.price))) {
-        errors.push("Enter a valid price greater than 0 for each pricing variant.");
-      }
-      return errors;
-    }
-
-    if (currentStep === 4 && category === "Stay") {
-      const rooms = ((draftCategoryData.roomTypes ?? []) as RoomType[]);
-
-      if (!rooms.length) {
-        errors.push("Add at least one room before continuing.");
-      }
-
-      if (
-        rooms.some((room) => {
-          const roomType = normalizeStayRoomType(room.type);
-          if (!roomType.trim()) return true;
-          if (!room.count.trim() || Number(room.count) <= 0) return true;
-          if (!room.maxGuests.trim() || Number(room.maxGuests) <= 0) return true;
-          if (!room.pricePerNight.trim() || !isPositiveNumber(room.pricePerNight)) return true;
-
-          let remainingPrice = Number(room.pricePerNight);
-
-          return (room.discounts ?? []).some((discount) => {
-            const value = Number(discount.value);
-            if (!discount.label.trim() || !discount.value.trim() || !Number.isFinite(value) || value <= 0) {
-              return true;
-            }
-
-            if (discount.type === "percentage") {
-              if (value > 100) return true;
-              remainingPrice -= (remainingPrice * value) / 100;
-              return false;
-            }
-
-            if (value > remainingPrice) return true;
-            remainingPrice -= value;
-            return false;
-          });
-        })
-      ) {
-        errors.push("Each room must have type, count, max guests, a valid price per night greater than 0, and valid discount values.");
-      }
-    }
-
-    return errors;
-  };
-
-  const goToStep = (targetStep: WizardStep) => {
-    if (targetStep <= step) {
-      setStep(targetStep);
-      setStepErrors([]);
-      return;
-    }
-
-    const errors = validateStep(step);
-    if (errors.length) {
-      setStepErrors(errors);
-      return;
-    }
-
-    setStepErrors([]);
-    setStep(targetStep);
-  };
-
-  const maxSteps = category === "Safari" ? 5 : 6;
-
-  const handleNext = () => {
-    const errors = validateStep(step);
-    if (errors.length) {
-      setStepErrors(errors);
-      return;
-    }
-
-    setStepErrors([]);
-    setStep((current) => (current < maxSteps ? ((current + 1) as WizardStep) : current));
-  };
-
-  const handleFinish = async () => {
-    const validStepNumbers = Array.from({ length: maxSteps }, (_, i) => (i + 1) as WizardStep);
-    const errors = validStepNumbers.flatMap((item) => validateStep(item));
-    if (errors.length) {
-      setStepErrors(Array.from(new Set(errors)));
-      return;
-    }
-
-    setIsSubmitting(true);
-    setStepErrors([]);
-    try {
-      if (category === "Stay") {
-        await apiFetch("/vendor/stays/", {
-          method: "POST",
-          body: JSON.stringify(
-            buildStayApplicationPayload({
-              title,
-              active,
-              description,
-              destination,
-              lat,
-              lng,
-              subcategory,
-              categoryData: useListingDraftStore.getState().categoryData ?? {},
-              isAdmin,
-            }),
-          ),
-        });
-        useListingDraftStore.getState().clearDraft();
-        navigate("/hotel/dashboard");
-      } else {
-        // Resolve destination ID
-        let destinationId = "11111111-1111-1111-1111-111111111111"; // Fallback default destination ID
-        try {
-          const dests = await apiFetch<any[]>("/admin/destinations");
-          if (dests && dests.length > 0) {
-            const matched = dests.find((d) =>
-              d.name?.toLowerCase().includes((destination || "").toLowerCase()) ||
-              (destination || "").toLowerCase().includes(d.name?.toLowerCase())
-            );
-            destinationId = matched ? matched.id : dests[0].id;
-          }
-        } catch (e) {
-          console.warn("Destination lookup deferred to default", e);
-        }
-
-        const draftCatData = useListingDraftStore.getState().categoryData ?? {};
-        const catLower = (category || "safari").toLowerCase();
-        const endpoint = `/admin/listings/${catLower === "transport" ? "transfer" : catLower}`;
-
-        let payload: any = {
-          destinationId,
-          title: title || `${category} Listing`,
-          description: description || "",
-          isActive: active,
-          status: active ? "published" : "draft",
-          latitude: toOptionalNumber(lat) ?? 6.927,
-          longitude: toOptionalNumber(lng) ?? 79.861,
-          variants: (variants && variants.length > 0) ? variants.map((v, i) => ({
-            name: v.name || `Option ${i + 1}`,
-            bookingUnit: v.unit === "Per Group" ? "per_group" : v.unit === "Per Vehicle" ? "per_vehicle" : "per_person",
-            capacityMin: Number(v.minCapacity) || 1,
-            capacityMax: Number(v.maxCapacity) || 6,
-            isDefault: v.isDefault ?? (i === 0),
-            pricing: {
-              amount: Number(v.price) || 100,
-              currency: v.currency || "USD",
-              priority: i,
-            },
-          })) : [
-            {
-              name: "Standard Package Option",
-              bookingUnit: "per_vehicle",
-              capacityMin: 1,
-              capacityMax: 6,
-              isDefault: true,
-              pricing: {
-                amount: 95,
-                currency: "USD",
-                priority: 0,
-              },
-            },
-          ],
-        };
-
-        if (catLower === "safari") {
-          const safariPackages = draftCatData.safariPackages ?? [];
-          payload.safariDetail = {
-            nationalPark: draftCatData.nationalPark || destination || "Yala National Park",
-            safariType: normalizeSafariTypeEnum(draftCatData.safariType || subcategory),
-            durationMinutes: Number(draftCatData.durationMinutes) || 360,
-            difficultyLevel: draftCatData.difficultyLevel || "Moderate",
-            ageRestriction: draftCatData.ageRestriction || "5+",
-            groupSizeMin: Number(draftCatData.minGroupSize) || 1,
-            groupSizeMax: Number(draftCatData.maxGroupSize) || 6,
-            startTime: draftCatData.startTime || "06:00",
-            endTime: draftCatData.endTime || "12:00",
-            bestSeason: draftCatData.bestSeason || "February–July, September–December",
-            guideIncluded: Boolean(draftCatData.guideIncluded ?? true),
-            pickupSupported: Boolean(draftCatData.pickupSupported ?? true),
-            privateAvailable: Boolean(draftCatData.privateAvailable ?? true),
-            wildlifeHighlights: Array.isArray(draftCatData.wildlifeHighlights) ? draftCatData.wildlifeHighlights : ["Sri Lankan Leopard", "Asian Elephant", "Sloth Bear"],
-            includedItems: Array.isArray(draftCatData.includedItems) ? draftCatData.includedItems : [],
-            excludedItems: Array.isArray(draftCatData.excludedItems) ? draftCatData.excludedItems : [],
-            languages: Array.isArray(draftCatData.languages) ? draftCatData.languages : ["English", "Sinhala"],
-            whatToBring: Array.isArray(draftCatData.whatToBring) ? draftCatData.whatToBring : [],
-            pickupNotes: draftCatData.pickupNotes ?? "",
-            cancellationPolicy: draftCatData.cancellationPolicy ?? "",
-            accessibilityInfo: draftCatData.accessibilityInfo ?? "",
-          };
-          if (safariPackages.length > 0) {
-            payload.variants = safariPackages.map((pkg: any, idx: number) => {
-              const slotPrefix = pkg.timeSlot ? pkg.timeSlot.split(" ")[0] : "Morning";
-              const formattedName = (pkg.name || "").toLowerCase().includes(slotPrefix.toLowerCase())
-                ? pkg.name
-                : `${slotPrefix} Drive — ${pkg.name}`;
-
-              return {
-                name: formattedName,
-                bookingUnit: pkg.type === "shared_seat" ? "per_person" : "per_vehicle",
-                capacityMin: 1,
-                capacityMax: Number(pkg.capacityMax || pkg.maxPassengers) || 6,
-                isDefault: idx === 0,
-                pricing: {
-                  amount: Number(pkg.price) || 95,
-                  currency: pkg.currency || "USD",
-                  priority: idx,
-                },
-              };
-            });
-          }
-        } else if (catLower === "tour") {
-          payload.tourDetail = {
-            durationDays: Number(draftCatData.durationDays) || 1,
-            routeSummary: draftCatData.routeSummary || destination || "Scenic Tour Route",
-            meetingPoint: draftCatData.meetingPoint || destination || "City Center",
-            categoryId: draftCatData.categoryId || null,
-            additionalCategories: Array.isArray(draftCatData.additionalCategories) ? draftCatData.additionalCategories : [],
-            itinerary: Array.isArray(draftCatData.itinerary) ? draftCatData.itinerary : [],
-            itineraryHighlights: Array.isArray(draftCatData.itineraryHighlights) ? draftCatData.itineraryHighlights : [],
-            difficultyLevel: draftCatData.difficultyLevel || "Easy",
-            groupSizeMin: Number(draftCatData.minGroupSize) || 1,
-            groupSizeMax: Number(draftCatData.maxGroupSize) || 15,
-            startTime: draftCatData.startTime || "09:00",
-            endTime: draftCatData.endTime || "13:00",
-            privateAvailable: Boolean(draftCatData.privateAvailable),
-            pickupAvailable: Boolean(draftCatData.pickupAvailable),
-            dropoffAvailable: Boolean(draftCatData.dropoffAvailable),
-            includedItems: Array.isArray(draftCatData.includedItems) ? draftCatData.includedItems : [],
-            excludedItems: Array.isArray(draftCatData.excludedItems) ? draftCatData.excludedItems : [],
-            languages: Array.isArray(draftCatData.languages) ? draftCatData.languages : ["English"],
-            whatToBring: Array.isArray(draftCatData.whatToBring) ? draftCatData.whatToBring : [],
-            childPolicy: draftCatData.childPolicy || "",
-            pickupNotes: draftCatData.pickupNotes || "",
-            dropoffNotes: draftCatData.dropoffNotes || "",
-            cancellationPolicy: draftCatData.cancellationPolicy || "",
-            accessibilityInfo: draftCatData.accessibilityInfo || "",
-          };
-        } else if (catLower === "experience") {
-          payload.activityDetail = buildActivityDetailPayload(draftCatData, subcategory, destination);
-        } else if (catLower === "transport" || catLower === "transfer") {
-          payload.transferDetail = {
-            originType: "airport",
-            destinationType: "city",
-            vehiclePolicy: "Standard Sedan Transfer",
-            vehicleTypes: ["Sedan", "Van"],
-            maxPassengers: 4,
-            maxLuggage: 4,
-            airConditioned: true,
-          };
-        }
-
-        await apiFetch(endpoint, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-
-        useListingDraftStore.getState().clearDraft();
-        navigate(catLower === "safari" ? "/safari/overview" : "/listings");
-      }
-    } catch (error: any) {
-      setStepErrors([error?.message || "Unable to submit the listing. Please try again."]);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const isNextDisabled =
-    isSubmitting ||
-    (step === 2 && category === "Stay" && !isImplementedStaySubtype(category, subcategory));
-
-  const renderStep = () => {
-    if (step === 1) {
-      return <CreateWizardTypeStep category={category} setCategory={setCategory} categories={CATEGORIES} />;
-    }
-
-    if (step === 2) {
-      if (flow?.step2Layout === "tree-selector" && flow.treeSelection) {
-        return (
-          <div className="space-y-3">
-            <CreateWizardTreeSelectionStep
-              title={flow.treeSelection.title}
-              helperText={flow.treeSelection.helperText}
-              branches={flow.treeSelection.branches}
-              selectedId={subcategory}
-              onSelect={(value) => setDraft({ subcategory: value })}
-            />
-            {category === "Stay" && subcategory && !isImplementedStaySubtype(category, subcategory) && (
-              <div
-                className="rounded-lg px-3 py-2 text-[12px]"
-                style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--warning)" }}
-              >
-                This Stay subtype is not available yet. For now, continue with Hotel or Bed and Breakfast.
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      return (
-        <SectionCard title="Core details">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <FieldLabel required>Title</FieldLabel>
-              <FormInput value={title} onChange={setTitle} placeholder="Listing title" />
-            </div>
-            <div>
-              <FieldLabel required>Destination</FieldLabel>
-              <FormInput value={destination} onChange={setDestination} placeholder="Destination" />
-            </div>
-            <div>
-              <FieldLabel>Latitude</FieldLabel>
-              <FormInput value={lat} onChange={setLat} placeholder="Latitude" />
-            </div>
-            <div>
-              <FieldLabel>Longitude</FieldLabel>
-              <FormInput value={lng} onChange={setLng} placeholder="Longitude" />
-            </div>
-            <div className="col-span-2">
-              <FieldLabel>Description</FieldLabel>
-              <FormTextarea value={description} onChange={setDescription} rows={4} placeholder="Describe the listing" />
-            </div>
-            <div className="col-span-2 flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)" }}>
-              <div>
-                <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{isAdmin ? "Active listing" : "Submit for Review"}</p>
-                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                  {isAdmin ? "Enable this listing once it is ready to publish." : "Submit this listing for admin approval. It will not be active until approved."}
-                </p>
-              </div>
-              <Toggle value={active} onChange={setActive} />
-            </div>
-          </div>
-        </SectionCard>
-      );
-    }
-
-    if (step === 3) {
-      if (category === "Safari") {
-        return (
-          <div className="space-y-4">
-            <CategoryDetailsTab category="Safari" />
-          </div>
-        );
-      }
-
-      if (flow?.step3MultiSelect) {
-        return (
-          <div className="space-y-4">
-            <CreateWizardMultiSelectStep
-              title={flow.step3MultiSelect.title}
-              helperText={flow.step3MultiSelect.helperText}
-              options={flow.step3MultiSelect.options}
-              selectedValues={selectedFeatures}
-              onChange={(values) => {
-                setSelectedFeatures(values);
-                setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), amenities: values } });
-              }}
-            />
-            <MediaTab />
-          </div>
-        );
-      }
-
-      return (
-        <div className="space-y-4">
-          <MediaTab />
-          <PricingTab variants={variants} setVariants={setVariants} />
-        </div>
-      );
-    }
-
-    if (step === 4) {
-      if (category === "Safari") {
-        return (
-          <div className="space-y-4">
-            <MediaTab />
-            <ImagesSection />
-          </div>
-        );
-      }
-
-      if (category === "Stay") {
-        return (
-          <div className="space-y-4">
-            <RoomsSection />
-          </div>
-        );
-      }
-
-      return (
-        <div className="space-y-4">
-          {category && <CategoryDetailsTab category={category} />}
-          {category && <PoliciesTab category={category} />}
-        </div>
-      );
-    }
-
-    if (step === 5) {
-      if (category === "Safari") {
-        return (
-          <div className="space-y-4">
-            <PoliciesTab category="Safari" />
-          </div>
-        );
-      }
-
-      return <RatePlansStep />;
-    }
-
-    if (step === 6) {
-      return <ImagesSection />;
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-6 pt-4 pb-3 shrink-0" style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-header)" }}>
-        <div className="flex items-center gap-2 flex-wrap">
-          {steps.map((item) => {
-            const activeStep = step === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => goToStep(item.id)}
-                className="px-3 py-2 rounded-lg text-left transition-all"
-                style={{
-                  background: activeStep ? "var(--active-overlay)" : "var(--input-background)",
-                  border: activeStep ? "1px solid var(--border-accent)" : "1px solid var(--border-light)",
-                  color: activeStep ? "var(--accent-navy-light)" : "var(--text-secondary)",
-                }}
-              >
-                <div className="text-[11px] font-semibold">Step {item.id}</div>
-                <div className="text-[12px]">{item.label}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto p-6">
-        {renderStep()}
-        {stepErrors.length > 0 && (
-          <div
-            className="mt-4 rounded-lg px-3 py-2 text-[12px]"
-            style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)", color: "var(--error)" }}
-          >
-            {stepErrors.map((error) => (
-              <p key={error}>{error}</p>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="px-6 py-4 shrink-0 flex items-center justify-between" style={{ borderTop: "1px solid var(--border-light)", background: "var(--bg-header)" }}>
-        <button
-          onClick={() => {
-            setStepErrors([]);
-            setStep((current) => (current > 1 ? ((current - 1) as WizardStep) : current));
-          }}
-          disabled={step === 1}
-          className="px-4 py-2 rounded-lg text-[12px] transition-all"
-          style={{
-            background: "var(--input-background)",
-            border: "1px solid var(--border-light)",
-            color: step === 1 ? "var(--text-tertiary)" : "var(--text-secondary)",
-          }}
-        >
-          Back
-        </button>
-        <button
-          onClick={step === maxSteps ? handleFinish : handleNext}
-          disabled={isNextDisabled}
-          className="px-4 py-2 rounded-lg text-[12px] transition-all"
-          style={{
-            background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-            color: "white",
-            opacity: isNextDisabled ? 0.55 : 1,
-            cursor: isNextDisabled ? "not-allowed" : "pointer",
-          }}
-        >
-          {step === maxSteps ? (isSubmitting ? "Submitting..." : category === "Safari" ? "Submit Safari" : category === "Stay" ? "Submit Stay" : "Submit Listing") : "Next"}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function RatePlansStep() {
@@ -1945,9 +1396,10 @@ function StayEditPanel({
   );
 }
 
-export function ListingEditor({ mode, listingId: listingIdProp, presentation = "page", onClose, onSaved, onUnsupportedCategory }: ListingEditorProps) {
+export function ListingEditor({ mode, listingId: listingIdProp, presentation = "page", onClose, onSaved, onUnsupportedCategory, initialCategory }: ListingEditorProps) {
   const navigate = useNavigate();
   const params = useParams();
+  const location = useLocation();
   const { effectiveUser } = useAuth();
   const isAdmin = effectiveUser?.role === "admin";
   const listingId = listingIdProp ?? params.id ?? null;
@@ -1983,6 +1435,18 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
   const [editError, setEditError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  // Tours, safaris and experiences are chosen from the destinations the platform already has.
+  const [destinationId, setDestinationId] = useState("");
+  const [destinations, setDestinations] = useState<DestinationOption[]>([]);
+  const [destinationsLoading, setDestinationsLoading] = useState(false);
+  // What still needs fixing, shown at the top of the drawer and under each section.
+  const [issues, setIssues] = useState<ListingIssue[]>([]);
+  // Bumped after photos are saved so the photo section starts again from what is now stored.
+  const [photosKey, setPhotosKey] = useState(0);
+  const stayOriginalStatus = useListingDraftStore((state) => (state.categoryData?.stayOriginal as { status?: string } | undefined)?.status);
+  const availableCategories: ListingFormCategory[] = isAdmin ? ["Stay", "Tour", "Safari", "Experience"] : ["Stay"];
 
   // Unsaved-changes tracking for the drawer. Every edit writes to the draft store, so listening to the store catches
   // all of them; it is only armed once the listing has finished loading so loading itself does not count.
@@ -2002,11 +1466,75 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     };
   }, [presentation]);
 
-  // The drawer is for Safari, Experience and Stay listings.
+  // The drawer is for Safari, Tour, Experience and Stay listings.
   useEffect(() => {
-    if (presentation !== "drawer" || editLoading || loadError || !category) return;
-    if (category !== "Safari" && category !== "Experience" && category !== "Stay") onUnsupportedCategory?.();
-  }, [presentation, editLoading, loadError, category, onUnsupportedCategory]);
+    if (presentation !== "drawer" || mode !== "edit" || editLoading || loadError || !category) return;
+    if (category !== "Safari" && category !== "Experience" && category !== "Stay" && category !== "Tour") onUnsupportedCategory?.();
+  }, [presentation, mode, editLoading, loadError, category, onUnsupportedCategory]);
+
+  useEffect(() => {
+    if (presentation !== "drawer") return;
+    let cancelled = false;
+    setDestinationsLoading(true);
+    apiFetch<any[]>("/admin/destinations")
+      .then((list) => {
+        if (!cancelled) {
+          setDestinations(
+            (Array.isArray(list) ? list : []).map((item) => ({
+              id: item.id,
+              name: item.name,
+              latitude: item.latitude ?? null,
+              longitude: item.longitude ?? null,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDestinations([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDestinationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [presentation]);
+
+  // Create mode: pick a kind of listing and start from an empty form for it.
+  const createArmTimer = useRef<number | undefined>(undefined);
+  const startCreate = (chosen: ListingFormCategory) => {
+    const store = useListingDraftStore.getState();
+    store.clearDraft();
+    const starting: Record<string, any> =
+      chosen === "Tour"
+        ? { durationDays: "1", difficultyLevel: "Easy", minGroupSize: "1", maxGroupSize: "15" }
+        : chosen === "Experience"
+          ? { activityType: "City Walk", difficultyLevel: "Easy", minGroupSize: "1", maxGroupSize: "10" }
+          : {};
+    store.setDraft({ category: chosen, subcategory: chosen === "Stay" ? "hotel" : null, categoryData: starting });
+    setCategory(chosen);
+    setTitle("");
+    setActive(true);
+    setDescription("");
+    setDestination("");
+    setDestinationId("");
+    setLat("");
+    setLng("");
+    setVariants(
+      chosen === "Tour" || chosen === "Experience"
+        ? [{ id: "var_1", name: "Standard", unit: "Per Person", minCapacity: "1", maxCapacity: "", price: "", currency: "USD", priority: 1, isDefault: true }]
+        : [],
+    );
+    setIssues([]);
+    setEditError(null);
+    // Count edits only after the sections have written their own starting values.
+    armedRef.current = false;
+    setDirty(false);
+    if (createArmTimer.current !== undefined) window.clearTimeout(createArmTimer.current);
+    createArmTimer.current = window.setTimeout(() => {
+      armedRef.current = true;
+    }, 600);
+  };
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -2033,6 +1561,14 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
         isDefault: true,
       },
     ]);
+    if (presentation === "drawer") {
+      setDestinationId("");
+      setIssues([]);
+      const wanted = initialCategory as ListingFormCategory | null | undefined;
+      if (wanted && availableCategories.includes(wanted)) startCreate(wanted);
+      else if (availableCategories.length === 1) startCreate(availableCategories[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   useEffect(() => {
@@ -2123,6 +1659,7 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
         setActive(hydrated.active);
         setDescription(hydrated.description);
         setDestination(hydrated.destination);
+        setDestinationId(hydrated.destinationId || "");
         setLat(hydrated.lat);
         setLng(hydrated.lng);
         setVariants(hydrated.variants || []);
@@ -2186,6 +1723,136 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     useListingDraftStore.getState().setDraft({ lng: v });
   };
 
+  const buildSnapshot = (chosen: ListingFormCategory): ListingDraftSnapshot => {
+    const store = useListingDraftStore.getState();
+    return {
+      category: chosen,
+      title,
+      active,
+      description,
+      destinationId,
+      lat,
+      lng,
+      variants,
+      subcategory: store.subcategory ?? null,
+      categoryData: (store.categoryData ?? {}) as Record<string, any>,
+    };
+  };
+
+  /** Uploads photos that were added in the form and deletes the ones that were removed (Safari, Tour, Experience). */
+  const syncListingImages = async (endpoint: string, id: string, data: Record<string, any>) => {
+    const images = (data.images ?? {}) as { cover?: string; gallery?: string[] };
+    const storedIds = (data.imageIds ?? {}) as Record<string, string>;
+    const isNew = (url?: string) => !!url && url.startsWith("data:");
+    const keep = new Set([images.cover, ...(images.gallery ?? [])].filter((url): url is string => !!url && !isNew(url)));
+
+    for (const [url, mediaId] of Object.entries(storedIds)) {
+      if (!keep.has(url)) {
+        await apiFetch(`/admin/listings/${endpoint}/${id}/media/${mediaId}`, { method: "DELETE" });
+      }
+    }
+
+    const upload = async (dataUrls: string[], primary: boolean) => {
+      const form = new FormData();
+      for (let index = 0; index < dataUrls.length; index += 1) {
+        const blob = await (await fetch(dataUrls[index])).blob();
+        const extension = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+        form.append("files", new File([blob], `photo-${Date.now()}-${index}.${extension}`, { type: blob.type || "image/jpeg" }));
+        form.append("alt_texts", title.trim() || "Listing photo");
+      }
+      form.append("is_primary", primary ? "true" : "false");
+      await apiFetch(`/admin/listings/${endpoint}/${id}/media`, { method: "POST", body: form });
+    };
+
+    const hasStoredCover = !!images.cover && !isNew(images.cover);
+    if (isNew(images.cover)) await upload([images.cover as string], true);
+    const newGallery = (images.gallery ?? []).filter(isNew);
+    if (newGallery.length) await upload(newGallery, !images.cover && !hasStoredCover);
+  };
+
+  /** After photos change, read them back so the form holds what is stored (and a second save does not upload them again). */
+  const reloadPhotos = async (endpoint: string, id: string) => {
+    try {
+      const fresh = await apiFetch<any>(`/admin/listings/${endpoint}/${id}`);
+      const items: any[] = (fresh?.gallery || []).filter((img: any) => img?.url);
+      const coverUrl = fresh?.cover_image?.url || fresh?.coverImage?.url || "";
+      const ids: Record<string, string> = {};
+      for (const img of [fresh?.cover_image || fresh?.coverImage, ...items]) {
+        if (img?.url && img?.id) ids[img.url] = img.id;
+      }
+      const store = useListingDraftStore.getState();
+      store.setDraft({
+        categoryData: {
+          ...(store.categoryData || {}),
+          images: { cover: coverUrl, gallery: items.map((img) => img.url).filter((url: string) => url !== coverUrl) },
+          imageIds: ids,
+        },
+      });
+      setPhotosKey((value) => value + 1);
+    } catch {
+      // The save itself worked; the photos simply keep what the form shows.
+    }
+  };
+
+  /** Create mode: validate, then post a Stay (vendor API) or a Safari / Tour / Experience (admin API). */
+  const submitNew = async (asDraft: boolean) => {
+    if (!category || (category !== "Stay" && category !== "Tour" && category !== "Safari" && category !== "Experience")) return;
+    const chosen: ListingFormCategory = category;
+    const snapshot = buildSnapshot(chosen);
+    const found = validateListing(snapshot, { asDraft });
+    if (found.length) {
+      setIssues(found);
+      setEditError(null);
+      return;
+    }
+    setIssues([]);
+    setSaving(true);
+    setEditError(null);
+    try {
+      let photoProblem: string | null = null;
+      if (chosen === "Stay") {
+        await apiFetch("/vendor/stays/", {
+          method: "POST",
+          body: JSON.stringify(
+            buildStayApplicationPayload({
+              title,
+              active: asDraft ? false : active,
+              description,
+              destination,
+              lat,
+              lng,
+              subcategory: snapshot.subcategory,
+              categoryData: snapshot.categoryData,
+              isAdmin,
+            }),
+          ),
+        });
+      } else {
+        const endpoint = chosen.toLowerCase();
+        const status = asDraft || !active ? "draft" : "published";
+        const created = await apiFetch<any>(`/admin/listings/${endpoint}`, {
+          method: "POST",
+          body: JSON.stringify(buildListingPayload(snapshot, { mode: "create", status })),
+        });
+        try {
+          await syncListingImages(endpoint, created.id, snapshot.categoryData);
+        } catch (photoError: any) {
+          photoProblem = photoError?.message || "the photos could not be uploaded";
+        }
+      }
+      useListingDraftStore.getState().clearDraft();
+      if (photoProblem) toast.warning("Listing created without photos", `Open it from the list to add them: ${photoProblem}`);
+      else toast.success(asDraft ? "Draft saved" : "Listing created", title.trim());
+      window.dispatchEvent(new Event("stay-properties-changed"));
+      onSaved?.();
+      onClose?.();
+    } catch (error: any) {
+      setEditError(error?.message || "Unable to create this listing. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveStayListing = async () => {
     if (!listingId) return;
 
@@ -2195,6 +1862,37 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     try {
       const currentCategory = category || useListingDraftStore.getState().category || "Safari";
       const catLower = currentCategory.toLowerCase();
+
+      if (currentCategory === "Safari" || currentCategory === "Tour" || currentCategory === "Experience") {
+        // An existing listing only has to be sensible (title, destination, coordinates); completeness is checked on create.
+        const snapshot = buildSnapshot(currentCategory);
+        const found = validateListing(snapshot, { asDraft: true });
+        if (found.length) {
+          setIssues(found);
+          setEditError("Some details need fixing before this can be saved. They are marked below.");
+          return;
+        }
+        setIssues([]);
+        try {
+          await apiFetch(`/admin/listings/${catLower}/${listingId}`, {
+            method: "PATCH",
+            body: JSON.stringify(buildListingPayload(snapshot, { mode: "edit" })),
+          });
+          await syncListingImages(catLower, listingId, snapshot.categoryData);
+          // Reading the photos back rewrites the draft; that is not an edit by the person, so do not count it.
+          armedRef.current = false;
+          await reloadPhotos(catLower, listingId);
+        } finally {
+          window.setTimeout(() => {
+            armedRef.current = true;
+          }, 600);
+        }
+        setSaveSuccess(true);
+        setDirty(false);
+        onSaved?.();
+        setTimeout(() => setSaveSuccess(false), 5000);
+        return;
+      }
 
       let destinationId: string | undefined = undefined;
       try {
@@ -2211,59 +1909,30 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
       }
 
       if (currentCategory === "Stay") {
-        try {
-          await apiFetch(`/vendor/stays/${listingId}`, {
-            method: "PUT",
-            body: JSON.stringify(
-              buildStayApplicationPayload({
-                active,
-                title,
-                description,
-                destination,
-                lat,
-                lng,
-                subcategory: useListingDraftStore.getState().subcategory ?? null,
-                categoryData: useListingDraftStore.getState().categoryData ?? {},
-                isAdmin,
-              }),
-            ),
-          });
-        } catch (stayErr) {
-          let payload: any = {
-            destinationId,
-            title: title || "Stay Listing",
-            description: description || "",
-            isActive: active,
-            latitude: toOptionalNumber(lat),
-            longitude: toOptionalNumber(lng),
-          };
-          if (variants && variants.length > 0) {
-            let foundDefault = false;
-            payload.variants = variants.map((v, i) => {
-              const isDefault = (v.isDefault ?? (i === 0)) && !foundDefault;
-              if (isDefault) foundDefault = true;
-              return {
-                name: v.name || `Option ${i + 1}`,
-                bookingUnit: "per_room",
-                capacityMin: Number(v.minCapacity) || 1,
-                capacityMax: Number(v.maxCapacity) || 6,
-                isDefault,
-                pricing: {
-                  amount: Number(v.price) || 100,
-                  currency: v.currency || "USD",
-                  priority: i,
-                },
-              };
-            });
-            if (!foundDefault && payload.variants.length > 0) {
-              payload.variants[0].isDefault = true;
-            }
-          }
-          await apiFetch(`/admin/listings/stay/${listingId}`, {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          });
-        }
+        const store = useListingDraftStore.getState();
+        const stayPayload: Record<string, any> = buildStayApplicationPayload({
+          active,
+          title,
+          description,
+          destination,
+          lat,
+          lng,
+          subcategory: store.subcategory ?? null,
+          categoryData: store.categoryData ?? {},
+          isAdmin,
+        });
+        const original = ((store.categoryData ?? {}).stayOriginal ?? {}) as Record<string, any>;
+        // Saving other changes must not move a draft, a pending or a live property to another status, so an
+        // untouched Active toggle sends the status the property already has.
+        if (original.status && active === original.activeAtLoad) stayPayload.status = original.status;
+        // (The server's PATCH for stays cannot update amenities and rooms together, so the full update is used.)
+        await apiFetch(`/vendor/stays/${listingId}`, { method: "PUT", body: JSON.stringify(stayPayload) });
+        store.setDraft({
+          categoryData: {
+            ...(store.categoryData ?? {}),
+            stayOriginal: { ...original, status: stayPayload.status ?? original.status, activeAtLoad: active },
+          },
+        });
       } else {
         const draftCatData = useListingDraftStore.getState().categoryData ?? {};
         const catEndpointName = catLower === "transport" ? "transfer" : catLower;
@@ -2482,11 +2151,32 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     useListingDraftStore.getState().setDraft({ variants: v });
   };
 
-  // Safari, Experience and Stay edit in a drawer that slides in from the right.
-  if (mode === "edit" && presentation === "drawer") {
+  // Safari, Tour, Experience and Stay are created and edited in a drawer that slides in from the right.
+  if ((mode === "edit" || mode === "create") && presentation === "drawer") {
+    const stayForVendor = mode === "create" && !isAdmin;
     return (
       <ListingEditDrawer
+        mode={mode}
         category={category}
+        availableCategories={availableCategories}
+        onChooseCategory={startCreate}
+        destinations={destinations}
+        destinationsLoading={destinationsLoading}
+        destinationId={destinationId}
+        setDestinationId={(value) => {
+          setDestinationId(value);
+          useListingDraftStore.getState().setDraft({});
+        }}
+        issues={issues}
+        photosKey={photosKey}
+        primaryLabel={
+          mode === "create"
+            ? (stayForVendor ? "Submit for review" : active ? "Create & publish" : "Create listing")
+            : category === "Stay" && isAdmin && stayOriginalStatus === "submitted" && active
+              ? "Save & approve"
+              : undefined
+        }
+        onSaveDraft={mode === "create" ? () => void submitNew(true) : undefined}
         listingId={listingId}
         loading={editLoading}
         loadError={loadError}
@@ -2508,7 +2198,7 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
         saveSuccess={saveSuccess}
         saveError={editError}
         dirty={dirty}
-        onSave={saveStayListing}
+        onSave={mode === "create" ? () => void submitNew(false) : saveStayListing}
         ratePlansSection={<RatePlansStep />}
         onClose={() => onClose?.()}
         onDismissMessages={() => {
@@ -2519,27 +2209,9 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     );
   }
 
+  // Creating always happens in the drawer on the listings page; an old link to the page form lands there.
   if (mode === "create") {
-    return (
-      <CreateListingWizard
-        category={category}
-        setCategory={(value) => setCategoryPersist(value)}
-        title={title}
-        setTitle={setTitlePersist}
-        active={active}
-        setActive={setActivePersist}
-        description={description}
-        setDescription={setDescriptionPersist}
-        destination={destination}
-        setDestination={setDestinationPersist}
-        lat={lat}
-        setLat={setLatPersist}
-        lng={lng}
-        setLng={setLngPersist}
-        variants={variants}
-        setVariants={setVariantsPersist}
-      />
-    );
+    return <Navigate to={location.pathname.startsWith("/hotel") ? "/hotel/listings?create=stay" : "/listings?create=new"} replace />;
   }
 
   const resolvedCategory = category ?? "Safari";
@@ -2830,237 +2502,5 @@ export function ListingEditor({ mode, listingId: listingIdProp, presentation = "
     );
   }
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Category Selector */}
-      <div
-        className="px-6 pt-4 pb-3 shrink-0"
-        style={{ borderBottom: "1px solid var(--border-light)", background: "var(--bg-header)" }}
-      >
-        <p className="text-[11px] uppercase tracking-wider mb-2.5" style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>
-          Select Category
-        </p>
-        <div className="flex items-center gap-2">
-          {CATEGORIES.map(({ id, label, icon: Icon }) => {
-            const isActive = category === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setCategory(id)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] transition-all"
-                style={
-                  isActive
-                    ? {
-                      color: "var(--accent-navy-light)",
-                      background: "var(--active-overlay)",
-                      border: "1px solid var(--border-accent)",
-                      boxShadow: "0 0 8px var(--border-accent)",
-                    }
-                    : {
-                      color: "var(--text-secondary)",
-                      background: "var(--input-background)",
-                      border: "1px solid var(--border-light)",
-                    }
-                }
-              >
-                <Icon size={14} />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div
-        className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0"
-        style={{ borderBottom: "1px solid var(--border-light)" }}
-      >
-        {editorTabs.map(({ id, label, icon: Icon }) => {
-          const isActive = activeTab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className="flex items-center gap-2 px-4 py-2.5 text-[12px] rounded-t-lg transition-all relative"
-              style={
-                isActive
-                  ? {
-                    color: "var(--accent-navy-light)",
-                    background: "var(--active-overlay)",
-                    borderBottom: "2px solid var(--accent-navy)",
-                  }
-                  : { color: "var(--text-tertiary)" }
-              }
-            >
-              <Icon size={13} />
-              {label}
-              {id === "pricing" && (
-                <span
-                  className="px-1.5 py-0 rounded text-[10px]"
-                  style={{ background: "var(--active-overlay)", color: "var(--accent-navy-light)" }}
-                >
-                  {variants.length}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Content area */}
-      <div className="flex-1 flex gap-5 px-6 py-5 overflow-hidden min-h-0">
-        {/* Main form */}
-        <div className="flex-1 overflow-y-auto pr-1" style={{ minWidth: 0 }}>
-          {activeTab === "basic" && (
-            <BasicInfoTab
-              title={title}
-              setTitle={setTitle}
-              active={active}
-              setActive={setActive}
-              description={description}
-              setDescription={setDescription}
-            />
-          )}
-          {activeTab === "destination" && (
-            <DestinationTab
-              destination={destination}
-              setDestination={setDestination}
-              lat={lat}
-              setLat={setLat}
-              lng={lng}
-              setLng={setLng}
-            />
-          )}
-          {activeTab === "media" && <MediaTab />}
-          {activeTab === "pricing" && (
-            resolvedCategory === "Stay" ? <RatePlansStep /> : <PricingTab variants={variants} setVariants={setVariants} />
-          )}
-          {activeTab === "category" && (resolvedCategory === "Stay" ? <RoomsSection /> : <CategoryDetailsTab category={resolvedCategory} />)}
-          {activeTab === "policies" && (resolvedCategory === "Stay" ? <ImagesSection /> : <PoliciesTab category={resolvedCategory} />)}
-        </div>
-
-        {/* Right panel */}
-        <div
-          className="w-64 shrink-0 overflow-y-auto"
-          style={{ scrollbarWidth: "none" }}
-        >
-          <StatusPanel mode={mode} active={active} category={resolvedCategory} />
-        </div>
-      </div>
-
-      {saveSuccess && (
-        <div className="px-6 py-2 bg-emerald-500/10 border-t border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center justify-between">
-          <span>✓ All changes saved successfully!</span>
-          <button onClick={() => setSaveSuccess(false)} className="text-emerald-400 hover:underline">Dismiss</button>
-        </div>
-      )}
-      {editError && (
-        <div className="px-6 py-2 bg-rose-500/10 border-t border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center justify-between">
-          <span>⚠️ {editError}</span>
-          <button onClick={() => setEditError(null)} className="text-rose-400 hover:underline">Dismiss</button>
-        </div>
-      )}
-
-      {/* Sticky bottom save bar */}
-      <div
-        className="flex items-center justify-between px-6 py-3 shrink-0"
-        style={{
-          background: "var(--bg-header)",
-          borderTop: "1px solid var(--border-light)",
-          boxShadow: "var(--shadow-lg)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          {mode === "edit" && (
-            <>
-              {deleteConfirm ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px]" style={{ color: "#f87171" }}>
-                    Are you sure?
-                  </span>
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-[12px] transition-all"
-                    style={{ background: "var(--active-overlay)", color: "var(--error)", border: "1px solid var(--border-accent)" }}
-                    onClick={() => { setDeleteConfirm(false); navigate("/listings"); }}
-                  >
-                    Yes, Delete
-                  </button>
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-[12px]"
-                    style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
-                    onClick={() => setDeleteConfirm(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setDeleteConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] transition-all"
-                  style={{ color: "var(--error)", border: "1px solid rgba(239,68,68,0.2)" }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "transparent";
-                  }}
-                >
-                  <Trash2 size={12} />
-                  Delete Listing
-                </button>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 mr-3">
-            <Check size={12} style={{ color: "var(--success)" }} />
-            <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-              Auto-saved
-            </span>
-          </div>
-          <button
-            onClick={() => navigate("/listings")}
-            className="px-4 py-1.5 rounded-lg text-[12px] transition-all"
-            style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-              (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-              (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={saveStayListing}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg text-[12px] transition-all"
-            style={{
-              background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
-              color: "white",
-              opacity: saving ? 0.65 : 1,
-              cursor: saving ? "not-allowed" : "pointer",
-              boxShadow: "0 0 16px var(--border-accent)",
-              border: "1px solid var(--border-accent)",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px var(--border-accent)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px var(--border-accent)";
-            }}
-          >
-            <Check size={12} />
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return null;
 }

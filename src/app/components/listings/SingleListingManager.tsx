@@ -1053,7 +1053,7 @@ function TourListingManager({
                             navigate(
                                 String(listingCategory).toLowerCase() === "experience" || listing?.activityDetail || listing?.activity_detail
                                     ? `/listings?category=experience&edit=${listingId}`
-                                    : `/listings/${listingId}/edit`,
+                                    : `/listings?category=tour&edit=${listingId}`,
                             )
                         }
                         className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
@@ -1868,7 +1868,7 @@ export function SingleListingManager() {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => navigate(isExperienceCategory ? `/listings?category=experience&edit=${listingId}` : isSafariCategory ? `/listings?category=safari&edit=${listingId}` : `/listings/${listingId}/edit`)}
+                        onClick={() => navigate(isExperienceCategory ? `/listings?category=experience&edit=${listingId}` : isSafariCategory ? `/listings?category=safari&edit=${listingId}` : isTourCategory ? `/listings?category=tour&edit=${listingId}` : `/listings/${listingId}/edit`)}
                         className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
                         style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
                     >

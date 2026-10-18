@@ -42,7 +42,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
-const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
+const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Day"];
 const ROOM_TYPE_OPTIONS = [
     "Deluxe Room",
     "Standard Room",
@@ -249,6 +249,91 @@ export function BasicInfoTab({
     );
 }
 
+export interface DestinationOption {
+    id: string;
+    name: string;
+    latitude?: number | null;
+    longitude?: number | null;
+}
+
+/**
+ * Where a Safari, Tour or Experience takes place. The destination is picked from the destinations the platform
+ * already has, so a listing can never be saved against a destination that was only typed in.
+ */
+export function LocationSection({
+    destinations,
+    destinationsLoading,
+    destinationId,
+    setDestinationId,
+    setDestination,
+    lat,
+    setLat,
+    lng,
+    setLng,
+}: {
+    destinations: DestinationOption[];
+    destinationsLoading: boolean;
+    destinationId: string;
+    setDestinationId: (id: string) => void;
+    setDestination: (name: string) => void;
+    lat: string;
+    setLat: (value: string) => void;
+    lng: string;
+    setLng: (value: string) => void;
+}) {
+    const labelFor = (option: DestinationOption) =>
+        destinations.filter((other) => other.name === option.name).length > 1 ? `${option.name} (${option.id.slice(0, 4)})` : option.name;
+    const selected = destinations.find((option) => option.id === destinationId);
+
+    const choose = (label: string) => {
+        const option = destinations.find((candidate) => labelFor(candidate) === label);
+        if (!option) return;
+        setDestinationId(option.id);
+        setDestination(option.name);
+        // Start the map position from the destination, but never overwrite coordinates that were already entered.
+        if (!lat.trim() && !lng.trim() && option.latitude != null && option.longitude != null) {
+            setLat(String(option.latitude));
+            setLng(String(option.longitude));
+        }
+    };
+
+    return (
+        <SectionCard title="Location">
+            <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                    <FieldLabel required>Destination</FieldLabel>
+                    {destinationsLoading ? (
+                        <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>Loading destinations…</p>
+                    ) : destinations.length === 0 ? (
+                        <p className="text-[12px]" style={{ color: "var(--error)" }}>No destinations are available, so a listing cannot be placed yet.</p>
+                    ) : (
+                        <SelectField
+                            value={selected ? labelFor(selected) : ""}
+                            onChange={choose}
+                            options={destinations.map(labelFor)}
+                            placeholder="Choose a destination"
+                        />
+                    )}
+                    <p className="text-[11px] mt-1.5" style={{ color: "var(--text-tertiary)" }}>
+                        Guests find this listing under the destination you choose.
+                    </p>
+                </div>
+                <div>
+                    <FieldLabel>Latitude</FieldLabel>
+                    <FormInput value={lat} onChange={setLat} placeholder="e.g. 6.3728" />
+                </div>
+                <div>
+                    <FieldLabel>Longitude</FieldLabel>
+                    <FormInput value={lng} onChange={setLng} placeholder="e.g. 81.5156" />
+                </div>
+                <p className="col-span-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    Map position is optional, but enter both numbers or leave both empty.
+                </p>
+            </div>
+        </SectionCard>
+    );
+}
+
 export function DestinationTab({
     destination,
     setDestination,
@@ -300,8 +385,8 @@ export function MediaTab({ profileMode = false }: { profileMode?: boolean } = {}
             Object.keys(DEFAULT_HOUSE_RULES).map((key) => [key, Boolean(savedRules[key] ?? DEFAULT_HOUSE_RULES[key as keyof typeof DEFAULT_HOUSE_RULES])]),
         );
     });
-    const [checkInTime, setCheckInTime] = useState(String(draftPropertyDetails.checkInTime ?? ""));
-    const [checkOutTime, setCheckOutTime] = useState(String(draftPropertyDetails.checkOutTime ?? ""));
+    const [checkInTime, setCheckInTime] = useState(String(draftPropertyDetails.checkInTime ?? (profileMode ? "14:00" : "")));
+    const [checkOutTime, setCheckOutTime] = useState(String(draftPropertyDetails.checkOutTime ?? (profileMode ? "11:00" : "")));
 
     const [hpProperty, setHpProperty] = useState<boolean>(draftCategoryData.hostProfile?.property ?? false);
     const [hpHost, setHpHost] = useState<boolean>(draftCategoryData.hostProfile?.host ?? false);
@@ -482,7 +567,7 @@ export function PricingTab({
                     }}
                 >
                     <Plus size={12} />
-                    Add Variant
+                    Add price option
                 </button>
             </div>
 
@@ -501,6 +586,8 @@ export function PricingTab({
                             <input
                                 value={variant.name}
                                 onChange={(e) => updateVariant(variant.id, { name: e.target.value })}
+                                aria-label="Price option name"
+                                placeholder="Name this option, e.g. Standard or Private"
                                 className="flex-1 bg-transparent outline-none text-[14px]"
                                 style={{ color: "var(--text-primary)", fontWeight: 500 }}
                             />
@@ -523,6 +610,8 @@ export function PricingTab({
                                 </button>
                                 {!variant.isDefault && (
                                     <button
+                                        type="button"
+                                        aria-label={`Remove ${variant.name || "price option"}`}
                                         onClick={() => removeVariant(variant.id)}
                                         className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
                                         style={{ color: "var(--text-secondary)" }}
@@ -705,7 +794,7 @@ function SafariPackagesSection() {
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 enabledSlots,
                 safariPackages: packages,
             },
@@ -918,16 +1007,16 @@ function SafariDetails() {
         return "Private Safari";
     };
 
-    const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark || "Yala National Park");
+    const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark ?? "");
     const [safariType, setSafariType] = useState(() => normalizeSafariDisplayType(draftCategoryData.safariType));
-    const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes || "360");
+    const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes ?? "");
     const [difficultyLevel, setDifficultyLevel] = useState(draftCategoryData.difficultyLevel || "Moderate");
-    const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction || "5+");
-    const [minGroupSize, setMinGroupSize] = useState(draftCategoryData.minGroupSize || "2");
+    const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction ?? "");
+    const [minGroupSize, setMinGroupSize] = useState(draftCategoryData.minGroupSize ?? "1");
     const [maxGroupSize, setMaxGroupSize] = useState(draftCategoryData.maxGroupSize || "6");
     const [startTime, setStartTime] = useState(draftCategoryData.startTime || "06:00");
     const [endTime, setEndTime] = useState(draftCategoryData.endTime || "12:00");
-    const [bestSeason, setBestSeason] = useState(draftCategoryData.bestSeason || "February–July, September–December");
+    const [bestSeason, setBestSeason] = useState(draftCategoryData.bestSeason ?? "");
 
     const [guideIncluded, setGuideIncluded] = useState(draftCategoryData.guideIncluded ?? true);
     const [pickupSupported, setPickupSupported] = useState(draftCategoryData.pickupSupported ?? true);
@@ -940,40 +1029,36 @@ function SafariDetails() {
     ])).filter(Boolean);
 
     const [wildlife, setWildlife] = useState<string[]>(
-        draftCategoryData.wildlifeHighlights ?? [
-            "Sri Lankan Leopard", "Asian Elephant", "Sloth Bear", "Mugger Crocodile", "Sri Lanka Jungle Fowl",
-        ]
+        draftCategoryData.wildlifeHighlights ?? []
     );
     const [included, setIncluded] = useState<string[]>(
-        draftCategoryData.includedItems ?? [
-            "Experienced naturalist guide", "4WD jeep with open roof", "Park entrance fees", "Water & snacks",
-        ]
+        draftCategoryData.includedItems ?? []
     );
     const [excluded, setExcluded] = useState<string[]>(
-        draftCategoryData.excludedItems ?? ["Hotel transfers", "Tips & gratuities", "Travel insurance"]
+        draftCategoryData.excludedItems ?? []
     );
     const [languages, setLanguages] = useState<string[]>(
-        draftCategoryData.languages ?? ["English", "Sinhala"]
+        draftCategoryData.languages ?? ["English"]
     );
     const [toBring, setToBring] = useState<string[]>(
-        draftCategoryData.whatToBring ?? ["Binoculars", "Sunscreen", "Hat", "Camera"]
+        draftCategoryData.whatToBring ?? []
     );
 
     const [pickupNotes, setPickupNotes] = useState(
-        draftCategoryData.pickupNotes || "Hotel pickup available from Tissamaharama, Kataragama, and Hambantota areas. Please provide hotel details at booking."
+        draftCategoryData.pickupNotes ?? ""
     );
     const [cancellationPolicy, setCancellationPolicy] = useState(
-        draftCategoryData.cancellationPolicy || "Free cancellation up to 48 hours before. 50% refund 24-48 hours before. No refund within 24 hours or for no-shows."
+        draftCategoryData.cancellationPolicy ?? ""
     );
     const [accessibilityInfo, setAccessibilityInfo] = useState(
-        draftCategoryData.accessibilityInfo || "Safari jeeps are not wheelchair accessible. Participants must be able to climb in and out of the vehicle."
+        draftCategoryData.accessibilityInfo ?? ""
     );
 
     // Sync to global draft store
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 nationalPark,
                 safariType,
                 durationMinutes,
@@ -1015,6 +1100,7 @@ function SafariDetails() {
                             value={nationalPark}
                             onChange={(val) => setNationalPark(val)}
                             options={parkOptions}
+                            placeholder="Select a national park"
                         />
                     </div>
                     <div>
@@ -1108,15 +1194,15 @@ function SafariDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value={pickupNotes} onChange={(val) => setPickupNotes(val)} rows={3} />
+                        <FormTextarea value={pickupNotes} onChange={(val) => setPickupNotes(val)} rows={3} placeholder="Where and when guests are picked up, and from which areas" />
                     </div>
                     <div>
                         <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value={cancellationPolicy} onChange={(val) => setCancellationPolicy(val)} rows={3} />
+                        <FormTextarea value={cancellationPolicy} onChange={(val) => setCancellationPolicy(val)} rows={3} placeholder="Refund rules, e.g. free cancellation up to 48 hours before" />
                     </div>
                     <div>
                         <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value={accessibilityInfo} onChange={(val) => setAccessibilityInfo(val)} rows={2} />
+                        <FormTextarea value={accessibilityInfo} onChange={(val) => setAccessibilityInfo(val)} rows={2} placeholder="Mobility and age requirements" />
                     </div>
                 </div>
             </SectionCard>
@@ -1447,7 +1533,7 @@ function TourDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const updateDraft = (key: string, value: any) => {
-        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), [key]: value } });
     };
 
     const highlights = Array.isArray(draftCategoryData.itineraryHighlights) ? draftCategoryData.itineraryHighlights : [];
@@ -1513,7 +1599,7 @@ function TourDetails() {
         ) {
             updates.durationDays = String(Math.max(1, updatedItinerary.length));
         }
-        setDraft({ categoryData: { ...draftCategoryData, ...updates } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), ...updates } });
     };
 
     const durationDaysNum = Number(draftCategoryData.durationDays) || Math.max(1, itineraryList.length);
@@ -1646,7 +1732,7 @@ function TourDetails() {
                 {/* 8 Canonical Category Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
                     {CANONICAL_TOUR_CATEGORIES.map((cat) => {
-                        const isSelected = (draftCategoryData.categoryId || "honeymoon").toLowerCase() === cat.id.toLowerCase();
+                        const isSelected = (draftCategoryData.categoryId || "").toLowerCase() === cat.id.toLowerCase();
                         return (
                             <button
                                 key={cat.id}
@@ -1679,7 +1765,7 @@ function TourDetails() {
                     <div>
                         <FieldLabel>Custom / Direct Category Slug</FieldLabel>
                         <CreatableSelect
-                            value={draftCategoryData.categoryId ?? "honeymoon"}
+                            value={draftCategoryData.categoryId ?? ""}
                             onChange={(v) => updateDraft("categoryId", v)}
                             options={CANONICAL_TOUR_CATEGORIES.map((c) => c.id)}
                         />
@@ -2029,7 +2115,7 @@ function ExperienceDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const updateDraft = (key: string, value: any) => {
-        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), [key]: value } });
     };
 
     const highlights = draftCategoryData.highlights ?? [];
@@ -2261,17 +2347,17 @@ export function CategoryDetailsTab({ category }: { category: Category }) {
     return <Component />;
 }
 
+// The property types the server understands (anything else is stored but shows up as a plain hotel in guest search).
 const STAY_PROPERTY_TYPES = [
     "hotel",
     "boutique-hotel",
-    "villa",
     "resort",
-    "guesthouse",
-    "bungalow",
-    "eco-lodge",
+    "villa",
     "apartment",
+    "guesthouse",
     "bed-breakfast",
     "homestay",
+    "hostel",
 ];
 
 const stayTypeLabel = (value: string) => value.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -2808,7 +2894,7 @@ export function RoomsSection() {
     );
 }
 
-export function ImagesSection() {
+export function ImagesSection({ title = "Property Images", noun = "property" }: { title?: string; noun?: string } = {}) {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
@@ -2853,7 +2939,7 @@ export function ImagesSection() {
 
     return (
         <div className="space-y-4">
-            <SectionCard title="Property Images">
+            <SectionCard title={title}>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <FieldLabel>Cover Image</FieldLabel>
@@ -2894,7 +2980,7 @@ export function ImagesSection() {
                             {cover ? (
                                 <div className="relative inline-block">
                                     <img src={cover} alt="cover" style={{ width: 220, height: 132, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border-light)" }} />
-                                    <button onClick={() => setCover("")} className="absolute top-2 right-2 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                    <button type="button" aria-label="Remove cover image" onClick={() => setCover("")} className="absolute top-2 right-2 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                         <Trash2 size={14} color="white" />
                                     </button>
                                 </div>
@@ -2923,7 +3009,7 @@ export function ImagesSection() {
                                                 {galleryDropzone.isDragActive ? "Drop gallery images here" : "Drag & drop gallery images"}
                                             </p>
                                             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                                                Add multiple images to showcase the property from different angles.
+                                                Add several images to show the {noun} from different angles.
                                             </p>
                                         </div>
                                     </div>
@@ -2941,7 +3027,7 @@ export function ImagesSection() {
                                 {gallery.map((src, i) => (
                                     <div key={`${src.slice(0, 24)}_${i}`} className="relative" style={{ width: 112, height: 80 }}>
                                         <img src={src} alt={`gallery-${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "1px solid var(--border-light)" }} />
-                                        <button onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                        <button type="button" aria-label={`Remove photo ${i + 1}`} onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                             <Trash2 size={12} color="white" />
                                         </button>
                                     </div>
@@ -2950,7 +3036,7 @@ export function ImagesSection() {
                         </div>
                     </div>
                 </div>
-                <div style={{ color: "var(--text-secondary)" }} className="text-[12px]">Add a high-resolution cover and multiple gallery images for the property page.</div>
+                <div style={{ color: "var(--text-secondary)" }} className="text-[12px]">Add a high-resolution cover and several gallery images for the {noun} page.</div>
             </SectionCard>
         </div>
     );

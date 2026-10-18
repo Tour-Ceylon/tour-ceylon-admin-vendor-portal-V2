@@ -73,7 +73,7 @@ interface AdminSnapshotResponse {
 }
 
 type AdminCategoryQuery = "all" | "stay" | "tour" | "safari" | "experience" | "transfer";
-type VendorCategoryQuery = "all" | "stay" | "safari" | "experience";
+type VendorCategoryQuery = "stay";
 
 const CATEGORY_COLORS: Record<Exclude<Category, "All">, { bg: string; text: string; border: string }> = {
   Stay: { bg: "rgba(37, 99, 235, 0.12)", text: "#60a5fa", border: "rgba(37,99,235,0.25)" },
@@ -93,7 +93,8 @@ const STATUS_COLORS: Record<Status, { bg: string; text: string; dot: string }> =
 };
 
 const CATEGORIES: Category[] = ["All", "Stay", "Tour", "Safari", "Experience", "Transfer"];
-const VENDOR_CATEGORIES: Category[] = ["All", "Stay", "Safari", "Experience"];
+// Vendors are Stay partners only; tours, safaris and experiences are managed by admins.
+const VENDOR_CATEGORIES: Category[] = ["Stay"];
 const STATUS_OPTIONS: Status[] = ["Draft", "Pending Review", "Approved", "Rejected", "Archived"];
 const PAGE_SIZE = 10;
 
@@ -162,11 +163,8 @@ function normalizeAdminCategoryQuery(value: string | null): AdminCategoryQuery {
   return "all";
 }
 
-function normalizeVendorCategoryQuery(value: string | null): VendorCategoryQuery {
-  if (value === "stay" || value === "safari" || value === "experience" || value === "all") {
-    return value;
-  }
-  return "all";
+function normalizeVendorCategoryQuery(_value: string | null): VendorCategoryQuery {
+  return "stay";
 }
 
 function mapListingStatus(listing: AdminListingResponse): Status {
@@ -263,15 +261,19 @@ export function ListingsPage() {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [deletingListingId, setDeletingListingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  // Safari, Experience and Stay listings edit in a drawer; which one is open lives in the URL (?edit=<id>).
+  // Stay, Tour, Safari and Experience listings are created and edited in a drawer; which one is open lives in the URL
+  // (?edit=<id> or ?create=<category>), so a refresh or a shared link reopens it.
   const editingId = searchParams.get("edit");
+  const creatingParam = searchParams.get("create");
+  const creatingCategory: Category | null =
+    creatingParam === "stay" ? "Stay" : creatingParam === "tour" ? "Tour" : creatingParam === "safari" ? "Safari" : creatingParam === "experience" ? "Experience" : null;
   const [reloadKey, setReloadKey] = useState(0);
   const silentReload = useRef(false);
   // The listing whose read-only details are open in the side drawer.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
   const openEditor = (listing: Listing) => {
-    if (listing.category === "Safari" || listing.category === "Experience" || listing.category === "Stay") {
+    if (listing.category === "Safari" || listing.category === "Experience" || listing.category === "Stay" || listing.category === "Tour") {
       const next = new URLSearchParams(searchParams);
       next.set("edit", listing.id);
       setSearchParams(next);
@@ -283,6 +285,20 @@ export function ListingsPage() {
   const closeEditor = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("edit");
+    setSearchParams(next);
+  };
+
+  const openCreator = () => {
+    const next = new URLSearchParams(searchParams);
+    // "new" opens the drawer on the "what do you want to create?" step; a category opens it on that form
+    const tab = activeCategory === "Stay" || activeCategory === "Tour" || activeCategory === "Safari" || activeCategory === "Experience" ? activeCategory.toLowerCase() : "new";
+    next.set("create", isVendor ? "stay" : tab);
+    setSearchParams(next);
+  };
+
+  const closeCreator = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
     setSearchParams(next);
   };
 
@@ -601,7 +617,7 @@ export function ListingsPage() {
           </div>
         ) : (
           <button
-            onClick={() => navigate("/listings/create")}
+            onClick={openCreator}
             className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[12px] transition-all shrink-0"
             style={{
               background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
@@ -995,7 +1011,18 @@ export function ListingsPage() {
         </div>
       </div>
 
-      {viewingId && !editingId && (() => {
+      {creatingParam && !editingId && (
+        <ListingEditor
+          key={`create-${creatingParam}`}
+          mode="create"
+          presentation="drawer"
+          initialCategory={creatingCategory}
+          onClose={closeCreator}
+          onSaved={refreshAfterSave}
+        />
+      )}
+
+      {viewingId && !editingId && !creatingParam && (() => {
         const viewing = listings.find((item) => item.id === viewingId);
         if (!viewing) return null;
         return (

@@ -62,6 +62,13 @@ export function StayHotelProvider({ children }: { children: ReactNode }) {
     void refreshProperties();
   }, []);
 
+  // A property created from the listings drawer announces itself so the portal picks it up without a reload.
+  useEffect(() => {
+    const onChanged = () => void refreshProperties();
+    window.addEventListener("stay-properties-changed", onChanged);
+    return () => window.removeEventListener("stay-properties-changed", onChanged);
+  }, []);
+
   const selectedProperty = useMemo(
     () => properties.find((property) => property.id === selectedPropertyId) ?? null,
     [properties, selectedPropertyId],

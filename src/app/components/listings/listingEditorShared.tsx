@@ -109,10 +109,13 @@ export function SelectField({
     value,
     onChange,
     options,
+    placeholder,
 }: {
     value: string;
     onChange: (v: string) => void;
     options: string[];
+    /** Shown while nothing is chosen yet, so a required choice is never silently pre-selected. */
+    placeholder?: string;
 }) {
     return (
         <div className="relative">
@@ -126,6 +129,11 @@ export function SelectField({
                     color: "var(--text-primary)",
                 }}
             >
+                {placeholder !== undefined && (
+                    <option value="" disabled style={{ background: "var(--bg-elevated)", color: "var(--text-tertiary)" }}>
+                        {placeholder}
+                    </option>
+                )}
                 {options.map((o) => (
                     <option key={o} value={o} style={{ background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
                         {o}
@@ -185,6 +193,9 @@ export function CreatableSelect({
 export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
     return (
         <button
+            type="button"
+            role="switch"
+            aria-checked={value}
             onClick={() => onChange(!value)}
             className="flex items-center gap-1.5 transition-all"
         >
