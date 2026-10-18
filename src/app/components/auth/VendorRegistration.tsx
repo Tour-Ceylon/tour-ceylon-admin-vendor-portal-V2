@@ -1,14 +1,10 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Compass, ArrowLeft, Upload, Building2, Globe, Anchor } from "lucide-react";
+import { Compass, ArrowLeft, Upload, Building2 } from "lucide-react";
 import { useAuth, VendorRegistrationData, Category } from "../../contexts/AuthContext";
 
-const CATEGORIES: { id: Category; label: string; icon: React.ComponentType<any> }[] = [
-  { id: "Stay", label: "Stay", icon: Building2 },
-  { id: "Tour", label: "Tour", icon: Compass },
-  { id: "Safari", label: "Safari", icon: Globe },
-  { id: "Experience", label: "Experience", icon: Anchor },
-];
+// Vendors are Stay partners only; tours, safaris and experiences are run by the Tour Ceylon team.
+const VENDOR_CATEGORIES: Category[] = ["Stay"];
 
 interface VendorRegistrationProps {
   onBackToRoleSelect?: () => void;
@@ -29,7 +25,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     password: "",
     country: "Sri Lanka",
     businessDescription: "",
-    categories: [],
+    categories: VENDOR_CATEGORIES,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,15 +53,6 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     }
   };
 
-  const toggleCategory = (category: Category) => {
-    setFormData((prev) => ({
-      ...prev,
-      categories: prev.categories.includes(category)
-        ? prev.categories.filter((c) => c !== category)
-        : [...prev.categories, category],
-    }));
-  };
-
   return (
     <div
       className="min-h-screen flex items-center justify-center p-6"
@@ -87,7 +74,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
             Vendor Partner Application
           </h1>
           <p className="text-[13px] mt-1" style={{ color: "var(--text-tertiary)" }}>
-            Join Tour Ceylon as a verified travel service provider (Stays, Tours, Safaris & Experiences)
+            List your hotel, villa or guesthouse on Tour Ceylon and manage rooms, rates and reservations in your own partner portal
           </p>
         </div>
 
@@ -250,44 +237,21 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
               />
             </div>
 
-            {/* Categories */}
-            <div>
-              <label className="block text-[12px] mb-2" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                Select Categories to Apply For *
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {CATEGORIES.map(({ id, label, icon: Icon }) => {
-                  const isSelected = formData.categories.includes(id);
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => toggleCategory(id)}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-[12px] transition-all"
-                      style={
-                        isSelected
-                          ? {
-                              background: "var(--active-overlay)",
-                              color: "var(--accent-navy-light)",
-                              border: "1px solid var(--border-accent)",
-                              fontWeight: 500,
-                            }
-                          : {
-                              background: "var(--input-background)",
-                              color: "var(--text-secondary)",
-                              border: "1px solid var(--border-light)",
-                            }
-                      }
-                    >
-                      <Icon size={14} />
-                      {label}
-                    </button>
-                  );
-                })}
+            {/* What the partner portal is for */}
+            <div
+              className="flex items-start gap-3 rounded-lg px-4 py-3"
+              style={{ background: "var(--active-overlay)", border: "1px solid var(--border-accent)" }}
+            >
+              <Building2 size={18} style={{ color: "var(--accent-navy-light)" }} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                  Stay partner account
+                </p>
+                <p className="text-[12px] mt-0.5" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  This application is for accommodation providers. Tours, safaris and experiences are created and managed by the
+                  Tour Ceylon team.
+                </p>
               </div>
-              <p className="text-[11px] mt-2" style={{ color: "var(--text-tertiary)" }}>
-                Selected: {formData.categories.length > 0 ? formData.categories.join(", ") : "None"}
-              </p>
             </div>
 
             {/* Business Documents */}
@@ -367,19 +331,19 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
               </button>
               <button
                 type="submit"
-                disabled={loading || formData.categories.length === 0}
+                disabled={loading}
                 className="flex-1 py-2.5 rounded-lg text-[13px] transition-all"
                 style={{
                   background:
-                    loading || formData.categories.length === 0
+                    loading
                       ? "var(--border-medium)"
                       : "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
                   color: "white",
                   boxShadow:
-                    loading || formData.categories.length === 0 ? "none" : "0 0 16px var(--border-accent)",
+                    loading ? "none" : "0 0 16px var(--border-accent)",
                   border: "1px solid var(--border-accent)",
                   fontWeight: 500,
-                  cursor: loading || formData.categories.length === 0 ? "not-allowed" : "pointer",
+                  cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
                 {loading ? "Submitting..." : "Submit Application"}
