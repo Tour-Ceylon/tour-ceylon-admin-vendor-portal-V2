@@ -42,7 +42,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 const CURRENCIES = ["USD", "EUR", "GBP", "LKR", "AUD", "SGD"];
-const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Night"];
+const BOOKING_UNITS = ["Per Person", "Per Group", "Per Vehicle", "Per Day"];
 const ROOM_TYPE_OPTIONS = [
     "Deluxe Room",
     "Standard Room",
@@ -204,6 +204,8 @@ export interface RoomType {
     pricePerNight: string;
     currency: string;
     discounts: RoomDiscount[];
+    /** Shown to guests on the room card; kept as stored so saving the form never blanks it. */
+    description?: string;
     bedBreakdown?: Record<string, number>;
     coverImage?: string;
     gallery?: string[];
@@ -247,6 +249,91 @@ export function BasicInfoTab({
     );
 }
 
+export interface DestinationOption {
+    id: string;
+    name: string;
+    latitude?: number | null;
+    longitude?: number | null;
+}
+
+/**
+ * Where a Safari, Tour or Experience takes place. The destination is picked from the destinations the platform
+ * already has, so a listing can never be saved against a destination that was only typed in.
+ */
+export function LocationSection({
+    destinations,
+    destinationsLoading,
+    destinationId,
+    setDestinationId,
+    setDestination,
+    lat,
+    setLat,
+    lng,
+    setLng,
+}: {
+    destinations: DestinationOption[];
+    destinationsLoading: boolean;
+    destinationId: string;
+    setDestinationId: (id: string) => void;
+    setDestination: (name: string) => void;
+    lat: string;
+    setLat: (value: string) => void;
+    lng: string;
+    setLng: (value: string) => void;
+}) {
+    const labelFor = (option: DestinationOption) =>
+        destinations.filter((other) => other.name === option.name).length > 1 ? `${option.name} (${option.id.slice(0, 4)})` : option.name;
+    const selected = destinations.find((option) => option.id === destinationId);
+
+    const choose = (label: string) => {
+        const option = destinations.find((candidate) => labelFor(candidate) === label);
+        if (!option) return;
+        setDestinationId(option.id);
+        setDestination(option.name);
+        // Start the map position from the destination, but never overwrite coordinates that were already entered.
+        if (!lat.trim() && !lng.trim() && option.latitude != null && option.longitude != null) {
+            setLat(String(option.latitude));
+            setLng(String(option.longitude));
+        }
+    };
+
+    return (
+        <SectionCard title="Location">
+            <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                    <FieldLabel required>Destination</FieldLabel>
+                    {destinationsLoading ? (
+                        <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>Loading destinations…</p>
+                    ) : destinations.length === 0 ? (
+                        <p className="text-[12px]" style={{ color: "var(--error)" }}>No destinations are available, so a listing cannot be placed yet.</p>
+                    ) : (
+                        <SelectField
+                            value={selected ? labelFor(selected) : ""}
+                            onChange={choose}
+                            options={destinations.map(labelFor)}
+                            placeholder="Choose a destination"
+                        />
+                    )}
+                    <p className="text-[11px] mt-1.5" style={{ color: "var(--text-tertiary)" }}>
+                        Guests find this listing under the destination you choose.
+                    </p>
+                </div>
+                <div>
+                    <FieldLabel>Latitude</FieldLabel>
+                    <FormInput value={lat} onChange={setLat} placeholder="e.g. 6.3728" />
+                </div>
+                <div>
+                    <FieldLabel>Longitude</FieldLabel>
+                    <FormInput value={lng} onChange={setLng} placeholder="e.g. 81.5156" />
+                </div>
+                <p className="col-span-2 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    Map position is optional, but enter both numbers or leave both empty.
+                </p>
+            </div>
+        </SectionCard>
+    );
+}
+
 export function DestinationTab({
     destination,
     setDestination,
@@ -282,7 +369,8 @@ export function DestinationTab({
     );
 }
 
-export function MediaTab() {
+/** `profileMode` hides the name and location inputs, which the Stay drawer edits in its own "Property & contact" section. */
+export function MediaTab({ profileMode = false }: { profileMode?: boolean } = {}) {
     const setDraft = useListingDraftStore((s) => s.setDraft);
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const draftPropertyDetails = draftCategoryData.propertyDetails ?? {};
@@ -297,8 +385,8 @@ export function MediaTab() {
             Object.keys(DEFAULT_HOUSE_RULES).map((key) => [key, Boolean(savedRules[key] ?? DEFAULT_HOUSE_RULES[key as keyof typeof DEFAULT_HOUSE_RULES])]),
         );
     });
-    const [checkInTime, setCheckInTime] = useState(String(draftPropertyDetails.checkInTime ?? ""));
-    const [checkOutTime, setCheckOutTime] = useState(String(draftPropertyDetails.checkOutTime ?? ""));
+    const [checkInTime, setCheckInTime] = useState(String(draftPropertyDetails.checkInTime ?? (profileMode ? "14:00" : "")));
+    const [checkOutTime, setCheckOutTime] = useState(String(draftPropertyDetails.checkOutTime ?? (profileMode ? "11:00" : "")));
 
     const [hpProperty, setHpProperty] = useState<boolean>(draftCategoryData.hostProfile?.property ?? false);
     const [hpHost, setHpHost] = useState<boolean>(draftCategoryData.hostProfile?.host ?? false);
@@ -309,7 +397,7 @@ export function MediaTab() {
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 propertyDetails: {
                     propertyLocation,
                     propertyName,
@@ -330,20 +418,24 @@ export function MediaTab() {
         <div>
             <SectionCard title="Property Details">
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <FieldLabel required>Where is the property</FieldLabel>
-                        <FormInput value={propertyLocation} onChange={setPropertyLocation} placeholder="City, area" />
-                    </div>
+                    {!profileMode && (
+                        <div>
+                            <FieldLabel required>Where is the property</FieldLabel>
+                            <FormInput value={propertyLocation} onChange={setPropertyLocation} placeholder="City, area" />
+                        </div>
+                    )}
                     <div>
                         <FieldLabel>Breakfast included</FieldLabel>
                         <div className="flex items-center gap-3 h-9">
                             <Toggle value={breakfastIncluded} onChange={setBreakfastIncluded} />
                         </div>
                     </div>
-                    <div>
-                        <FieldLabel required>Property Name</FieldLabel>
-                        <FormInput value={propertyName} onChange={setPropertyName} placeholder="Name" />
-                    </div>
+                    {!profileMode && (
+                        <div>
+                            <FieldLabel required>Property Name</FieldLabel>
+                            <FormInput value={propertyName} onChange={setPropertyName} placeholder="Name" />
+                        </div>
+                    )}
                     <div>
                         <FieldLabel>Parking?</FieldLabel>
                         <div className="flex items-center gap-3 h-9">
@@ -475,7 +567,7 @@ export function PricingTab({
                     }}
                 >
                     <Plus size={12} />
-                    Add Variant
+                    Add price option
                 </button>
             </div>
 
@@ -494,6 +586,8 @@ export function PricingTab({
                             <input
                                 value={variant.name}
                                 onChange={(e) => updateVariant(variant.id, { name: e.target.value })}
+                                aria-label="Price option name"
+                                placeholder="Name this option, e.g. Standard or Private"
                                 className="flex-1 bg-transparent outline-none text-[14px]"
                                 style={{ color: "var(--text-primary)", fontWeight: 500 }}
                             />
@@ -516,6 +610,8 @@ export function PricingTab({
                                 </button>
                                 {!variant.isDefault && (
                                     <button
+                                        type="button"
+                                        aria-label={`Remove ${variant.name || "price option"}`}
                                         onClick={() => removeVariant(variant.id)}
                                         className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
                                         style={{ color: "var(--text-secondary)" }}
@@ -698,7 +794,7 @@ function SafariPackagesSection() {
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 enabledSlots,
                 safariPackages: packages,
             },
@@ -740,7 +836,7 @@ function SafariPackagesSection() {
         <div className="space-y-6">
             {/* Step 1: Game Drive Time Slots */}
             <SectionCard title="1. Game Drive Time Slots Availability">
-                <p className="text-xs text-slate-500 mb-4">
+                <p className="text-xs text-[var(--text-secondary)] mb-4">
                     Enable the standard Sri Lankan national park safari session time slots offered for this listing:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -752,13 +848,13 @@ function SafariPackagesSection() {
                                 onClick={() => toggleSlot(slot.key)}
                                 className={`p-4 rounded-xl border-2 transition cursor-pointer flex items-center justify-between ${
                                     isEnabled
-                                        ? "border-[#051f36] bg-slate-50 shadow-sm"
-                                        : "border-slate-200 bg-white opacity-60"
+                                        ? "border-[var(--accent-navy-light)] bg-[var(--active-overlay)] shadow-sm"
+                                        : "border-[var(--border-light)] bg-[var(--input-background)] opacity-60"
                                 }`}
                             >
                                 <div>
-                                    <h4 className="font-bold text-slate-900 text-sm">{slot.label}</h4>
-                                    <p className="text-xs text-slate-500 mt-0.5">{slot.time}</p>
+                                    <h4 className="font-bold text-[var(--text-primary)] text-sm">{slot.label}</h4>
+                                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">{slot.time}</p>
                                 </div>
                                 <Toggle value={isEnabled} onChange={() => toggleSlot(slot.key)} />
                             </div>
@@ -769,7 +865,7 @@ function SafariPackagesSection() {
 
             {/* Step 2: Vehicle Packages & Pricing Grouped by Time Slot */}
             <SectionCard title="2. Safari Jeep Vehicle Packages & Pricing by Time Slot">
-                <p className="text-xs text-slate-500 mb-4">
+                <p className="text-xs text-[var(--text-secondary)] mb-4">
                     Configure the available Jeep vehicle types, max passenger capacities, and rates under each active time slot.
                 </p>
 
@@ -778,41 +874,41 @@ function SafariPackagesSection() {
                         const slotPackages = packages.filter((p) => p.timeSlot.includes(slotObj.key));
 
                         return (
-                            <div key={slotObj.key} className="p-4 rounded-2xl border border-slate-200 bg-white space-y-4">
-                                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div key={slotObj.key} className="p-4 rounded-2xl border border-[var(--border-light)] bg-[var(--input-background)] space-y-4">
+                                <div className="flex items-center justify-between pb-3 border-b border-[var(--border-light)]">
                                     <div>
-                                        <h3 className="font-extrabold text-[#051f36] text-sm flex items-center gap-2">
+                                        <h3 className="font-extrabold text-[var(--text-primary)] text-sm flex items-center gap-2">
                                             <span>📅</span> {slotObj.label} ({slotObj.time})
                                         </h3>
-                                        <span className="text-xs text-slate-500 font-medium">
+                                        <span className="text-xs text-[var(--text-secondary)] font-medium">
                                             {slotPackages.length} vehicle package{slotPackages.length === 1 ? "" : "s"} configured
                                         </span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => handleAddPackageForSlot(slotObj)}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#051f36] text-white hover:bg-[#0a2f4c] transition"
+                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--accent-navy)] text-white hover:opacity-90 transition"
                                     >
                                         + Add Vehicle Package for {slotObj.key}
                                     </button>
                                 </div>
 
                                 {slotPackages.length === 0 ? (
-                                    <div className="p-4 rounded-xl border border-dashed border-slate-300 text-center bg-slate-50 text-xs text-slate-500">
+                                    <div className="p-4 rounded-xl border border-dashed border-[var(--border-light)] text-center bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)]">
                                         No vehicle packages added for {slotObj.label} yet. Click "+ Add Vehicle Package" to add one.
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {slotPackages.map((pkg, idx) => (
-                                            <div key={pkg.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                                            <div key={pkg.id} className="p-4 rounded-xl border border-[var(--border-light)] bg-[var(--bg-panel)] space-y-3">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-xs font-black uppercase text-slate-700">
+                                                    <span className="text-xs font-black uppercase text-[var(--text-primary)]">
                                                         Vehicle Option #{idx + 1} — {slotObj.key} Session
                                                     </span>
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemovePackage(pkg.id)}
-                                                        className="text-xs font-bold text-rose-600 hover:text-rose-700"
+                                                        className="text-xs font-bold text-rose-500 hover:text-rose-400"
                                                     >
                                                         Remove Vehicle Option
                                                     </button>
@@ -877,8 +973,8 @@ function SafariPackagesSection() {
                                                     />
                                                 </div>
 
-                                                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                                                    <span className="text-xs font-semibold text-slate-700">Includes National Park Entrance Fees</span>
+                                                <div className="flex items-center justify-between pt-2 border-t border-[var(--border-light)]">
+                                                    <span className="text-xs font-semibold text-[var(--text-primary)]">Includes National Park Entrance Fees</span>
                                                     <Toggle
                                                         value={pkg.includesParkFees}
                                                         onChange={(v) => handleUpdatePackage(pkg.id, "includesParkFees", v)}
@@ -911,16 +1007,16 @@ function SafariDetails() {
         return "Private Safari";
     };
 
-    const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark || "Yala National Park");
+    const [nationalPark, setNationalPark] = useState(draftCategoryData.nationalPark ?? "");
     const [safariType, setSafariType] = useState(() => normalizeSafariDisplayType(draftCategoryData.safariType));
-    const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes || "360");
+    const [durationMinutes, setDurationMinutes] = useState(draftCategoryData.durationMinutes ?? "");
     const [difficultyLevel, setDifficultyLevel] = useState(draftCategoryData.difficultyLevel || "Moderate");
-    const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction || "5+");
-    const [minGroupSize, setMinGroupSize] = useState(draftCategoryData.minGroupSize || "2");
+    const [ageRestriction, setAgeRestriction] = useState(draftCategoryData.ageRestriction ?? "");
+    const [minGroupSize, setMinGroupSize] = useState(draftCategoryData.minGroupSize ?? "1");
     const [maxGroupSize, setMaxGroupSize] = useState(draftCategoryData.maxGroupSize || "6");
     const [startTime, setStartTime] = useState(draftCategoryData.startTime || "06:00");
     const [endTime, setEndTime] = useState(draftCategoryData.endTime || "12:00");
-    const [bestSeason, setBestSeason] = useState(draftCategoryData.bestSeason || "February–July, September–December");
+    const [bestSeason, setBestSeason] = useState(draftCategoryData.bestSeason ?? "");
 
     const [guideIncluded, setGuideIncluded] = useState(draftCategoryData.guideIncluded ?? true);
     const [pickupSupported, setPickupSupported] = useState(draftCategoryData.pickupSupported ?? true);
@@ -933,40 +1029,36 @@ function SafariDetails() {
     ])).filter(Boolean);
 
     const [wildlife, setWildlife] = useState<string[]>(
-        draftCategoryData.wildlifeHighlights ?? [
-            "Sri Lankan Leopard", "Asian Elephant", "Sloth Bear", "Mugger Crocodile", "Sri Lanka Jungle Fowl",
-        ]
+        draftCategoryData.wildlifeHighlights ?? []
     );
     const [included, setIncluded] = useState<string[]>(
-        draftCategoryData.includedItems ?? [
-            "Experienced naturalist guide", "4WD jeep with open roof", "Park entrance fees", "Water & snacks",
-        ]
+        draftCategoryData.includedItems ?? []
     );
     const [excluded, setExcluded] = useState<string[]>(
-        draftCategoryData.excludedItems ?? ["Hotel transfers", "Tips & gratuities", "Travel insurance"]
+        draftCategoryData.excludedItems ?? []
     );
     const [languages, setLanguages] = useState<string[]>(
-        draftCategoryData.languages ?? ["English", "Sinhala"]
+        draftCategoryData.languages ?? ["English"]
     );
     const [toBring, setToBring] = useState<string[]>(
-        draftCategoryData.whatToBring ?? ["Binoculars", "Sunscreen", "Hat", "Camera"]
+        draftCategoryData.whatToBring ?? []
     );
 
     const [pickupNotes, setPickupNotes] = useState(
-        draftCategoryData.pickupNotes || "Hotel pickup available from Tissamaharama, Kataragama, and Hambantota areas. Please provide hotel details at booking."
+        draftCategoryData.pickupNotes ?? ""
     );
     const [cancellationPolicy, setCancellationPolicy] = useState(
-        draftCategoryData.cancellationPolicy || "Free cancellation up to 48 hours before. 50% refund 24-48 hours before. No refund within 24 hours or for no-shows."
+        draftCategoryData.cancellationPolicy ?? ""
     );
     const [accessibilityInfo, setAccessibilityInfo] = useState(
-        draftCategoryData.accessibilityInfo || "Safari jeeps are not wheelchair accessible. Participants must be able to climb in and out of the vehicle."
+        draftCategoryData.accessibilityInfo ?? ""
     );
 
     // Sync to global draft store
     useEffect(() => {
         setDraft({
             categoryData: {
-                ...(draftCategoryData || {}),
+                ...(useListingDraftStore.getState().categoryData || {}),
                 nationalPark,
                 safariType,
                 durationMinutes,
@@ -1008,6 +1100,7 @@ function SafariDetails() {
                             value={nationalPark}
                             onChange={(val) => setNationalPark(val)}
                             options={parkOptions}
+                            placeholder="Select a national park"
                         />
                     </div>
                     <div>
@@ -1101,15 +1194,15 @@ function SafariDetails() {
                 <div className="space-y-4">
                     <div>
                         <FieldLabel>Pickup Notes</FieldLabel>
-                        <FormTextarea value={pickupNotes} onChange={(val) => setPickupNotes(val)} rows={3} />
+                        <FormTextarea value={pickupNotes} onChange={(val) => setPickupNotes(val)} rows={3} placeholder="Where and when guests are picked up, and from which areas" />
                     </div>
                     <div>
                         <FieldLabel>Cancellation Policy</FieldLabel>
-                        <FormTextarea value={cancellationPolicy} onChange={(val) => setCancellationPolicy(val)} rows={3} />
+                        <FormTextarea value={cancellationPolicy} onChange={(val) => setCancellationPolicy(val)} rows={3} placeholder="Refund rules, e.g. free cancellation up to 48 hours before" />
                     </div>
                     <div>
                         <FieldLabel>Accessibility Info</FieldLabel>
-                        <FormTextarea value={accessibilityInfo} onChange={(val) => setAccessibilityInfo(val)} rows={2} />
+                        <FormTextarea value={accessibilityInfo} onChange={(val) => setAccessibilityInfo(val)} rows={2} placeholder="Mobility and age requirements" />
                     </div>
                 </div>
             </SectionCard>
@@ -1130,7 +1223,7 @@ function StayDetails() {
     );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms, paymentPolicy]);
 
@@ -1440,7 +1533,7 @@ function TourDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const updateDraft = (key: string, value: any) => {
-        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), [key]: value } });
     };
 
     const highlights = Array.isArray(draftCategoryData.itineraryHighlights) ? draftCategoryData.itineraryHighlights : [];
@@ -1506,7 +1599,7 @@ function TourDetails() {
         ) {
             updates.durationDays = String(Math.max(1, updatedItinerary.length));
         }
-        setDraft({ categoryData: { ...draftCategoryData, ...updates } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), ...updates } });
     };
 
     const durationDaysNum = Number(draftCategoryData.durationDays) || Math.max(1, itineraryList.length);
@@ -1639,7 +1732,7 @@ function TourDetails() {
                 {/* 8 Canonical Category Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
                     {CANONICAL_TOUR_CATEGORIES.map((cat) => {
-                        const isSelected = (draftCategoryData.categoryId || "honeymoon").toLowerCase() === cat.id.toLowerCase();
+                        const isSelected = (draftCategoryData.categoryId || "").toLowerCase() === cat.id.toLowerCase();
                         return (
                             <button
                                 key={cat.id}
@@ -1672,7 +1765,7 @@ function TourDetails() {
                     <div>
                         <FieldLabel>Custom / Direct Category Slug</FieldLabel>
                         <CreatableSelect
-                            value={draftCategoryData.categoryId ?? "honeymoon"}
+                            value={draftCategoryData.categoryId ?? ""}
                             onChange={(v) => updateDraft("categoryId", v)}
                             options={CANONICAL_TOUR_CATEGORIES.map((c) => c.id)}
                         />
@@ -2022,7 +2115,7 @@ function ExperienceDetails() {
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
     const updateDraft = (key: string, value: any) => {
-        setDraft({ categoryData: { ...draftCategoryData, [key]: value } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), [key]: value } });
     };
 
     const highlights = draftCategoryData.highlights ?? [];
@@ -2254,6 +2347,127 @@ export function CategoryDetailsTab({ category }: { category: Category }) {
     return <Component />;
 }
 
+// The property types the server understands (anything else is stored but shows up as a plain hotel in guest search).
+const STAY_PROPERTY_TYPES = [
+    "hotel",
+    "boutique-hotel",
+    "resort",
+    "villa",
+    "apartment",
+    "guesthouse",
+    "bed-breakfast",
+    "homestay",
+    "hostel",
+];
+
+const stayTypeLabel = (value: string) => value.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+/**
+ * The stay fields the database keeps that the other Stay sections do not edit: type, address, city, district,
+ * coordinates, contact details, amenities and the admin note. Values live in the draft store as
+ * `categoryData.stayProfile` and `categoryData.amenities`; ListingEditor turns them into the save payload.
+ */
+export function StayProfileSection({
+    lat,
+    setLat,
+    lng,
+    setLng,
+}: {
+    lat: string;
+    setLat: (value: string) => void;
+    lng: string;
+    setLng: (value: string) => void;
+}) {
+    const stored = useListingDraftStore((s) => s.categoryData ?? {});
+    const initial = (stored.stayProfile ?? {}) as Record<string, string>;
+    const subcategory = useListingDraftStore((s) => s.subcategory);
+
+    const [propertyType, setPropertyType] = useState(String(initial.propertyType || subcategory || "hotel"));
+    const [address, setAddress] = useState(String(initial.address ?? ""));
+    const [city, setCity] = useState(String(initial.city ?? ""));
+    const [district, setDistrict] = useState(String(initial.district ?? ""));
+    const [phone, setPhone] = useState(String(initial.phone ?? ""));
+    const [email, setEmail] = useState(String(initial.email ?? ""));
+    const [website, setWebsite] = useState(String(initial.website ?? ""));
+    const [applicationNote, setApplicationNote] = useState(String(initial.applicationNote ?? ""));
+    const [amenities, setAmenities] = useState<string[]>(() => (Array.isArray(stored.amenities) ? (stored.amenities as string[]) : []));
+
+    useEffect(() => {
+        const current = useListingDraftStore.getState();
+        current.setDraft({
+            categoryData: {
+                ...(current.categoryData || {}),
+                // titleIsName: in the drawer the listing title is the property name.
+                stayProfile: { propertyType, address, city, district, phone, email, website, applicationNote, titleIsName: true },
+                amenities,
+            },
+        });
+    }, [propertyType, address, city, district, phone, email, website, applicationNote, amenities]);
+
+    const typeOptions = STAY_PROPERTY_TYPES.includes(propertyType) ? STAY_PROPERTY_TYPES : [propertyType, ...STAY_PROPERTY_TYPES];
+
+    return (
+        <div className="space-y-4">
+            <SectionCard title="Property type & location">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <FieldLabel required>Property type</FieldLabel>
+                        <SelectField value={stayTypeLabel(propertyType)} onChange={(label) => setPropertyType(typeOptions.find((option) => stayTypeLabel(option) === label) ?? propertyType)} options={typeOptions.map(stayTypeLabel)} />
+                    </div>
+                    <div>
+                        <FieldLabel>City</FieldLabel>
+                        <FormInput value={city} onChange={setCity} placeholder="e.g. Galle" />
+                    </div>
+                    <div className="col-span-2">
+                        <FieldLabel>Address</FieldLabel>
+                        <FormInput value={address} onChange={setAddress} placeholder="Street address" />
+                    </div>
+                    <div>
+                        <FieldLabel>District</FieldLabel>
+                        <FormInput value={district} onChange={setDistrict} placeholder="e.g. Galle District" />
+                    </div>
+                    <div />
+                    <div>
+                        <FieldLabel>Latitude</FieldLabel>
+                        <FormInput value={lat} onChange={setLat} placeholder="e.g. 6.0329" />
+                    </div>
+                    <div>
+                        <FieldLabel>Longitude</FieldLabel>
+                        <FormInput value={lng} onChange={setLng} placeholder="e.g. 80.2168" />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Contact details">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <FieldLabel>Phone</FieldLabel>
+                        <FormInput value={phone} onChange={setPhone} type="tel" placeholder="+94 ..." />
+                    </div>
+                    <div>
+                        <FieldLabel>Email</FieldLabel>
+                        <FormInput value={email} onChange={setEmail} type="email" placeholder="reservations@example.com" />
+                    </div>
+                    <div className="col-span-2">
+                        <FieldLabel>Website</FieldLabel>
+                        <FormInput value={website} onChange={setWebsite} type="url" placeholder="https://" />
+                    </div>
+                </div>
+            </SectionCard>
+
+            <SectionCard title="Amenities">
+                <FieldLabel>Property amenities</FieldLabel>
+                <TagInput tags={amenities} onChange={setAmenities} placeholder="Add amenity (e.g. Pool, Free WiFi)..." />
+            </SectionCard>
+
+            <SectionCard title="Application note">
+                <FieldLabel>Note kept with this property's application</FieldLabel>
+                <FormTextarea value={applicationNote} onChange={setApplicationNote} rows={3} placeholder="e.g. why a change was requested or approved" />
+            </SectionCard>
+        </div>
+    );
+}
+
 export function RoomsSection() {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
@@ -2274,7 +2488,7 @@ export function RoomsSection() {
     );
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), roomTypes: rooms, paymentPolicy } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), roomTypes: rooms, paymentPolicy } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rooms, paymentPolicy]);
 
@@ -2447,6 +2661,15 @@ export function RoomsSection() {
                                         </div>
                                     ) : null}
 
+                                    <div className="mb-2">
+                                        <FieldLabel>Room description</FieldLabel>
+                                        <FormTextarea
+                                            value={room.description ?? ""}
+                                            onChange={(v) => updateRoom(room.id, { description: v })}
+                                            rows={2}
+                                            placeholder="What guests should know about this room"
+                                        />
+                                    </div>
                                     <div className="grid grid-cols-3 gap-4 mb-2">
                                         <div>
                                             <FieldLabel required>Max Guests</FieldLabel>
@@ -2471,7 +2694,7 @@ export function RoomsSection() {
                                             <TagInput tags={room.bathroomItems} onChange={(tags) => updateRoom(room.id, { bathroomItems: tags })} placeholder="Type and press Enter..." />
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4 mb-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
                                         <div>
                                             <FieldLabel>Guest Access</FieldLabel>
                                             <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
@@ -2484,7 +2707,7 @@ export function RoomsSection() {
                                         </div>
                                         <div>
                                             <FieldLabel required>Price per night</FieldLabel>
-                                            <div className="grid grid-cols-[1fr_110px] gap-2">
+                                            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
                                                 <input
                                                     value={room.pricePerNight}
                                                     onChange={(e) => updateRoom(room.id, { pricePerNight: e.target.value })}
@@ -2671,7 +2894,7 @@ export function RoomsSection() {
     );
 }
 
-export function ImagesSection() {
+export function ImagesSection({ title = "Property Images", noun = "property" }: { title?: string; noun?: string } = {}) {
     const draftCategoryData = useListingDraftStore((s) => s.categoryData ?? {});
     const setDraft = useListingDraftStore((s) => s.setDraft);
 
@@ -2710,13 +2933,13 @@ export function ImagesSection() {
     });
 
     useEffect(() => {
-        setDraft({ categoryData: { ...(draftCategoryData || {}), images: { cover, gallery } } });
+        setDraft({ categoryData: { ...(useListingDraftStore.getState().categoryData || {}), images: { cover, gallery } } });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cover, gallery]);
 
     return (
         <div className="space-y-4">
-            <SectionCard title="Property Images">
+            <SectionCard title={title}>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <FieldLabel>Cover Image</FieldLabel>
@@ -2757,7 +2980,7 @@ export function ImagesSection() {
                             {cover ? (
                                 <div className="relative inline-block">
                                     <img src={cover} alt="cover" style={{ width: 220, height: 132, objectFit: "cover", borderRadius: 10, border: "1px solid var(--border-light)" }} />
-                                    <button onClick={() => setCover("")} className="absolute top-2 right-2 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                    <button type="button" aria-label="Remove cover image" onClick={() => setCover("")} className="absolute top-2 right-2 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                         <Trash2 size={14} color="white" />
                                     </button>
                                 </div>
@@ -2786,7 +3009,7 @@ export function ImagesSection() {
                                                 {galleryDropzone.isDragActive ? "Drop gallery images here" : "Drag & drop gallery images"}
                                             </p>
                                             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                                                Add multiple images to showcase the property from different angles.
+                                                Add several images to show the {noun} from different angles.
                                             </p>
                                         </div>
                                     </div>
@@ -2804,7 +3027,7 @@ export function ImagesSection() {
                                 {gallery.map((src, i) => (
                                     <div key={`${src.slice(0, 24)}_${i}`} className="relative" style={{ width: 112, height: 80 }}>
                                         <img src={src} alt={`gallery-${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "1px solid var(--border-light)" }} />
-                                        <button onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                                        <button type="button" aria-label={`Remove photo ${i + 1}`} onClick={() => setGallery((g) => g.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1" style={{ background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
                                             <Trash2 size={12} color="white" />
                                         </button>
                                     </div>
@@ -2813,7 +3036,7 @@ export function ImagesSection() {
                         </div>
                     </div>
                 </div>
-                <div style={{ color: "var(--text-secondary)" }} className="text-[12px]">Add a high-resolution cover and multiple gallery images for the property page.</div>
+                <div style={{ color: "var(--text-secondary)" }} className="text-[12px]">Add a high-resolution cover and several gallery images for the {noun} page.</div>
             </SectionCard>
         </div>
     );

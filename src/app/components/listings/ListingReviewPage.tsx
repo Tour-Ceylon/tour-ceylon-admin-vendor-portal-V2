@@ -118,7 +118,15 @@ export function ListingReviewPage() {
           mediaCount: l.gallery?.length || 0,
           startingPrice: l.fromPrice?.amount || 0,
           qualityScore: l.title && l.description ? 95 : 60,
-          status: l.status === "published" ? "approved" : l.status === "draft" ? "draft" : l.status === "submitted" ? "pending_review" : "submitted",
+          status: (() => {
+            const raw = String(l.status || "").toLowerCase();
+            if (raw === "published" || raw === "approved" || raw === "active") return "approved";
+            if (raw === "draft") return "draft";
+            if (raw === "rejected") return "rejected";
+            if (raw === "archived") return "archived";
+            if (raw === "submitted" || raw === "pending" || raw === "pending_review") return "pending_review";
+            return "draft";
+          })(),
           submittedDate: l.createdAt ? new Date(l.createdAt).toLocaleDateString() : "Just now",
           description: l.description || "",
           variants: l.variants?.length || 0,
@@ -157,7 +165,7 @@ export function ListingReviewPage() {
     pending: SAMPLE_LISTINGS.filter(l => l.status === "pending_review" || l.status === "submitted").length,
     needsChanges: SAMPLE_LISTINGS.filter(l => l.status === "needs_changes").length,
     approved: SAMPLE_LISTINGS.filter(l => l.status === "approved").length,
-    avgQuality: Math.round(SAMPLE_LISTINGS.reduce((sum, l) => sum + l.qualityScore, 0) / SAMPLE_LISTINGS.length),
+    avgQuality: SAMPLE_LISTINGS.length ? Math.round(SAMPLE_LISTINGS.reduce((sum, l) => sum + l.qualityScore, 0) / SAMPLE_LISTINGS.length) : 0,
   };
 
   const filteredListings = SAMPLE_LISTINGS.filter((listing) => {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import {
     Check,
     ChevronDown,
@@ -109,10 +109,13 @@ export function SelectField({
     value,
     onChange,
     options,
+    placeholder,
 }: {
     value: string;
     onChange: (v: string) => void;
     options: string[];
+    /** Shown while nothing is chosen yet, so a required choice is never silently pre-selected. */
+    placeholder?: string;
 }) {
     return (
         <div className="relative">
@@ -126,6 +129,11 @@ export function SelectField({
                     color: "var(--text-primary)",
                 }}
             >
+                {placeholder !== undefined && (
+                    <option value="" disabled style={{ background: "var(--bg-elevated)", color: "var(--text-tertiary)" }}>
+                        {placeholder}
+                    </option>
+                )}
                 {options.map((o) => (
                     <option key={o} value={o} style={{ background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
                         {o}
@@ -185,6 +193,9 @@ export function CreatableSelect({
 export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
     return (
         <button
+            type="button"
+            role="switch"
+            aria-checked={value}
             onClick={() => onChange(!value)}
             className="flex items-center gap-1.5 transition-all"
         >
@@ -200,7 +211,28 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
     );
 }
 
+/** "panel" gives section cards the look of the cards in the Transfer Request drawer. */
+export const SectionCardVariantContext = createContext<"default" | "panel">("default");
+
 export function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+    const variant = useContext(SectionCardVariantContext);
+    if (variant === "panel") {
+        return (
+            <section
+                className="rounded-xl p-5 mb-4"
+                style={{
+                    background: "var(--bg-panel)",
+                    border: "1px solid var(--border-light)",
+                    boxShadow: "var(--shadow-md)",
+                }}
+            >
+                <h3 className="text-[14px] mb-4" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                    {title}
+                </h3>
+                {children}
+            </section>
+        );
+    }
     return (
         <div
             className="rounded-xl p-5 mb-4"

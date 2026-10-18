@@ -376,7 +376,6 @@ export function Sidebar() {
     const settingsItems = [];
 
     if (isAdmin) {
-      settingsItems.push({ id: "settings", label: "Settings", icon: Settings });
       settingsItems.push({ id: "media-library", label: "Media Library", icon: Image });
     }
 
@@ -385,12 +384,6 @@ export function Sidebar() {
       settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
       settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
     }
-
-    if (!isVendor) {
-      settingsItems.push({ id: "notifications", label: "Notifications", icon: Bell });
-    }
-
-    settingsItems.push({ id: "help", label: "Help & Docs", icon: HelpCircle });
 
     nav.push({
       group: "Settings",

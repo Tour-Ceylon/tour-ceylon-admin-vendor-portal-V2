@@ -497,7 +497,7 @@ export function TransferRequestsPage() {
                               handleViewRequest(b);
                             }}
                             aria-label={`Open booking ${b.booking_reference}`}
-                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
                             style={{
                               background: "var(--input-background)",
                               border: "1px solid var(--border-light)",

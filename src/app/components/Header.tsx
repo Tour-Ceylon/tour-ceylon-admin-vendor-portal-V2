@@ -1,20 +1,16 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, ChevronRight, ChevronDown, Bell, HelpCircle, ArrowLeft, Sun, Moon, Command, Eye, EyeOff } from "lucide-react";
+import { Search, ChevronRight, Bell, HelpCircle, ArrowLeft, Sun, Moon, Command, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
 import { MobileNav } from "./MobileNav";
 import { CommandPalette } from "./shared/CommandPalette";
 import { useAuth } from "../contexts/AuthContext";
-
-const DATA_LAYERS = ["Production", "Staging", "Development", "Preview"];
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { user, viewAsVendor, toggleViewAsVendor } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [dataLayer, setDataLayer] = useState("Production");
-  const [ddOpen, setDdOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Global command palette keyboard shortcut (Cmd+K or Ctrl+K)
@@ -190,73 +186,6 @@ export function Header() {
           <Command size={10} />K
         </div>
       </button>
-
-      {/* Data Layer Dropdown - Hidden on mobile */}
-      <div className="relative hidden md:block">
-        <button
-          onClick={() => setDdOpen((p) => !p)}
-          className="flex items-center gap-2 px-3 h-8 rounded-lg text-[12px] transition-all"
-          style={{
-            background: "var(--accent-navy-subtle)",
-            border: "1px solid var(--border-accent)",
-            color: "var(--accent-navy-light)",
-          }}
-        >
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--success)", boxShadow: "0 0 5px var(--success)" }}
-          />
-          {dataLayer}
-          <ChevronDown size={12} />
-        </button>
-
-        {ddOpen && (
-          <div
-            className="absolute right-0 top-full mt-1.5 w-40 rounded-xl overflow-hidden z-50"
-            style={{
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-accent)",
-              boxShadow: "var(--shadow-lg)",
-            }}
-          >
-            {DATA_LAYERS.map((layer) => (
-              <button
-                key={layer}
-                onClick={() => {
-                  setDataLayer(layer);
-                  setDdOpen(false);
-                }}
-                className="flex items-center gap-2 w-full px-4 py-2.5 text-[12px] text-left transition-all"
-                style={{
-                  color: dataLayer === layer ? "var(--accent-navy-light)" : "var(--text-tertiary)",
-                  background: dataLayer === layer ? "var(--active-overlay)" : "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (dataLayer !== layer)
-                    (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-                }}
-                onMouseLeave={(e) => {
-                  if (dataLayer !== layer)
-                    (e.currentTarget as HTMLElement).style.background = "transparent";
-                }}
-              >
-                <div
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    background:
-                      layer === "Production"
-                        ? "var(--success)"
-                        : layer === "Staging"
-                        ? "var(--warning)"
-                        : "var(--text-tertiary)",
-                  }}
-                />
-                {layer}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Theme Toggle */}
       <button
