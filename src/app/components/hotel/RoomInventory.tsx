@@ -19,11 +19,13 @@ import {
   updateStayRoomUnit,
   type StayBookingResponse,
   type StayInventoryResponse,
+  type StayRoomImage,
   type StayRoomType,
   type StayRoomUnit,
 } from "../api/stayVendorApi";
 import { EmptyState } from "../common/EmptyState";
 import { DashboardSkeleton } from "../common/SkeletonLoader";
+import { RoomPhotosField } from "./RoomPhotosField";
 import { StayHotelPropertyGate, StayHotelPropertySwitcher, useStayHotel } from "./StayHotelContext";
 
 function todayIso() {
@@ -46,6 +48,17 @@ function SectionCard({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+type RoomTypeFormPayload = {
+  name: string;
+  description: string;
+  size: string;
+  sizeUnit: string;
+  maxGuests?: number;
+  basePrice?: number;
+  currency: string;
+  images: StayRoomImage[];
+};
+
 function RoomTypeModal({
   roomType,
   existingRoomTypes = [],
@@ -56,7 +69,7 @@ function RoomTypeModal({
   roomType?: StayRoomType | null;
   existingRoomTypes?: StayRoomType[];
   onClose: () => void;
-  onSubmit: (payload: { name: string; description: string; size: string; sizeUnit: string; maxGuests?: number; basePrice?: number; currency: string }) => void;
+  onSubmit: (payload: RoomTypeFormPayload) => void;
   submitting: boolean;
 }) {
   const [name, setName] = useState(roomType?.name ?? "");
@@ -66,6 +79,7 @@ function RoomTypeModal({
   const [maxGuests, setMaxGuests] = useState(roomType?.maxGuests ?? "");
   const [basePrice, setBasePrice] = useState(String(roomType?.basePrice ?? ""));
   const [currency, setCurrency] = useState(roomType?.currency ?? "LKR");
+  const [photos, setPhotos] = useState<string[]>(() => (roomType?.images ?? []).map((image) => image.url).filter(Boolean));
 
   const isDuplicate = existingRoomTypes.some(
     (rt) => rt.id !== roomType?.id && rt.name.trim().toLowerCase() === name.trim().toLowerCase() && name.trim().length > 0
@@ -119,6 +133,10 @@ function RoomTypeModal({
             <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Currency</label>
             <input value={currency} onChange={(event) => setCurrency(event.target.value)} className="w-full px-3 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }} />
           </div>
+          <div className="md:col-span-2">
+            <label className="text-[12px] block mb-2" style={{ color: "var(--text-secondary)" }}>Room photos</label>
+            <RoomPhotosField value={photos} onChange={setPhotos} />
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
@@ -135,6 +153,7 @@ function RoomTypeModal({
                 maxGuests: maxGuests ? Number(maxGuests) : undefined,
                 basePrice: basePrice ? Number(basePrice) : undefined,
                 currency: currency.trim() || "LKR",
+                images: photos.map((url, index) => ({ url, sortOrder: index, isPrimary: index === 0 })),
               })
             }
             className="px-4 py-2 rounded-lg text-[13px] disabled:opacity-50"
@@ -310,7 +329,7 @@ function RoomInventoryContent() {
     });
   }, [inventory, roomTypeByUnitId, roomTypeFilter, search]);
 
-  async function handleRoomTypeSubmit(payload: { name: string; description: string; size: string; sizeUnit: string; maxGuests?: number; basePrice?: number; currency: string }) {
+  async function handleRoomTypeSubmit(payload: RoomTypeFormPayload) {
     if (!selectedProperty) return;
     setSaving(true);
     try {

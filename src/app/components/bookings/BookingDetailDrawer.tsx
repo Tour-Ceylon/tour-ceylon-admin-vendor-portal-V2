@@ -53,6 +53,15 @@ export interface CartItem {
   price: number;
   baseCurrency?: string;
   selectedRooms?: SelectedRoomItem[];
+  /** Set when the stay vendor (or an admin) moved the check-in / check-out dates */
+  dateChange?: {
+    original_check_in?: string;
+    original_check_out?: string;
+    changed_by?: string;
+    changed_by_role?: string;
+    changed_at?: string;
+    note?: string | null;
+  };
 }
 
 interface Booking {
@@ -501,6 +510,35 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                 </div>
               </div>
             )}
+
+            {(booking.cartItems || []).filter((item) => item.dateChange).map((item, index) => {
+              const change = item.dateChange!;
+              const fmt = (value?: string) => {
+                if (!value) return "—";
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+              };
+              return (
+                <div
+                  key={`date-change-${index}`}
+                  className="mt-4 rounded-lg p-3"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}
+                >
+                  <p className="text-[11px] mb-1" style={{ color: "#b45309", fontWeight: 600 }}>
+                    Dates changed by {change.changed_by_role?.toLowerCase() === "admin" ? "admin" : "vendor"}
+                    {change.changed_by ? ` (${change.changed_by})` : ""}
+                  </p>
+                  <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+                    Originally requested: {fmt(change.original_check_in)} to {fmt(change.original_check_out)}
+                  </p>
+                  {change.note && (
+                    <p className="text-[12px] mt-1" style={{ color: "var(--text-secondary)" }}>
+                      Note: {change.note}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
 
             {booking.specialRequests && (
               <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border-light)" }}>
