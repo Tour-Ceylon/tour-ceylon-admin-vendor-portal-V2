@@ -8,7 +8,14 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { getStayInventory, listStayBookings, type StayBookingResponse, type StayInventoryResponse } from "../api/stayVendorApi";
+import {
+  getStayInventory,
+  listStayBookings,
+  updateStayBookingDates,
+  updateStayBookingStatus,
+  type StayBookingResponse,
+  type StayInventoryResponse,
+} from "../api/stayVendorApi";
 import { EmptyState } from "../common/EmptyState";
 import { DashboardSkeleton } from "../common/SkeletonLoader";
 import { StayHotelPropertyGate, StayHotelPropertySwitcher, useStayHotel } from "./StayHotelContext";
@@ -33,28 +40,86 @@ function derivedBookingTotal(booking: StayBookingResponse) {
   return booking.rooms.reduce((sum, room) => sum + Number(room.nightlyRate || 0) * nightsBetween(room.checkInDate, room.checkOutDate), 0);
 }
 
+function formatAmount(booking: StayBookingResponse) {
+  if (booking.totalAmount !== null && booking.totalAmount !== undefined) {
+    return `${booking.currency ?? ""} ${Number(booking.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
+  }
+  return derivedBookingTotal(booking).toLocaleString();
+}
+
+const STATUS_STYLES: Record<string, { background: string; color: string }> = {
+  pending: { background: "rgba(245,158,11,0.14)", color: "#fbbf24" },
+  confirmed: { background: "rgba(16,185,129,0.14)", color: "#34d399" },
+  cancelled: { background: "rgba(239,68,68,0.14)", color: "#f87171" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLES[status.toLowerCase()] ?? { background: "rgba(59,130,246,0.12)", color: "#60a5fa" };
+  return (
+    <span className="px-2 py-1 rounded-full text-[11px] capitalize" style={style}>
+      {status.toLowerCase() === "cancelled" ? "rejected / cancelled" : status}
+    </span>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{label}</p>
+      <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{value}</p>
+    </div>
+  );
+}
+
 function ReservationDrawer({
   booking,
   roomNumberLookup,
   onClose,
+  onUpdateStatus,
+  onChangeDates,
+  updating,
+  actionError,
 }: {
   booking: StayBookingResponse;
   roomNumberLookup: Map<string, string>;
   onClose: () => void;
+  onUpdateStatus: (status: "confirmed" | "cancelled") => void;
+  onChangeDates: (checkIn: string, checkOut: string, note: string) => Promise<boolean>;
+  updating: boolean;
+  actionError: string | null;
 }) {
+  const currentStatus = booking.status.toLowerCase();
+  const [editingDates, setEditingDates] = useState(false);
+  const [checkIn, setCheckIn] = useState(booking.checkInDate);
+  const [checkOut, setCheckOut] = useState(booking.checkOutDate);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    setCheckIn(booking.checkInDate);
+    setCheckOut(booking.checkOutDate);
+    setNote("");
+    setEditingDates(false);
+  }, [booking.id, booking.checkInDate, booking.checkOutDate]);
+
+  const datesInvalid = !checkIn || !checkOut || checkOut <= checkIn;
+  const datesUnchanged = checkIn === booking.checkInDate && checkOut === booking.checkOutDate;
+  const inputStyle = { background: "var(--bg-panel)", border: "1px solid var(--border-light)", color: "var(--text-primary)" };
+  const wasChanged = (booking.dateChanges?.length ?? 0) > 0;
+
   return (
     <div
-      className="fixed right-0 top-0 h-full w-[380px] z-50 overflow-y-auto"
+      className="fixed right-0 top-0 h-full w-[400px] z-50 overflow-y-auto"
       style={{ background: "var(--bg-panel)", borderLeft: "1px solid var(--border-light)", boxShadow: "-8px 0 32px rgba(0,0,0,0.35)" }}
     >
       <div className="px-5 py-4 flex items-start justify-between sticky top-0" style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border-light)" }}>
         <div>
           <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--accent-navy)" }}>
-            Stay Booking
+            Booking request
           </p>
           <p className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {booking.bookingId}
+            {booking.reference || booking.bookingId}
           </p>
+          <div className="mt-1"><StatusBadge status={booking.status} /></div>
         </div>
         <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--input-background)" }}>
           <X size={14} style={{ color: "var(--text-secondary)" }} />
@@ -62,6 +127,90 @@ function ReservationDrawer({
       </div>
 
       <div className="p-5 space-y-4">
+        {actionError && (
+          <div className="rounded-xl px-4 py-3 text-[12px]" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>
+            {actionError}
+          </div>
+        )}
+
+        {/* Actions */}
+        {currentStatus !== "cancelled" && (
+          <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+            <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
+              Review
+            </p>
+            <div className="flex gap-2">
+              {currentStatus === "pending" && (
+                <button
+                  disabled={updating}
+                  onClick={() => onUpdateStatus("confirmed")}
+                  className="flex-1 px-3 py-2 rounded-lg text-[13px] disabled:opacity-60"
+                  style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", fontWeight: 600 }}
+                >
+                  {updating ? "Updating..." : "Accept"}
+                </button>
+              )}
+              <button
+                disabled={updating}
+                onClick={() => setEditingDates((value) => !value)}
+                className="flex-1 px-3 py-2 rounded-lg text-[13px] disabled:opacity-60"
+                style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa", fontWeight: 600 }}
+              >
+                Change dates
+              </button>
+              <button
+                disabled={updating}
+                onClick={() => {
+                  if (window.confirm("Reject this booking and release the rooms?")) onUpdateStatus("cancelled");
+                }}
+                className="flex-1 px-3 py-2 rounded-lg text-[13px] disabled:opacity-60"
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", fontWeight: 600 }}
+              >
+                Reject
+              </button>
+            </div>
+
+            {editingDates && (
+              <div className="space-y-2 pt-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    Check-in
+                    <input type="date" value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="w-full mt-1 px-2 py-2 rounded-lg text-[13px]" style={inputStyle} />
+                  </label>
+                  <label className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    Check-out
+                    <input type="date" value={checkOut} min={checkIn} onChange={(event) => setCheckOut(event.target.value)} className="w-full mt-1 px-2 py-2 rounded-lg text-[13px]" style={inputStyle} />
+                  </label>
+                </div>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  placeholder="Reason / note (e.g. no rooms left, agreed with guest)"
+                  rows={2}
+                  className="w-full px-2 py-2 rounded-lg text-[12px]"
+                  style={inputStyle}
+                />
+                {checkIn && checkOut && !datesInvalid && (
+                  <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {nightsBetween(checkIn, checkOut)} night(s). The listed price is not recalculated automatically.
+                  </p>
+                )}
+                <button
+                  disabled={updating || datesInvalid || datesUnchanged}
+                  onClick={async () => {
+                    const ok = await onChangeDates(checkIn, checkOut, note);
+                    if (ok) setEditingDates(false);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg text-[13px] disabled:opacity-50"
+                  style={{ background: "var(--accent-navy)", color: "#fff", fontWeight: 600 }}
+                >
+                  {updating ? "Saving..." : "Save new dates"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
           <p className="text-[11px] uppercase tracking-widest mb-2" style={{ color: "var(--text-tertiary)" }}>
             Guest
@@ -81,6 +230,10 @@ function ReservationDrawer({
               {booking.guestPhone}
             </p>
           )}
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            {booking.numberOfGuests ? <DetailRow label="Guests" value={booking.numberOfGuests} /> : null}
+            {booking.nationality ? <DetailRow label="Nationality" value={booking.nationality} /> : null}
+          </div>
         </div>
 
         <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
@@ -88,45 +241,46 @@ function ReservationDrawer({
             Stay Details
           </p>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Check-in</p>
-              <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{formatDate(booking.checkInDate)}</p>
-            </div>
-            <div>
-              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Check-out</p>
-              <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{formatDate(booking.checkOutDate)}</p>
-            </div>
-            <div>
-              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Nights</p>
-              <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{nightsBetween(booking.checkInDate, booking.checkOutDate)}</p>
-            </div>
-            <div>
-              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Status</p>
-              <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>{booking.status}</p>
-            </div>
+            <DetailRow label="Check-in" value={formatDate(booking.checkInDate)} />
+            <DetailRow label="Check-out" value={formatDate(booking.checkOutDate)} />
+            <DetailRow label="Nights" value={nightsBetween(booking.checkInDate, booking.checkOutDate)} />
+            <DetailRow label="Amount" value={formatAmount(booking)} />
           </div>
+          {wasChanged && booking.originalCheckInDate && booking.originalCheckOutDate && (
+            <p className="text-[11px] mt-3" style={{ color: "#fbbf24" }}>
+              Dates changed. Originally requested {formatDate(booking.originalCheckInDate)} to {formatDate(booking.originalCheckOutDate)}.
+            </p>
+          )}
         </div>
 
         <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
           <p className="text-[11px] uppercase tracking-widest mb-2" style={{ color: "var(--text-tertiary)" }}>
-            Assigned Rooms
+            Rooms
           </p>
           <div className="space-y-3">
-            {booking.rooms.map((room) => (
-              <div key={room.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                    {roomNumberLookup.get(room.roomUnitId) ?? room.roomUnitId}
-                  </p>
-                  <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                    {room.guests} guest{room.guests === 1 ? "" : "s"} • rate {Number(room.nightlyRate || 0).toLocaleString()}
-                  </p>
-                </div>
-                <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                  {nightsBetween(room.checkInDate, room.checkOutDate)} nights
-                </span>
-              </div>
-            ))}
+            {(booking.roomSummary?.length ?? 0) > 0
+              ? booking.roomSummary!.map((entry, index) => (
+                  <div key={`${entry.roomTypeName}-${index}`} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                        {entry.quantity} × {entry.roomTypeName}
+                      </p>
+                      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        Assigned: {entry.roomNumbers.join(", ") || "—"}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              : booking.rooms.map((room) => (
+                  <div key={room.id} className="flex items-center justify-between">
+                    <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      {roomNumberLookup.get(room.roomUnitId) ?? room.roomUnitId}
+                    </p>
+                    <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                      {nightsBetween(room.checkInDate, room.checkOutDate)} nights
+                    </span>
+                  </div>
+                ))}
           </div>
         </div>
 
@@ -141,17 +295,27 @@ function ReservationDrawer({
           </div>
         )}
 
-        <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
-          <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-            Derived booking total
-          </p>
-          <p className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            {derivedBookingTotal(booking).toLocaleString()}
-          </p>
-          <p className="text-[11px] mt-1" style={{ color: "var(--text-tertiary)" }}>
-            Computed locally from nightly room rates because the vendor stay booking response does not return a total amount.
-          </p>
-        </div>
+        {wasChanged && (
+          <div className="rounded-xl p-4" style={{ background: "var(--input-background)", border: "1px solid var(--border-light)" }}>
+            <p className="text-[11px] uppercase tracking-widest mb-2" style={{ color: "var(--text-tertiary)" }}>
+              Date change history
+            </p>
+            <div className="space-y-3">
+              {booking.dateChanges!.map((change, index) => (
+                <div key={index} className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                  <p style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                    {formatDate(change.from.checkIn)} – {formatDate(change.from.checkOut)} → {formatDate(change.to.checkIn)} – {formatDate(change.to.checkOut)}
+                  </p>
+                  <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                    {change.changedBy || "Unknown"}{change.changedByRole ? ` (${change.changedByRole.toLowerCase()})` : ""}
+                    {change.changedAt ? ` • ${formatDate(change.changedAt)}` : ""}
+                  </p>
+                  {change.note && <p className="mt-1">{change.note}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -163,9 +327,11 @@ function ReservationsContent() {
   const [bookings, setBookings] = useState<StayBookingResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedBooking, setSelectedBooking] = useState<StayBookingResponse | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   async function loadData() {
     if (!selectedProperty) return;
@@ -189,6 +355,45 @@ function ReservationsContent() {
     void loadData();
   }, [selectedProperty?.id]);
 
+  function applyUpdated(updated: StayBookingResponse) {
+    setBookings((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    setSelectedBooking((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
+  async function handleUpdateStatus(booking: StayBookingResponse, status: "confirmed" | "cancelled") {
+    if (!selectedProperty) return;
+    setUpdatingId(booking.id);
+    setActionError(null);
+    try {
+      applyUpdated(await updateStayBookingStatus(selectedProperty.id, booking.id, status));
+    } catch (err: any) {
+      setActionError(err?.message || "Unable to update booking status.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleChangeDates(booking: StayBookingResponse, checkIn: string, checkOut: string, note: string) {
+    if (!selectedProperty) return false;
+    setUpdatingId(booking.id);
+    setActionError(null);
+    try {
+      applyUpdated(
+        await updateStayBookingDates(selectedProperty.id, booking.id, {
+          checkInDate: checkIn,
+          checkOutDate: checkOut,
+          note: note.trim() || undefined,
+        }),
+      );
+      return true;
+    } catch (err: any) {
+      setActionError(err?.message || "Unable to change booking dates.");
+      return false;
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   const roomNumberLookup = useMemo(() => {
     const lookup = new Map<string, string>();
     for (const roomUnit of inventory?.roomUnits ?? []) {
@@ -202,6 +407,7 @@ function ReservationsContent() {
     return bookings.filter((booking) => {
       const matchesSearch =
         booking.bookingId.toLowerCase().includes(query) ||
+        (booking.reference ?? "").toLowerCase().includes(query) ||
         booking.guestName.toLowerCase().includes(query) ||
         booking.rooms.some((room) => (roomNumberLookup.get(room.roomUnitId) ?? "").toLowerCase().includes(query));
       const matchesStatus = statusFilter === "all" || booking.status.toLowerCase() === statusFilter;
@@ -235,7 +441,7 @@ function ReservationsContent() {
             {selectedProperty?.name}
           </h1>
           <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-            Read-only stay bookings with room assignments resolved from inventory.
+            Review each booking request: accept it, change the dates if rooms are short, or reject it.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -259,7 +465,7 @@ function ReservationsContent() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search booking ID, guest, or room"
+            placeholder="Search reference, guest, or room"
             className="w-full pl-9 pr-3 py-2 rounded-lg text-[13px]"
             style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
           />
@@ -286,10 +492,10 @@ function ReservationsContent() {
           style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-md)" }}
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px]">
+            <table className="w-full min-w-[980px]">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                  {["Booking", "Guest", "Stay", "Rooms", "Status", "Derived Total"].map((label) => (
+                  {["Booking", "Guest", "Stay", "Rooms", "Amount", "Status"].map((label) => (
                     <th key={label} className="px-4 py-3 text-left text-[11px]" style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>
                       {label}
                     </th>
@@ -298,10 +504,10 @@ function ReservationsContent() {
               </thead>
               <tbody>
                 {filteredBookings.map((booking) => (
-                  <tr key={booking.id} onClick={() => setSelectedBooking(booking)} className="cursor-pointer" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                  <tr key={booking.id} onClick={() => { setActionError(null); setSelectedBooking(booking); }} className="cursor-pointer" style={{ borderBottom: "1px solid var(--border-light)" }}>
                     <td className="px-4 py-4">
                       <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-                        {booking.bookingId}
+                        {booking.reference || booking.bookingId}
                       </p>
                       <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                         Created {formatDate(booking.createdAt)}
@@ -317,6 +523,10 @@ function ReservationsContent() {
                     </td>
                     <td className="px-4 py-4 text-[12px]" style={{ color: "var(--text-secondary)" }}>
                       {formatDate(booking.checkInDate)} to {formatDate(booking.checkOutDate)}
+                      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                        {nightsBetween(booking.checkInDate, booking.checkOutDate)} night(s)
+                        {(booking.dateChanges?.length ?? 0) > 0 && <span style={{ color: "#fbbf24" }}> • dates changed</span>}
+                      </p>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
@@ -327,13 +537,11 @@ function ReservationsContent() {
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-4">
-                      <span className="px-2 py-1 rounded-full text-[11px]" style={{ background: "rgba(59,130,246,0.12)", color: "#60a5fa" }}>
-                        {booking.status}
-                      </span>
+                    <td className="px-4 py-4 text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      {formatAmount(booking)}
                     </td>
-                    <td className="px-4 py-4 text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                      {derivedBookingTotal(booking).toLocaleString()}
+                    <td className="px-4 py-4">
+                      <StatusBadge status={booking.status} />
                     </td>
                   </tr>
                 ))}
@@ -348,6 +556,10 @@ function ReservationsContent() {
           booking={selectedBooking}
           roomNumberLookup={roomNumberLookup}
           onClose={() => setSelectedBooking(null)}
+          onUpdateStatus={(status) => void handleUpdateStatus(selectedBooking, status)}
+          onChangeDates={(checkIn, checkOut, note) => handleChangeDates(selectedBooking, checkIn, checkOut, note)}
+          updating={updatingId === selectedBooking.id}
+          actionError={actionError}
         />
       )}
     </div>

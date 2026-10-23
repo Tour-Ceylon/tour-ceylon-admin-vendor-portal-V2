@@ -119,6 +119,7 @@ interface StayPropertyResponse {
     bedConfiguration?: Record<string, any>;
     bathroom?: Record<string, any>;
     discounts?: any[];
+    images?: Array<{ url: string }>;
     roomUnits?: unknown[];
   }>;
   metadata?: Record<string, any>;
@@ -352,6 +353,7 @@ function stayPropertyToRoomType(roomType: NonNullable<StayPropertyResponse["room
     currency: roomType.currency || "LKR",
     discounts: Array.isArray(roomType.discounts) ? roomType.discounts : [],
     bedBreakdown: bedConfiguration.breakdown ?? {},
+    gallery: (roomType.images ?? []).map((image) => image.url).filter(Boolean),
   };
 }
 
@@ -723,6 +725,7 @@ function buildStayApplicationPayload({
         items: room.bathroomItems ?? [],
       },
       discounts: room.discounts ?? [],
+      images: (room.gallery ?? []).map((url, index) => ({ url, sortOrder: index, isPrimary: index === 0 })),
       metadata: {
         localDraftId: room.id,
       },
