@@ -297,12 +297,15 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     amount: inq.total || inq.subtotal || 0,
     bookingStatus: mapInquiryStatusToUI(inq.status),
     paymentStatus: "unpaid" as PaymentStatus,
-    createdAt: new Date(inq.createdAt).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-    rawCreatedAt: inq.createdAt,
+    // Admin API returns snake_case (created_at); the vendor API returns camelCase
+    createdAt: (() => {
+      const created = inq.createdAt || (inq as any).created_at;
+      const parsed = created ? new Date(created) : null;
+      return parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : "—";
+    })(),
+    rawCreatedAt: inq.createdAt || (inq as any).created_at,
     passengers: inq.numberOfTravelers,
     specialRequests: inq.specialRequests,
     nationality: inq.nationality,
@@ -317,6 +320,7 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
       price: ci.price,
       baseCurrency: ci.baseCurrency,
       selectedRooms: ci.selectedRooms || ci.selected_rooms || [],
+      dateChange: ci.dateChange || ci.date_change,
     })),
   };
 }
