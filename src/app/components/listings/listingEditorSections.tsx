@@ -17,6 +17,7 @@ import {
     Users,
 } from "lucide-react";
 import { useDropzone } from "react-dropzone";
+import { RoomPhotosField } from "../hotel/RoomPhotosField";
 import type { Category } from "../../stores/listingDraftStore";
 import { useListingDraftStore } from "../../stores/listingDraftStore";
 import {
@@ -207,7 +208,7 @@ export interface RoomType {
     /** Shown to guests on the room card; kept as stored so saving the form never blanks it. */
     description?: string;
     bedBreakdown?: Record<string, number>;
-    coverImage?: string;
+    /** Room photo URLs (new ones are data URLs until saved); the first is the cover on the room card. */
     gallery?: string[];
 }
 
@@ -1245,7 +1246,6 @@ function StayDetails() {
             currency: "USD",
             discounts: [],
             bedBreakdown: {},
-            coverImage: "",
             gallery: [],
         };
         setRooms((r) => [...r, newRoom]);
@@ -2660,6 +2660,14 @@ export function RoomsSection() {
                                             </div>
                                         </div>
                                     ) : null}
+
+                                    <div className="mb-3">
+                                        <FieldLabel>Room photos</FieldLabel>
+                                        <RoomPhotosField
+                                            value={room.gallery ?? []}
+                                            onChange={(urls) => updateRoom(room.id, { gallery: urls })}
+                                        />
+                                    </div>
 
                                     <div className="mb-2">
                                         <FieldLabel>Room description</FieldLabel>

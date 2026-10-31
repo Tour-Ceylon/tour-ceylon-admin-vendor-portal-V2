@@ -46,6 +46,14 @@ export interface StayRoomUnit {
   status: string;
 }
 
+export interface StayRoomImage {
+  url: string;
+  alt?: string;
+  sortOrder?: number;
+  isPrimary?: boolean;
+  [key: string]: unknown;
+}
+
 export interface StayRoomType {
   id: string;
   name: string;
@@ -58,6 +66,8 @@ export interface StayRoomType {
   bedConfiguration: Record<string, unknown>;
   bathroom: Record<string, unknown>;
   discounts: Array<Record<string, unknown>>;
+  /** Room photos, first one is the cover. */
+  images?: StayRoomImage[];
   roomUnits?: StayRoomUnit[];
   totalUnits?: number;
 }
@@ -120,6 +130,8 @@ export interface StayRoomTypePayload {
   bedConfiguration?: Record<string, unknown>;
   bathroom?: Record<string, unknown>;
   discounts?: Array<Record<string, unknown>>;
+  /** Omit to keep the stored photos; send the full list (new photos as data URLs) to replace them. */
+  images?: StayRoomImage[];
   metadata?: Record<string, unknown>;
 }
 
@@ -158,6 +170,22 @@ export interface StayBookingResponse {
   rooms: StayBookingRoom[];
   createdAt: string;
   updatedAt: string;
+  reference?: string | null;
+  totalAmount?: number | string | null;
+  currency?: string | null;
+  numberOfGuests?: number | null;
+  nationality?: string | null;
+  roomSummary?: Array<{ roomTypeName: string; quantity: number; roomNumbers: string[] }>;
+  originalCheckInDate?: string | null;
+  originalCheckOutDate?: string | null;
+  dateChanges?: Array<{
+    from: { checkIn: string; checkOut: string };
+    to: { checkIn: string; checkOut: string };
+    changedBy?: string;
+    changedByRole?: string;
+    changedAt?: string;
+    note?: string | null;
+  }>;
 }
 
 export interface StayBookingListResponse {
@@ -211,6 +239,28 @@ export async function releaseRoomBlock(propertyId: string, blockId: string) {
 
 export async function listStayBookings(propertyId: string) {
   return apiFetch<StayBookingListResponse>(`/vendor/stays/${propertyId}/bookings`);
+}
+
+export async function updateStayBookingStatus(
+  propertyId: string,
+  stayBookingId: string,
+  status: "pending" | "confirmed" | "cancelled",
+) {
+  return apiFetch<StayBookingResponse>(`/vendor/stays/${propertyId}/bookings/${stayBookingId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateStayBookingDates(
+  propertyId: string,
+  stayBookingId: string,
+  payload: { checkInDate: string; checkOutDate: string; note?: string },
+) {
+  return apiFetch<StayBookingResponse>(`/vendor/stays/${propertyId}/bookings/${stayBookingId}/dates`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createStayRoomType(propertyId: string, payload: StayRoomTypePayload) {
@@ -284,6 +334,7 @@ export async function updateStayProperty(
         bedConfiguration: rt.bedConfiguration || {},
         bathroom: rt.bathroom || {},
         discounts: rt.discounts || [],
+        images: rt.images,
       })) ||
       [];
 
