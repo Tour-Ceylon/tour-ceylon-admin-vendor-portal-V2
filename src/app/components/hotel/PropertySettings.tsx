@@ -28,6 +28,7 @@ import {
 import { useDropzone } from "react-dropzone";
 import { useStayHotel, StayHotelPropertyGate } from "./StayHotelContext";
 import { updateStayProperty } from "../api/stayVendorApi";
+import { customerListingUrl } from "../../lib/customerSite";
 
 // Categorized Amenities
 const CATEGORIZED_AMENITIES: Record<string, string[]> = {
@@ -364,9 +365,9 @@ function PropertySettingsContent() {
   };
 
   const publicListingUrl = selectedProperty?.listingId
-    ? `http://localhost:5173/stays/${selectedProperty.listingId}`
+    ? customerListingUrl(selectedProperty.listingId)
     : selectedProperty?.id
-    ? `http://localhost:5173/stays/${selectedProperty.id}`
+    ? customerListingUrl(selectedProperty.id)
     : null;
 
   const currentStatus = (selectedProperty?.status || "draft").toLowerCase();
