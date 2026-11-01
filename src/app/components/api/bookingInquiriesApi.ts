@@ -74,6 +74,9 @@ export interface AdminBookingInquiryItem {
   subtotal?: number;
   total?: number;
   currency?: string;
+  /** Latest online payment: initiated | pending | succeeded | failed | cancelled | chargedback. The admin API sends snake_case. */
+  paymentStatus?: string | null;
+  payment_status?: string | null;
 
   // Meta
   createdAt: string;
@@ -194,6 +197,23 @@ export async function vendorUpdateInquiryStatus(
   });
 }
 
+export interface SendPaymentLinkResult {
+  sent: boolean;
+  paymentUrl: string;
+  expiresAt: string;
+  message: string;
+}
+
+/**
+ * Email the guest a (new) secure pay link for an approved, unpaid stay.
+ * Works for admins and for the vendor that owns the stay.
+ */
+export async function sendInquiryPaymentLink(inquiryId: string): Promise<SendPaymentLinkResult> {
+  return apiFetch(`/vendor/booking-inquiries/${inquiryId}/payment-link`, {
+    method: "POST",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -241,6 +261,26 @@ export function inferBookingType(items?: CartItemSummary[], reference?: string):
     return "Experience";
   }
   return "Stay";
+}
+
+/**
+ * Map the backend's online payment status to the portal's payment status.
+ * No online payment (or one that has not completed) reads as unpaid.
+ */
+export function mapPaymentStatusToUI(
+  status?: string | null
+): "paid" | "unpaid" | "refunded" | "failed" {
+  switch ((status || "").toLowerCase()) {
+    case "succeeded":
+      return "paid";
+    case "chargedback":
+      return "refunded";
+    case "failed":
+    case "cancelled":
+      return "failed";
+    default:
+      return "unpaid";
+  }
 }
 
 /**

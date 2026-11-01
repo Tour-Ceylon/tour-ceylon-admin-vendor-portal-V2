@@ -97,10 +97,19 @@ interface BookingDetailDrawerProps {
   onStatusUpdate?: (status: string) => void;
   /** True while a status update API call is in flight */
   isUpdating?: boolean;
+  /** Email the guest a secure pay link (approved, unpaid stays only) */
+  onSendPaymentLink?: () => void;
 }
 
-export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating }: BookingDetailDrawerProps) {
+export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating, onSendPaymentLink }: BookingDetailDrawerProps) {
   const isTransport = booking.type === "Transfer";
+  const isStay = booking.type === "Stay";
+  const isPaidOnline = booking.paymentStatus === "paid";
+  // Approved stays that are not paid yet can be sent (or re-sent) a payment link
+  const canSendPaymentLink =
+    isStay &&
+    !isPaidOnline &&
+    (booking._inquiryStatus === "quoted" || booking._inquiryStatus === "converted_to_booking");
 
   const transportDetails = useMemo(() => {
     const raw = booking as any;
@@ -146,8 +155,8 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
 
   // Payment Preference Extraction
   const reqLower = (booking.specialRequests || "").toLowerCase();
-  const isCardPayment = reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay_now") || reqLower.includes("pay now");
-  const isPayAtProperty = reqLower.includes("pay at property") || (!isCardPayment && booking.paymentStatus === "pay_at_property");
+  const isCardPayment = isPaidOnline || reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay_now") || reqLower.includes("pay now");
+  const isPayAtProperty = !isPaidOnline && (reqLower.includes("pay at property") || (!isCardPayment && booking.paymentStatus === "pay_at_property"));
   
   // Refund Action State
   const [refundMessage, setRefundMessage] = useState<string | null>(null);
@@ -323,8 +332,18 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   onClick={() => onStatusUpdate("quoted")}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition"
                 >
-                  Accept & Confirm
+                  {isStay ? "Accept & send payment link" : "Accept & Confirm"}
                 </button>
+                {canSendPaymentLink && onSendPaymentLink && (
+                  <button
+                    disabled={isUpdating}
+                    onClick={onSendPaymentLink}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 disabled:opacity-50 transition"
+                    title="Email the guest a new secure link to pay for this stay"
+                  >
+                    Send payment link
+                  </button>
+                )}
                 <button
                   disabled={isUpdating}
                   onClick={() => onStatusUpdate("cancelled")}
@@ -706,7 +725,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                     ? "bg-blue-50 text-blue-700 border-blue-200"
                     : "bg-emerald-50 text-emerald-700 border-emerald-200"
                 }`}>
-                  {isCardPayment ? "💳 Credit / Debit Card (Online Payment)" : "🏨 Pay at Property (Check-in)"}
+                  {isPaidOnline ? "💳 Paid online (PayHere)" : isCardPayment ? "💳 Credit / Debit Card (Online Payment)" : "🏨 Pay at Property (Check-in)"}
                 </span>
               </div>
               <div className="flex items-center justify-between">

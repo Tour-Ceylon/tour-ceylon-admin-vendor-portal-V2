@@ -40,6 +40,8 @@ import {
   vendorListBookingInquiries,
   adminUpdateInquiryStatus,
   vendorUpdateInquiryStatus,
+  sendInquiryPaymentLink,
+  mapPaymentStatusToUI,
   inferBookingType,
   mapInquiryStatusToUI,
   type AdminBookingInquiryItem,
@@ -297,7 +299,7 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     checkOut: checkOutStr,
     amount: inq.total || inq.subtotal || 0,
     bookingStatus: mapInquiryStatusToUI(inq.status),
-    paymentStatus: "unpaid" as PaymentStatus,
+    paymentStatus: mapPaymentStatusToUI(inq.paymentStatus ?? inq.payment_status) as PaymentStatus,
     // Admin API returns snake_case (created_at); the vendor API returns camelCase
     createdAt: (() => {
       const created = inq.createdAt || (inq as any).created_at;
@@ -423,6 +425,24 @@ export function BookingsPage() {
     } catch (err: any) {
       console.error("Status update failed:", err);
       toast.error("Status Update Failed", err?.message || "Failed to update inquiry status");
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  // Re-send (or send for the first time) the "pay for your stay" link to the guest
+  const handleSendPaymentLink = async (inquiryId: string) => {
+    setIsUpdating(inquiryId);
+    try {
+      const result = await sendInquiryPaymentLink(inquiryId);
+      if (result.sent) {
+        toast.success("Payment link sent", "The guest has been emailed a secure payment link.");
+      } else {
+        toast.error("Email not sent", result.message);
+      }
+    } catch (err: any) {
+      console.error("Send payment link failed:", err);
+      toast.error("Could not send the link", err?.message || "The request must be an approved, unpaid stay.");
     } finally {
       setIsUpdating(null);
     }
@@ -980,6 +1000,9 @@ export function BookingsPage() {
             if (selectedBooking._inquiryId) {
               handleUpdateStatus(selectedBooking._inquiryId, newStatus as InquiryStatus);
             }
+          }}
+          onSendPaymentLink={() => {
+            if (selectedBooking._inquiryId) handleSendPaymentLink(selectedBooking._inquiryId);
           }}
           isUpdating={!!isUpdating && isUpdating === selectedBooking._inquiryId}
         />
