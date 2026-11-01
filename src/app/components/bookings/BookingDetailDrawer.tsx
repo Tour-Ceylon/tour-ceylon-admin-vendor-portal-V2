@@ -102,6 +102,25 @@ interface BookingDetailDrawerProps {
 export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating }: BookingDetailDrawerProps) {
   const isTransport = booking.type === "Transfer";
 
+  const transportDetails = useMemo(() => {
+    const raw = booking as any;
+    const listingParts = (booking.listing || "").includes(" to ")
+      ? booking.listing.split(" to ")
+      : (booking.listing || "").includes(" - ")
+        ? booking.listing.split(" - ")
+        : [raw.pickupLocation || raw.pickup || "Airport / Hub", raw.dropoffLocation || raw.destination || "Destination"];
+
+    return {
+      pickup: raw.pickupLocation || raw.pickup || listingParts[0]?.trim() || "Colombo International Airport (CMB)",
+      destination: raw.dropoffLocation || raw.destination || listingParts[1]?.trim() || booking.listing || "Hotel / Resort",
+      distance: raw.distance ? `${raw.distance} km` : "Standard Route",
+      duration: booking.duration || raw.duration || "Approx. 2-3 hrs",
+      pickupTime: raw.pickupTime || raw.travelDate || booking.travelDate || "As scheduled",
+      vehicle: raw.vehicleName || raw.vehicleCategory || raw.vehicle || "Sedan / Van",
+      luggage: raw.luggage || (booking.passengers ? `${booking.passengers} standard bags` : "2 Bags"),
+    };
+  }, [booking]);
+
   // Internal Notes State & LocalStorage Persistence
   const storageKey = `booking_note_${booking.id}`;
   const [noteText, setNoteText] = useState<string>("");
@@ -589,13 +608,13 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                         Pickup
                       </p>
                       <p className="text-[13px] mb-3" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {TRANSPORT_DETAILS.pickup}
+                        {transportDetails.pickup}
                       </p>
                       <p className="text-[11px] mb-1" style={{ color: "var(--text-tertiary)" }}>
                         Destination
                       </p>
                       <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {TRANSPORT_DETAILS.destination}
+                        {transportDetails.destination}
                       </p>
                     </div>
                   </div>
@@ -605,7 +624,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                         Distance
                       </p>
                       <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                        {TRANSPORT_DETAILS.distance}
+                        {transportDetails.distance}
                       </p>
                     </div>
                     <div>
@@ -613,7 +632,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                         Duration
                       </p>
                       <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                        {TRANSPORT_DETAILS.duration}
+                        {transportDetails.duration}
                       </p>
                     </div>
                     <div>
@@ -621,7 +640,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                         Pickup Time
                       </p>
                       <p className="text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                        {TRANSPORT_DETAILS.pickupTime}
+                        {transportDetails.pickupTime}
                       </p>
                     </div>
                   </div>
@@ -640,7 +659,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                       Vehicle
                     </p>
                     <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                      {TRANSPORT_DETAILS.vehicle}
+                      {transportDetails.vehicle}
                     </p>
                   </div>
                   <div>
@@ -648,7 +667,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                       Luggage
                     </p>
                     <p className="text-[12px]" style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                      {TRANSPORT_DETAILS.luggage}
+                      {transportDetails.luggage}
                     </p>
                   </div>
                 </div>

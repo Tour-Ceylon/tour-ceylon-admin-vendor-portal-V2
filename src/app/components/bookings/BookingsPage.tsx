@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { BookingDetailDrawer } from "./BookingDetailDrawer";
 import { useCommonActions } from "../../hooks/useCommonActions";
+import { useToast } from "../shared/Toast";
 import { FilterModal, type FilterOption } from "../shared/FilterModal";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -341,6 +342,7 @@ export function BookingsPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState<string | null>(null); // inquiry ID being updated
 
+  const toast = useToast();
   const { handleExport } = useCommonActions();
   const { effectiveUser, viewAsVendor } = useAuth();
   const isVendorView = effectiveUser?.role === "vendor" || viewAsVendor;
@@ -414,11 +416,13 @@ export function BookingsPage() {
   const handleUpdateStatus = async (inquiryId: string, newStatus: InquiryStatus) => {
     setIsUpdating(inquiryId);
     try {
-      const updateFn = isVendorView ? vendorUpdateInquiryStatus : adminUpdateInquiryStatus;
+      const updateFn = effectiveUser?.role === "vendor" ? vendorUpdateInquiryStatus : adminUpdateInquiryStatus;
       await updateFn(inquiryId, newStatus);
       await fetchInquiries();
+      toast.success("Status Updated", `Inquiry status changed to ${newStatus}`);
     } catch (err: any) {
       console.error("Status update failed:", err);
+      toast.error("Status Update Failed", err?.message || "Failed to update inquiry status");
     } finally {
       setIsUpdating(null);
     }

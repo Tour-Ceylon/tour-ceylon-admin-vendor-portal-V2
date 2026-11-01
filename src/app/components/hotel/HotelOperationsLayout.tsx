@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { StayHotelProvider, useStayHotel } from "./StayHotelContext";
+import { customerListingUrl } from "../../lib/customerSite";
 
 const OPERATIONS_NAV = [
   { to: "/hotel/dashboard", icon: LayoutDashboard, label: "Dashboard", hint: "Operational KPIs & arrivals" },
@@ -107,9 +108,9 @@ function StayVendorLayoutInner() {
     : "ST";
 
   const publicListingUrl = selectedProperty?.listingId
-    ? `http://localhost:5173/stays/${selectedProperty.listingId}`
+    ? customerListingUrl(selectedProperty.listingId)
     : selectedProperty?.id
-    ? `http://localhost:5173/stays/${selectedProperty.id}`
+    ? customerListingUrl(selectedProperty.id)
     : null;
 
   return (

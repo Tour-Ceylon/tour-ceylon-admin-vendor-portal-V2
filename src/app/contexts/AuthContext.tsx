@@ -167,28 +167,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Block customer/client/TOURIST role from entering the admin/vendor portal
         if (role === "customer/client") {
-          // Check if user has any elevated permissions in Clerk metadata that might allow access
-          const clerkMetadata = clerkUser.publicMetadata || {};
-          const hasElevatedAccess = clerkMetadata.isAdmin || clerkMetadata.isVendor || clerkMetadata.allowPortalAccess;
-          
-          if (!hasElevatedAccess) {
-            console.warn("Customer account denied access to management portal. Backend role:", backendUser.role, "| User ID:", userId);
-            throw new Error("Customer accounts are not authorized to access the management portal.");
-          } else {
-            // If has elevated access, treat as admin
-            role = "admin";
-            console.log("Customer account granted elevated access via Clerk metadata");
-          }
+          console.warn("Customer account denied access to management portal. Backend role:", backendUser.role, "| User ID:", userId);
+          throw new Error("Customer accounts are not authorized to access the management portal.");
         }
 
         const clerkMetadata = clerkUser.publicMetadata || {};
 
         const rawVendorStatus =
           backendUser.vendorStatus ||
-          backendUser.vendor_status ||
-          (clerkMetadata.vendorStatus as VendorStatus | undefined);
+          backendUser.vendor_status;
         const vendorStatus: VendorStatus =
-          rawVendorStatus || (role === "vendor" || role === "driver" ? "pending" : "approved");
+          rawVendorStatus || "pending";
 
         const approvedCategories: Category[] =
           backendUser.approvedCategories ||

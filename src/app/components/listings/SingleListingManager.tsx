@@ -26,6 +26,7 @@ import {
     createListingBlock,
     releaseListingBlock,
 } from "../api/listingBlocksApi";
+import { customerListingUrl, customerBrowseUrl } from "../../lib/customerSite";
 import {
     ArrowLeft,
     BedDouble,
@@ -351,7 +352,7 @@ function SafariListingManager({
                         <Edit3 size={14} /> Edit Safari
                     </button>
                     <a
-                        href={`http://localhost:3000/browse`}
+                        href={listingId ? customerListingUrl(listingId) : customerBrowseUrl("safari")}
                         target="_blank"
                         rel="noreferrer"
                         className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
@@ -1875,7 +1876,7 @@ export function SingleListingManager() {
                         <Edit3 size={14} /> Edit Listing
                     </button>
                     <a
-                        href={`http://localhost:5173/stays/${listingId}`}
+                        href={listingId ? customerListingUrl(listingId) : customerBrowseUrl()}
                         target="_blank"
                         rel="noreferrer"
                         className="px-4 py-2 rounded-lg text-[13px] flex items-center gap-2"
