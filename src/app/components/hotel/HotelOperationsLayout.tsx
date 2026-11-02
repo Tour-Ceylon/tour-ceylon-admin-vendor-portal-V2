@@ -30,7 +30,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { StayHotelProvider, useStayHotel } from "./StayHotelContext";
 import { customerListingUrl } from "../../lib/customerSite";
 
-const OPERATIONS_NAV = [
+const OPERATIONS_NAV_ALL = [
   { to: "/hotel/dashboard", icon: LayoutDashboard, label: "Dashboard", hint: "Operational KPIs & arrivals" },
   { to: "/hotel/availability", icon: Calendar, label: "Availability Calendar", hint: "Room calendar & blackout dates" },
   { to: "/hotel/rooms", icon: BedDouble, label: "Room Inventory", hint: "Room types, units & capacity" },
@@ -39,6 +39,11 @@ const OPERATIONS_NAV = [
   { to: "/hotel/settings", icon: Building, label: "Property Profile", hint: "Amenities, geo coordinates & contact" },
   { to: "/hotel/policies", icon: ShieldCheck, label: "Policies & Rules", hint: "Check-in windows & cancellation terms" },
 ];
+
+// UI-9: Seasonal Pricing is a static mock with no server model; hide it outside dev builds.
+const OPERATIONS_NAV = import.meta.env.DEV
+  ? OPERATIONS_NAV_ALL
+  : OPERATIONS_NAV_ALL.filter((item) => item.to !== "/hotel/pricing");
 
 const LISTINGS_NAV = [
   { to: "/hotel/listings?category=stay", icon: Layers, label: "Stay Listings" },

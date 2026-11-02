@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   // Dev-only view-as-vendor toggle — persisted in sessionStorage so it survives hot reload
   const [viewAsVendor, setViewAsVendor] = useState<boolean>(
-    () => sessionStorage.getItem("dev:viewAsVendor") === "true"
+    () => import.meta.env.DEV && sessionStorage.getItem("dev:viewAsVendor") === "true"
   );
 
   const toggleViewAsVendor = () => {

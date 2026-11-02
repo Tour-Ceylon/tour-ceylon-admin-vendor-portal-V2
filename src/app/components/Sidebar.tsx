@@ -323,14 +323,17 @@ export function Sidebar() {
         ],
       });
 
-      nav.push({
-        group: "Developer",
-        items: [
-          { id: "api-integration", label: "API Integration", icon: Server },
-          { id: "system-architecture", label: "System Architecture", icon: Database },
-          { id: "qa-checklist", label: "Portal QA Checklist", icon: CheckSquare },
-        ],
-      });
+      // MOCK-2: developer pages are not shown in production builds
+      if (import.meta.env.DEV) {
+        nav.push({
+          group: "Developer",
+          items: [
+            { id: "api-integration", label: "API Integration", icon: Server },
+            { id: "system-architecture", label: "System Architecture", icon: Database },
+            { id: "qa-checklist", label: "Portal QA Checklist", icon: CheckSquare },
+          ],
+        });
+      }
 
       nav.push({
         group: "System Settings",

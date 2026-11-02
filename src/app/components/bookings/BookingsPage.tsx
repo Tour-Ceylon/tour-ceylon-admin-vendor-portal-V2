@@ -702,7 +702,21 @@ export function BookingsPage() {
 
         {/* Export */}
         <button
-          onClick={() => handleExport("Bookings", filteredBookings)}
+          onClick={() => handleExport("Bookings", filteredBookings, [
+            { header: "Booking ID", value: (b) => b.id },
+            { header: "Type", value: (b) => b.type },
+            { header: "Listing", value: (b) => b.listing },
+            { header: "Customer", value: (b) => b.customer.name },
+            { header: "Email", value: (b) => b.customer.email },
+            { header: "Phone", value: (b) => b.customer.phone },
+            { header: "Vendor", value: (b) => b.vendor },
+            { header: "Travel Date", value: (b) => b.travelDate },
+            { header: "Passengers", value: (b) => b.passengers },
+            { header: "Amount", value: (b) => b.amount },
+            { header: "Booking Status", value: (b) => b.bookingStatus },
+            { header: "Payment Status", value: (b) => b.paymentStatus },
+            { header: "Created", value: (b) => b.rawCreatedAt ?? b.createdAt },
+          ])}
           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12px] transition-all"
           style={{
             background: "var(--active-overlay)",

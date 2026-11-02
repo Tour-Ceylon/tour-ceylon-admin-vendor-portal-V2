@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   X,
   User,
@@ -14,7 +14,6 @@ import {
   Car,
   CheckCircle,
   XCircle,
-  RefreshCw,
   MessageSquare,
   FileText,
   AlertTriangle,
@@ -158,18 +157,6 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
   const isCardPayment = isPaidOnline || reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay_now") || reqLower.includes("pay now");
   const isPayAtProperty = !isPaidOnline && (reqLower.includes("pay at property") || (!isCardPayment && booking.paymentStatus === "pay_at_property"));
   
-  // Refund Action State
-  const [refundMessage, setRefundMessage] = useState<string | null>(null);
-
-  const handleProcessRefund = () => {
-    if (isPayAtProperty) {
-      setRefundMessage("No refund applicable for 'Pay at Property' (Unpaid) bookings.");
-    } else {
-      setRefundMessage("Refund request submitted to payment gateway.");
-    }
-    setTimeout(() => setRefundMessage(null), 4000);
-  };
-
   // Dynamic Timeline Generation based on actual creation date & inquiry status
   const getDynamicTimeline = () => {
     const events: Array<{ action: string; user?: string; timestamp: string; status: "completed" | "pending" | "cancelled" }> = [];
@@ -761,25 +748,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               </div>
             </div>
 
-            {refundMessage && (
-              <p className="mt-3 text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
-                {refundMessage}
-              </p>
-            )}
-
-            <button
-              onClick={handleProcessRefund}
-              className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all hover:bg-slate-100 active:scale-[0.99]"
-              style={{
-                background: "var(--input-background)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-light)",
-                fontWeight: 500,
-              }}
-            >
-              <RefreshCw size={14} />
-              Process Refund
-            </button>
+            {/* Refund button removed (UI-7): no refund endpoint exists yet, so it only faked success. */}
           </div>
 
           {/* Live Activity Timeline */}

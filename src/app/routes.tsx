@@ -161,7 +161,8 @@ export const router = createBrowserRouter([
               { path: "availability", Component: AvailabilityCalendar },
               { path: "rooms", Component: RoomInventory },
               { path: "reservations", Component: Reservations },
-              { path: "pricing", Component: SeasonalPricing },
+              // UI-9: seasonal pricing is a static mock (no server model); hidden outside dev builds
+              { path: "pricing", Component: import.meta.env.DEV ? SeasonalPricing : () => <Navigate to="/hotel/dashboard" replace /> },
               { path: "settings", Component: PropertySettings },
               { path: "policies", Component: Policies },
               { path: "listings", Component: ListingsPage },
@@ -198,17 +199,18 @@ export const router = createBrowserRouter([
           // Analytics (Admin only)
           { path: "analytics", Component: AnalyticsDashboard },
 
-          // Workflows
-          { path: "workflows", Component: WorkflowCenter },
-
-          // API Integration
-          { path: "api-integration", Component: APIIntegrationCenter },
-
-          // System Architecture
-          { path: "system-architecture", Component: SystemArchitectureCenter },
-
-          // QA Checklist
-          { path: "qa-checklist", Component: PortalQAChecklist },
+          // Developer pages (MOCK-2): only available in dev builds, redirect in production
+          ...(
+            [
+              ["workflows", WorkflowCenter],
+              ["api-integration", APIIntegrationCenter],
+              ["system-architecture", SystemArchitectureCenter],
+              ["qa-checklist", PortalQAChecklist],
+            ] as const
+          ).map(([path, Page]) => ({
+            path,
+            Component: import.meta.env.DEV ? Page : () => <Navigate to="/dashboard" replace />,
+          })),
 
           // System Settings (Admin only)
           { path: "settings/system", Component: SystemSettingsDashboard },
