@@ -62,6 +62,8 @@ export interface AdminBookingInquiryItem {
   // Trip
   numberOfTravelers: number;
   specialRequests?: string;
+  /** How the guest intends to pay (FLOW-1). Older inquiries only have this as text in specialRequests. */
+  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
   cartItems: CartItemSummary[];
 
   // Vendor / Creator

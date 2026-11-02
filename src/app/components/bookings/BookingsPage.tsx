@@ -78,6 +78,7 @@ interface Booking {
   passengers?: number;
   duration?: string;
   specialRequests?: string;
+  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
   riskFlags?: string[];
   nationality?: string;
   cartItems?: Array<{
@@ -311,6 +312,7 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     rawCreatedAt: inq.createdAt || (inq as any).created_at,
     passengers: inq.numberOfTravelers,
     specialRequests: inq.specialRequests,
+    paymentMethod: inq.paymentMethod ?? null,
     nationality: inq.nationality,
     cartItems: (inq.cartItems || []).map((ci: any) => ({
       listingId: ci.listingId,
