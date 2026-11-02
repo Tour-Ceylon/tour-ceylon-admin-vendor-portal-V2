@@ -7,6 +7,7 @@
  */
 
 import { apiFetch } from "./apiClient";
+import type { SelectedRoomItem } from "../../types/booking";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -19,12 +20,7 @@ export type InquiryStatus =
   | "converted_to_booking"
   | "cancelled";
 
-export interface SelectedRoomItem {
-  roomId?: string;
-  roomName?: string;
-  qty?: number;
-  price?: number;
-}
+export type { SelectedRoomItem };
 
 export interface CartItemSummary {
   listingId: string;

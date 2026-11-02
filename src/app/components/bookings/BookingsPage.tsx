@@ -36,6 +36,7 @@ import { useToast } from "../shared/Toast";
 import { FilterModal, type FilterOption } from "../shared/FilterModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { formatMoney, formatTotals, sumByCurrency } from "../../lib/money";
+import type { BookingRow, BookingStatus, BookingType, PaymentStatus } from "../../types/booking";
 import {
   adminListBookingInquiries,
   vendorListBookingInquiries,
@@ -50,58 +51,8 @@ import {
   type InquiryStatus,
 } from "../api/bookingInquiriesApi";
 
-type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "rejected" | "refunded";
-type PaymentStatus = "unpaid" | "paid" | "partially_paid" | "refunded" | "failed" | "pay_later";
-type BookingType = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
 
-interface Booking {
-  id: string;
-  _inquiryId?: string;          // raw UUID for API status updates
-  _inquiryStatus?: InquiryStatus; // raw backend status
-  customer: {
-    name: string;
-    email: string;
-    phone: string;
-  };
-  type: BookingType;
-  listing: string;
-  vendor: string;
-  vendorEmail?: string;
-  vendorRole?: string;
-  travelDate: string;
-  checkIn?: string;
-  checkOut?: string;
-  amount: number;
-  /** ISO currency code of `amount`; each inquiry is priced in its own currency (DATA-2). */
-  currency?: string;
-  bookingStatus: BookingStatus;
-  paymentStatus: PaymentStatus;
-  createdAt: string;
-  rawCreatedAt?: string;
-  passengers?: number;
-  duration?: string;
-  specialRequests?: string;
-  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
-  riskFlags?: string[];
-  nationality?: string;
-  cartItems?: Array<{
-    listingId?: string;
-    title: string;
-    variantName?: string;
-    travelDate?: string;
-    travelDateEnd?: string;
-    travelDateRaw?: string;
-    travelCount?: number;
-    price: number;
-    baseCurrency?: string;
-    selectedRooms?: Array<{
-      roomId?: string;
-      roomName?: string;
-      qty?: number;
-      price?: number;
-    }>;
-  }>;
-}
+type Booking = BookingRow;
 
 const BOOKING_STATUS_CONFIG: Record<BookingStatus, { bg: string; text: string; dot: string; icon: any }> = {
   pending: { bg: "rgba(245, 158, 11, 0.1)", text: "#fbbf24", dot: "#f59e0b", icon: Clock },

@@ -12,7 +12,7 @@ export function NotificationSettingsPage() {
         { id: "booking.new", name: "New Booking", description: "Customer creates new booking", channels: ["email", "in-app"] as NotificationChannel[] },
         { id: "booking.confirmed", name: "Booking Confirmed", description: "Vendor confirms booking", channels: ["email", "in-app"] as NotificationChannel[] },
         { id: "booking.cancelled", name: "Booking Cancelled", description: "Booking is cancelled", channels: ["email", "in-app"] as NotificationChannel[] },
-        { id: "booking.reminder", name: "Booking Reminder", description: "Upcoming booking reminder", channels: ["email", "sms"] as NotificationChannel[] },
+        { id: "booking.reminder", name: "Booking Reminder", description: "Upcoming booking reminder", channels: ["email"] as NotificationChannel[] },
       ],
     },
     {
@@ -83,8 +83,8 @@ export function NotificationSettingsPage() {
       </div>
 
       {/* Channel Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        {(["email", "in-app", "sms", "whatsapp"] as NotificationChannel[]).map((channel) => {
+      <div className="grid grid-cols-2 gap-4">
+        {(["email", "in-app"] as NotificationChannel[]).map((channel) => {
           const Icon = channelIcons[channel];
           const color = channelColors[channel];
           return (
@@ -153,7 +153,7 @@ export function NotificationSettingsPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ minWidth: 700 }}>
+              <table className="w-full" style={{ minWidth: 420 }}>
                 <thead>
                   <tr style={{ background: "var(--input-background)" }}>
                     <th className="px-5 py-3 text-left" style={{ borderBottom: "1px solid var(--border-light)" }}>
@@ -166,12 +166,6 @@ export function NotificationSettingsPage() {
                     </th>
                     <th className="px-5 py-3 text-center" style={{ borderBottom: "1px solid var(--border-light)" }}>
                       <Bell size={14} style={{ color: "var(--text-tertiary)", margin: "0 auto" }} />
-                    </th>
-                    <th className="px-5 py-3 text-center" style={{ borderBottom: "1px solid var(--border-light)" }}>
-                      <Smartphone size={14} style={{ color: "var(--text-tertiary)", margin: "0 auto" }} />
-                    </th>
-                    <th className="px-5 py-3 text-center" style={{ borderBottom: "1px solid var(--border-light)" }}>
-                      <MessageSquare size={14} style={{ color: "var(--text-tertiary)", margin: "0 auto" }} />
                     </th>
                   </tr>
                 </thead>
@@ -199,20 +193,6 @@ export function NotificationSettingsPage() {
                       <td className="px-5 py-4 text-center">
                         {notif.channels.includes("in-app") ? (
                           <Check size={16} style={{ color: "#10b981", margin: "0 auto" }} />
-                        ) : (
-                          <div className="w-4 h-4 rounded border mx-auto" style={{ borderColor: "var(--border-light)" }} />
-                        )}
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        {notif.channels.includes("sms") ? (
-                          <Check size={16} style={{ color: "#f59e0b", margin: "0 auto" }} />
-                        ) : (
-                          <div className="w-4 h-4 rounded border mx-auto" style={{ borderColor: "var(--border-light)" }} />
-                        )}
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        {notif.channels.includes("whatsapp") ? (
-                          <Check size={16} style={{ color: "#22c55e", margin: "0 auto" }} />
                         ) : (
                           <div className="w-4 h-4 rounded border mx-auto" style={{ borderColor: "var(--border-light)" }} />
                         )}

@@ -98,3 +98,68 @@ export const createAssignment = (inquiryId: string, input: AssignmentInput) =>
   apiFetch<InquiryAssignment>(`/admin/inquiries/${inquiryId}/assignments`, { method: "POST", body: JSON.stringify(input) });
 export const removeAssignment = (inquiryId: string, assignmentId: string) =>
   apiFetch<void>(`/admin/inquiries/${inquiryId}/assignments/${assignmentId}`, { method: "DELETE" });
+
+
+// ---------- Internal notes and platform fee (UI-11) ----------
+
+export interface InternalNotes {
+  id: string;
+  notes: string;
+  updatedAt: string;
+}
+
+/** Staff-only notes on a request. The vendor route also accepts admins. */
+export const getInternalNotes = (inquiryId: string) =>
+  apiFetch<InternalNotes>(`/vendor/booking-inquiries/${inquiryId}/internal-notes`);
+export const saveInternalNotes = (inquiryId: string, notes: string) =>
+  apiFetch<InternalNotes>(`/vendor/booking-inquiries/${inquiryId}/internal-notes`, {
+    method: "PUT",
+    body: JSON.stringify({ notes }),
+  });
+
+let platformFeeCache: Promise<number> | null = null;
+
+/** The platform fee percentage from admin settings (admin only). Cached for the session. */
+export function getPlatformFeePercent(): Promise<number> {
+  if (!platformFeeCache) {
+    platformFeeCache = apiFetch<{ platformFeePercent: number }>("/admin/settings")
+      .then((settings) => Number(settings.platformFeePercent))
+      .catch((err) => {
+        platformFeeCache = null; // try again next time
+        throw err;
+      });
+  }
+  return platformFeeCache;
+}
+
+
+// ---------- Payments (FEAT-4) ----------
+
+export interface AdminPayment {
+  id: string;
+  target_type: string;
+  target_id: string;
+  provider: string;
+  order_id: string;
+  amount: string | number;
+  currency: string;
+  status: "initiated" | "pending" | "succeeded" | "failed" | "cancelled" | "chargedback" | string;
+  provider_payment_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPaymentList {
+  items: AdminPayment[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface PaymentsSummary {
+  received: Array<{ currency: string; total: string | number; count: number }>;
+}
+
+export const listPayments = (status: string, page = 1, pageSize = 20) =>
+  apiFetch<AdminPaymentList>(`/admin/payments?page=${page}&page_size=${pageSize}${status === "all" ? "" : `&status=${status}`}`);
+export const getPaymentsSummary = () => apiFetch<PaymentsSummary>("/admin/payments/summary");

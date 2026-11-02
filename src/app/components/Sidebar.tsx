@@ -78,15 +78,6 @@ const ROUTE_MAP: Record<string, string> = {
   categories: "/categories",
   reviews: "/reviews",
   finance: "/finance",
-  "vendor-bookings": "/vendor/bookings",
-  "vendor-performance": "/vendor/performance",
-  "vendor-revenue": "/vendor/revenue",
-  "vendor-reviews": "/vendor/reviews",
-  "vendor-availability": "/vendor/availability",
-  "vendor-insights": "/vendor/insights",
-  "vendor-team": "/vendor/team",
-  "vendor-notifications": "/vendor/notifications",
-  "vendor-support": "/vendor/support",
   "settings-system": "/settings/system",
   "settings-roles": "/settings/roles",
   "settings-marketplace": "/settings/marketplace",
@@ -95,7 +86,7 @@ const ROUTE_MAP: Record<string, string> = {
   "settings-security": "/settings/security",
   "settings-branding": "/settings/branding",
   "settings-finance": "/settings/finance",
-  "settings-audit": "/settings/audit",
+  "settings-audit": "/audit-logs",
   "settings-integrations": "/settings/integrations",
   payments: "/payments",
   payouts: "/payouts",
@@ -160,15 +151,6 @@ export function Sidebar() {
       if (path === "/hotel/policies") return "policies";
     }
     if (path.startsWith("/vendor/")) {
-      if (path === "/vendor/bookings") return "vendor-bookings";
-      if (path === "/vendor/performance") return "vendor-performance";
-      if (path === "/vendor/revenue") return "vendor-revenue";
-      if (path === "/vendor/reviews") return "vendor-reviews";
-      if (path === "/vendor/availability") return "vendor-availability";
-      if (path === "/vendor/insights") return "vendor-insights";
-      if (path === "/vendor/team") return "vendor-team";
-      if (path === "/vendor/notifications") return "vendor-notifications";
-      if (path === "/vendor/support") return "vendor-support";
     }
     if (path.startsWith("/settings/")) {
       if (path === "/settings/system") return "settings-system";
@@ -179,7 +161,6 @@ export function Sidebar() {
       if (path === "/settings/security") return "settings-security";
       if (path === "/settings/branding") return "settings-branding";
       if (path === "/settings/finance") return "settings-finance";
-      if (path === "/settings/audit") return "settings-audit";
       if (path === "/settings/integrations") return "settings-integrations";
     }
     if (path === "/dashboard") return "dashboard";
@@ -365,26 +346,6 @@ export function Sidebar() {
     }
 
 
-    // Vendor-only: Business Center & Insights
-    if (isVendor) {
-      nav.push({
-        group: "Customer Relations",
-        items: [
-          { id: "vendor-reviews", label: "Reviews", icon: ThumbsUp },
-        ],
-      });
-
-      nav.push({
-        group: "Insights",
-        items: [
-          { id: "vendor-insights", label: "Business Insights", icon: Target },
-          { id: "vendor-team", label: "Team", icon: UsersRound },
-          { id: "vendor-performance", label: "Performance", icon: BarChart2 },
-          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
-        ],
-      });
-    }
-
     // Settings (all users)
     const settingsItems = [];
 
@@ -394,8 +355,6 @@ export function Sidebar() {
 
     if (isVendor) {
       settingsItems.push({ id: "profile", label: "Profile", icon: UserCircle });
-      settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
-      settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
     }
 
     nav.push({

@@ -11,7 +11,6 @@ const PREVIEW_EXACT = [
   "/media",
   "/pricing",
   "/finance",
-  "/payments",
   "/payouts",
   "/refunds",
   "/revenue",
@@ -19,14 +18,6 @@ const PREVIEW_EXACT = [
   "/activity",
   "/audit-logs",
   "/analytics",
-  "/vendor/performance",
-  "/vendor/revenue",
-  "/vendor/reviews",
-  "/vendor/availability",
-  "/vendor/insights",
-  "/vendor/team",
-  "/vendor/notifications",
-  "/vendor/support",
 ];
 
 const PREVIEW_PREFIXES = ["/settings/", "/support"];

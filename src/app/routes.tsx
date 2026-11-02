@@ -37,7 +37,6 @@ import { RefundsPage } from "./components/finance/RefundsPage";
 import { TransportDashboard } from "./components/transport/TransportDashboard";
 import { TransferRequestsPage } from "./components/transport/TransferRequestsPage";
 import { VehicleCategoriesPage } from "./components/transport/VehicleCategoriesPage";
-import { TransportPricingPage } from "./components/transport/TransportPricingPage";
 import { AdminDriversPage } from "./components/transport/AdminDriversPage";
 import { SupportDashboard } from "./components/support/SupportDashboard";
 import { TicketsPage } from "./components/support/TicketsPage";
@@ -45,15 +44,6 @@ import { RefundDisputePage } from "./components/support/RefundDisputePage";
 import { ActivityFeedPage } from "./components/activity/ActivityFeedPage";
 import { AuditLogsPage } from "./components/activity/AuditLogsPage";
 import { AnalyticsDashboard } from "./components/analytics/AnalyticsDashboard";
-import { VendorBookingCenter } from "./components/vendor/VendorBookingCenter";
-import { ListingPerformancePage } from "./components/vendor/ListingPerformancePage";
-import { VendorRevenueCenter } from "./components/vendor/VendorRevenueCenter";
-import { VendorReviewsPage } from "./components/vendor/VendorReviewsPage";
-import { VendorAvailabilityPage } from "./components/vendor/VendorAvailabilityPage";
-import { VendorNotificationsPage } from "./components/vendor/VendorNotificationsPage";
-import { VendorSupportPage } from "./components/vendor/VendorSupportPage";
-import { VendorInsightsPage } from "./components/vendor/VendorInsightsPage";
-import { VendorTeamPage } from "./components/vendor/VendorTeamPage";
 import { SystemSettingsDashboard } from "./components/settings/SystemSettingsDashboard";
 import { RolesPermissionsPage } from "./components/settings/RolesPermissionsPage";
 import { MarketplaceSettingsPage } from "./components/settings/MarketplaceSettingsPage";
@@ -62,7 +52,6 @@ import { NotificationSettingsPage } from "./components/settings/NotificationSett
 import { SecuritySettingsPage } from "./components/settings/SecuritySettingsPage";
 import { BrandingSettingsPage } from "./components/settings/BrandingSettingsPage";
 import { FinanceSettingsPage } from "./components/settings/FinanceSettingsPage";
-import { SystemAuditLogsPage } from "./components/settings/AuditLogsPage";
 import { IntegrationSettingsPage } from "./components/settings/IntegrationSettingsPage";
 import { WorkflowCenter } from "./components/workflows/WorkflowCenter";
 import { APIIntegrationCenter } from "./components/api/APIIntegrationCenter";
@@ -145,15 +134,11 @@ export const router = createBrowserRouter([
           { path: "customer-notifications", Component: CustomerNotificationsPage },
 
           // Vendor Business Center
-          { path: "vendor/bookings", Component: BookingsPage },
-          { path: "vendor/performance", Component: ListingPerformancePage },
-          { path: "vendor/revenue", Component: VendorRevenueCenter },
-          { path: "vendor/reviews", Component: VendorReviewsPage },
-          { path: "vendor/availability", Component: VendorAvailabilityPage },
-          { path: "vendor/insights", Component: VendorInsightsPage },
-          { path: "vendor/team", Component: VendorTeamPage },
-          { path: "vendor/notifications", Component: VendorNotificationsPage },
-          { path: "vendor/support", Component: VendorSupportPage },
+          // MOCK-3: the per-vendor sample pages (performance, revenue, reviews, availability, insights,
+          // team, notifications, support) were unreachable for vendors, who work in /hotel, so they were
+          // deleted. Old links land on the real pages.
+          { path: "vendor/bookings", Component: () => <Navigate to="/bookings" replace /> },
+          { path: "vendor/*", Component: () => <Navigate to="/hotel/dashboard" replace /> },
           { path: "media", Component: MediaLibrary },
           { path: "pricing", Component: PricingManagement },
 
@@ -227,7 +212,8 @@ export const router = createBrowserRouter([
           { path: "settings/security", Component: SecuritySettingsPage },
           { path: "settings/branding", Component: BrandingSettingsPage },
           { path: "settings/finance", Component: FinanceSettingsPage },
-          { path: "settings/audit", Component: SystemAuditLogsPage },
+          // UI-13: one audit-log page. The settings copy was a second set of sample data.
+          { path: "settings/audit", Component: () => <Navigate to="/audit-logs" replace /> },
           { path: "settings/integrations", Component: IntegrationSettingsPage },
         ],
       },

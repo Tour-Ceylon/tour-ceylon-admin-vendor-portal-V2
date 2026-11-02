@@ -28,7 +28,10 @@ import {
 } from "lucide-react";
 import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
 import { formatMoney } from "../../lib/money";
+import type { BookingRow } from "../../types/booking";
 import { AssignmentSection } from "./AssignmentSection";
+import { getInternalNotes, getPlatformFeePercent, saveInternalNotes } from "../api/adminOpsApi";
+import { useToast } from "../shared/Toast";
 
 interface Customer {
   name: string;
@@ -36,64 +39,9 @@ interface Customer {
   phone: string;
 }
 
-export interface SelectedRoomItem {
-  roomId?: string;
-  roomName?: string;
-  qty?: number;
-  price?: number;
-}
 
-export interface CartItem {
-  listingId?: string;
-  title: string;
-  variantName?: string;
-  travelDate?: string;
-  travelDateEnd?: string;
-  travelDateRaw?: string;
-  travelCount?: number;
-  price: number;
-  baseCurrency?: string;
-  selectedRooms?: SelectedRoomItem[];
-  /** Set when the stay vendor (or an admin) moved the check-in / check-out dates */
-  dateChange?: {
-    original_check_in?: string;
-    original_check_out?: string;
-    changed_by?: string;
-    changed_by_role?: string;
-    changed_at?: string;
-    note?: string | null;
-  };
-}
 
-interface Booking {
-  id: string;
-  _inquiryId?: string;
-  _inquiryStatus?: string;
-  customer: Customer;
-  type: string;
-  listing: string;
-  vendor: string;
-  vendorEmail?: string;
-  vendorRole?: string;
-  travelDate: string;
-  checkIn?: string;
-  checkOut?: string;
-  amount: number;
-  /** ISO currency code of `amount` and the cart prices (DATA-2). */
-  currency?: string;
-  bookingStatus: string;
-  paymentStatus: string;
-  createdAt: string;
-  rawCreatedAt?: string;
-  passengers?: number;
-  duration?: string;
-  specialRequests?: string;
-  /** Payment choice as a real field (FLOW-1); older inquiries fall back to the text in specialRequests. */
-  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
-  riskFlags?: string[];
-  nationality?: string;
-  cartItems?: CartItem[];
-}
+type Booking = BookingRow;
 
 interface BookingDetailDrawerProps {
   booking: Booking;
@@ -197,28 +145,80 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
     };
   }, [booking]);
 
-  // Internal Notes State & LocalStorage Persistence
-  const storageKey = `booking_note_${booking.id}`;
+  // UI-11: internal notes are stored on the server, so every staff member sees the same note.
+  const toast = useToast();
+  const inquiryId = booking._inquiryId;
+  const legacyKey = `booking_note_${booking.id}`;
   const [noteText, setNoteText] = useState<string>("");
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
   const [noteSavedMessage, setNoteSavedMessage] = useState<string | null>(null);
+  const [legacyNote, setLegacyNote] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      setNoteText(saved);
-    } else {
-      setNoteText("");
-    }
     setNoteSavedMessage(null);
-  }, [booking.id, storageKey]);
+    setLegacyNote(false);
+    if (!inquiryId) {
+      setNoteText("");
+      return;
+    }
+    let cancelled = false;
+    setNotesLoading(true);
+    getInternalNotes(inquiryId)
+      .then((result) => {
+        if (cancelled) return;
+        // Notes used to live in this browser only. If the server has none, offer the old one for saving.
+        const old = localStorage.getItem(legacyKey);
+        if (!result.notes && old) {
+          setNoteText(old);
+          setLegacyNote(true);
+        } else {
+          setNoteText(result.notes);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error("Could not load the internal note", err instanceof Error ? err.message : "Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setNotesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inquiryId, legacyKey]);
 
-  const handleSaveNote = () => {
-    localStorage.setItem(storageKey, noteText);
-    setNoteSavedMessage("✓ Internal note saved successfully!");
-    setTimeout(() => {
-      setNoteSavedMessage(null);
-    }, 3000);
+  const handleSaveNote = async () => {
+    if (!inquiryId) return;
+    setNoteSaving(true);
+    try {
+      const saved = await saveInternalNotes(inquiryId, noteText);
+      setNoteText(saved.notes);
+      localStorage.removeItem(legacyKey);
+      setLegacyNote(false);
+      setNoteSavedMessage("✓ Note saved");
+      setTimeout(() => setNoteSavedMessage(null), 3000);
+    } catch (err) {
+      toast.error("The note was not saved", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setNoteSaving(false);
+    }
   };
+
+  // UI-11: the platform fee comes from admin settings. It used to be a hardcoded 15%.
+  const [feePercent, setFeePercent] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getPlatformFeePercent()
+      .then((value) => {
+        if (!cancelled && Number.isFinite(value)) setFeePercent(value);
+      })
+      .catch(() => {
+        /* only admins can read settings; for anyone else the fee row says "not available" */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Payment preference: the paymentMethod field; older inquiries only have it as text in specialRequests.
   const reqLower = (booking.specialRequests || "").toLowerCase();
@@ -230,7 +230,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
       : null);
   const isBankTransfer = !isPaidOnline && method === "bank_transfer";
   const isCardPayment = isPaidOnline || method === "online";
-  const isPayAtProperty = !isPaidOnline && (method === "pay_at_property" || (!method && booking.paymentStatus === "pay_at_property"));
+  const isPayAtProperty = !isPaidOnline && method === "pay_at_property";
 
   // Dynamic Timeline Generation based on actual creation date & inquiry status
   const getDynamicTimeline = () => {
@@ -817,10 +817,10 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
               </div>
               <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
                 <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                  Platform Fee (15%)
+                  {feePercent === null ? "Platform Fee" : `Platform Fee (${feePercent}%)`}
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  {formatMoney(booking.amount * 0.15, booking.currency)}
+                  {feePercent === null ? "Not available" : formatMoney((booking.amount * feePercent) / 100, booking.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -828,7 +828,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Vendor Payout
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
-                  {formatMoney(booking.amount * 0.85, booking.currency)}
+                  {feePercent === null ? "Not available" : formatMoney(booking.amount - (booking.amount * feePercent) / 100, booking.currency)}
                 </span>
               </div>
             </div>
@@ -901,7 +901,8 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Add internal notes about this booking..."
+              disabled={!inquiryId || notesLoading}
+              placeholder={inquiryId ? "Add internal notes about this booking..." : "Notes are not available for this record"}
               className="w-full px-3 py-2.5 rounded-lg text-[12px] resize-none outline-none focus:ring-2 focus:ring-blue-500/20 transition"
               style={{
                 background: "var(--input-background)",
@@ -913,10 +914,16 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <div className="flex items-center justify-between mt-3">
               <button
                 onClick={handleSaveNote}
-                className="text-[11px] px-4 py-2 rounded-lg transition-all font-bold bg-slate-900 text-white hover:bg-slate-800 active:scale-95 flex items-center gap-1.5"
+                disabled={!inquiryId || noteSaving || notesLoading}
+                className="text-[11px] px-4 py-2 rounded-lg transition-all font-bold bg-slate-900 text-white hover:bg-slate-800 active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
-                <Check size={13} /> Save Note
+                <Check size={13} /> {noteSaving ? "Saving…" : "Save Note"}
               </button>
+              {legacyNote && (
+                <span className="text-xs font-semibold text-amber-600">
+                  A note saved only in this browser was found. Press Save to keep it on the server.
+                </span>
+              )}
               {noteSavedMessage && (
                 <span className="text-xs font-semibold text-emerald-600">
                   {noteSavedMessage}
