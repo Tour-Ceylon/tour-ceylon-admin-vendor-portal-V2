@@ -23,6 +23,9 @@ import { AvailabilityCalendar } from "./components/hotel/AvailabilityCalendar";
 import { RoomInventory } from "./components/hotel/RoomInventory";
 import { Reservations } from "./components/hotel/Reservations";
 import { SeasonalPricing } from "./components/hotel/SeasonalPricing";
+import { AddOnsPage } from "./components/admin/AddOnsPage";
+import { ReviewModerationPage } from "./components/admin/ReviewModerationPage";
+import { CustomerNotificationsPage } from "./components/admin/CustomerNotificationsPage";
 import { PropertySettings } from "./components/hotel/PropertySettings";
 import { Policies } from "./components/hotel/Policies";
 import { HotelOperationsLayout } from "./components/hotel/HotelOperationsLayout";
@@ -137,6 +140,9 @@ export const router = createBrowserRouter([
 
           // Listing Review & Approval (Admin only)
           { path: "reviews", Component: ListingReviewPage },
+          { path: "addons", Component: AddOnsPage },
+          { path: "guest-reviews", Component: ReviewModerationPage },
+          { path: "customer-notifications", Component: CustomerNotificationsPage },
 
           // Vendor Business Center
           { path: "vendor/bookings", Component: BookingsPage },

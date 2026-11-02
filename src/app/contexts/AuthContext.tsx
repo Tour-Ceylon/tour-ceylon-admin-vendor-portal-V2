@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useAuth as useClerkAuth, useUser as useClerkUser } from "@clerk/clerk-react";
 import { apiFetch } from "../components/api/apiClient";
+import { toPortalRole, type PortalRole } from "../lib/roles";
 
-export type UserRole = "admin" | "vendor" | "driver" | "customer/client";
+export type UserRole = PortalRole;
 export type VendorStatus = "pending" | "approved" | "rejected" | "suspended";
 export type Category = "Stay" | "Tour" | "Safari" | "Experience";
 
@@ -154,19 +155,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Unable to retrieve backend user profile.");
         }
 
-        // 2. Resolve Role (admin / vendor / driver / customer/client)
-        let role: UserRole = "customer/client";
-        const backendRole = String(backendUser.role || "").toUpperCase();
-        if (backendRole === "ADMIN") {
-          role = "admin";
-        } else if (backendRole === "VENDOR") {
-          role = "vendor";
-        } else if (backendRole === "DRIVER") {
-          role = "driver";
-        }
+        // 2. Resolve the role through the one shared mapping (ADMIN/VENDOR/DRIVER/TOURIST -> admin/vendor/driver/customer)
+        const role: UserRole = toPortalRole(backendUser.role);
 
-        // Block customer/client/TOURIST role from entering the admin/vendor portal
-        if (role === "customer/client") {
+        // Customers (TOURIST) cannot enter the admin/vendor/driver portal
+        if (role === "customer") {
           console.warn("Customer account denied access to management portal. Backend role:", backendUser.role, "| User ID:", userId);
           throw new Error("Customer accounts are not authorized to access the management portal.");
         }
@@ -227,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
     } catch (err) {
       console.error("Logout failed:", err);
+      setError("We could not sign you out. Please try again.");
     } finally {
       setLoading(false);
     }

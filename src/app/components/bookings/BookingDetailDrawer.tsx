@@ -27,6 +27,8 @@ import {
   Check,
 } from "lucide-react";
 import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
+import { formatMoney } from "../../lib/money";
+import { AssignmentSection } from "./AssignmentSection";
 
 interface Customer {
   name: string;
@@ -77,6 +79,8 @@ interface Booking {
   checkIn?: string;
   checkOut?: string;
   amount: number;
+  /** ISO currency code of `amount` and the cart prices (DATA-2). */
+  currency?: string;
   bookingStatus: string;
   paymentStatus: string;
   createdAt: string;
@@ -327,7 +331,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
 
       {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[680px] z-50 overflow-y-auto"
+        className="fixed right-0 top-0 h-full w-full max-w-[680px] z-50 overflow-y-auto"
         style={{
           background: "var(--bg-main)",
           borderLeft: "1px solid var(--border-light)",
@@ -584,7 +588,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                             </span>
                             {item.title}
                           </div>
-                          <span className="font-extrabold text-slate-900 text-sm">${item.price}</span>
+                          <span className="font-extrabold text-slate-900 text-sm">{formatMoney(item.price, item.baseCurrency || booking.currency)}</span>
                         </div>
                         <p className="text-slate-500 text-[11px]">
                           Travel Date: {cleanDate}
@@ -599,7 +603,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                                   <span className="font-bold text-slate-800">{sr.roomName || "Room"}</span>
                                 </div>
                                 {sr.price !== undefined && sr.price > 0 && (
-                                  <span className="text-slate-600 font-semibold text-[11px]">${sr.price}/night</span>
+                                  <span className="text-slate-600 font-semibold text-[11px]">{formatMoney(sr.price, item.baseCurrency || booking.currency)}/night</span>
                                 )}
                               </div>
                             ))}
@@ -757,6 +761,11 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             </div>
           )}
 
+          {/* FEAT-2: guide / driver for tours, safaris and experiences (transfers have their own dispatch) */}
+          {booking._inquiryId && ["Tour", "Safari", "Experience"].includes(booking.type) && (
+            <AssignmentSection inquiryId={booking._inquiryId} inquiryStatus={booking._inquiryStatus} />
+          )}
+
           {/* Payment Details */}
           <div
             className="rounded-xl p-5"
@@ -776,7 +785,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Booking Total Amount
                 </span>
                 <span className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-                  ${booking.amount}
+                  {formatMoney(booking.amount, booking.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -811,7 +820,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Platform Fee (15%)
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  ${(booking.amount * 0.15).toFixed(2)}
+                  {formatMoney(booking.amount * 0.15, booking.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -819,7 +828,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Vendor Payout
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
-                  ${(booking.amount * 0.85).toFixed(2)}
+                  {formatMoney(booking.amount * 0.85, booking.currency)}
                 </span>
               </div>
             </div>

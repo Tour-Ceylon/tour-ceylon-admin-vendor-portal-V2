@@ -1,3 +1,4 @@
+import { isPreviewPath } from "../lib/previewPages";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
@@ -111,6 +112,9 @@ const ROUTE_MAP: Record<string, string> = {
   "audit-logs": "/audit-logs",
   analytics: "/analytics",
   workflows: "/workflows",
+  addons: "/addons",
+  "guest-reviews": "/guest-reviews",
+  "customer-notifications": "/customer-notifications",
   "api-integration": "/api-integration",
   "system-architecture": "/system-architecture",
   "qa-checklist": "/qa-checklist",
@@ -218,6 +222,9 @@ export function Sidebar() {
     if (path === "/activity") return "activity";
     if (path === "/audit-logs") return "audit-logs";
     if (path === "/analytics") return "analytics";
+    if (path === "/addons") return "addons";
+    if (path === "/guest-reviews") return "guest-reviews";
+    if (path === "/customer-notifications") return "customer-notifications";
     if (path === "/workflows") return "workflows";
     if (path === "/api-integration") return "api-integration";
     if (path === "/system-architecture") return "system-architecture";
@@ -320,6 +327,9 @@ export function Sidebar() {
           { id: "users", label: "All Users", icon: Users },
           { id: "vendor-approvals", label: "Vendor Approvals", icon: UserCheck },
           { id: "listing-reviews", label: "Listing Reviews", icon: Star },
+          { id: "addons", label: "Add-ons", icon: Plus },
+          { id: "guest-reviews", label: "Guest Reviews", icon: ThumbsUp },
+          { id: "customer-notifications", label: "Customer Notifications", icon: Bell },
         ],
       });
 
@@ -513,6 +523,15 @@ export function Sidebar() {
                       >
                         <Icon size={14} />
                         <span style={{ fontWeight: isActive ? 500 : 400 }}>{label}</span>
+                        {isPreviewPath(route) && (
+                          <span
+                            title="Sample data: not connected to live records yet"
+                            className="ml-1 px-1.5 py-px rounded text-[9px] uppercase tracking-wider"
+                            style={{ background: "rgba(245,158,11,0.15)", color: "#d97706", fontWeight: 700 }}
+                          >
+                            Preview
+                          </span>
+                        )}
                         {isActive && (
                           <div
                             className="ml-auto w-1.5 h-1.5 rounded-full"

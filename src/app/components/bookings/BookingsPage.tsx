@@ -35,6 +35,7 @@ import { useCommonActions } from "../../hooks/useCommonActions";
 import { useToast } from "../shared/Toast";
 import { FilterModal, type FilterOption } from "../shared/FilterModal";
 import { useAuth } from "../../contexts/AuthContext";
+import { formatMoney, formatTotals, sumByCurrency } from "../../lib/money";
 import {
   adminListBookingInquiries,
   vendorListBookingInquiries,
@@ -71,6 +72,8 @@ interface Booking {
   checkIn?: string;
   checkOut?: string;
   amount: number;
+  /** ISO currency code of `amount`; each inquiry is priced in its own currency (DATA-2). */
+  currency?: string;
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
   createdAt: string;
@@ -299,6 +302,7 @@ function inquiryToBooking(inq: AdminBookingInquiryItem): Booking {
     checkIn: checkInStr,
     checkOut: checkOutStr,
     amount: inq.total || inq.subtotal || 0,
+    currency: inq.currency || "USD",
     bookingStatus: mapInquiryStatusToUI(inq.status),
     paymentStatus: mapPaymentStatusToUI(inq.paymentStatus ?? inq.payment_status) as PaymentStatus,
     // Admin API returns snake_case (created_at); the vendor API returns camelCase
@@ -459,8 +463,9 @@ export function BookingsPage() {
   ];
 
   // Revenue metrics derived from live data
-  const totalRevenue = apiMeta?.metrics?.totalValue ?? bookings.reduce((sum, b) => sum + b.amount, 0);
-  const pendingPayments = bookings.filter(b => b.bookingStatus === "pending").reduce((sum, b) => sum + b.amount, 0);
+  // Never add LKR to USD: totals are kept per currency.
+  const totalRevenue = formatTotals(sumByCurrency(bookings));
+  const pendingPayments = formatTotals(sumByCurrency(bookings.filter(b => b.bookingStatus === "pending")));
   const refundsAmount = 0; // not tracked at inquiry stage – TODO post-payment
 
   // Category breakdown
@@ -545,7 +550,7 @@ export function BookingsPage() {
       )}
 
       {/* Revenue Overview Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <div
           className="rounded-xl p-4"
           style={{
@@ -563,7 +568,7 @@ export function BookingsPage() {
             </div>
           </div>
           <p className="text-[24px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            ${totalRevenue.toLocaleString()}
+            {totalRevenue}
           </p>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Total Bookings Value
@@ -587,7 +592,7 @@ export function BookingsPage() {
             </div>
           </div>
           <p className="text-[24px] mb-1" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-            ${pendingPayments.toLocaleString()}
+            {pendingPayments}
           </p>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Pending Payments
@@ -779,6 +784,9 @@ export function BookingsPage() {
           boxShadow: "var(--shadow-md)",
         }}
       >
+        {/* UI-12: from md up the table scrolls sideways instead of clipping its right-hand columns */}
+        <div className="hidden md:block overflow-x-auto">
+        <div style={{ minWidth: 1440 }}>
         {/* Table Header */}
         <div
           className="grid items-center px-4 py-3"
@@ -918,7 +926,7 @@ export function BookingsPage() {
                 {/* Amount */}
                 <div>
                   <p className="text-[13px]" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                    ${booking.amount}
+                    {formatMoney(booking.amount, booking.currency)}
                   </p>
                 </div>
 
@@ -976,6 +984,58 @@ export function BookingsPage() {
                   </button>
                 </div>
               </div>
+            );
+          })}
+        </div>
+
+        </div>
+        </div>
+
+        {/* UI-12: under md each booking is a card, not a 12-column row */}
+        <div className="md:hidden divide-y" style={{ borderColor: "var(--border-light)" }}>
+          {filteredBookings.map((booking) => {
+            const bookingConfig = BOOKING_STATUS_CONFIG[booking.bookingStatus] ?? BOOKING_STATUS_CONFIG["pending"];
+            const paymentConfig = PAYMENT_STATUS_CONFIG[booking.paymentStatus] ?? PAYMENT_STATUS_CONFIG["unpaid"];
+            return (
+              <button
+                key={booking.id}
+                type="button"
+                onClick={() => handleViewBooking(booking)}
+                className="w-full text-left p-4 space-y-2"
+                style={{ background: "transparent" }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] truncate" style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      {booking.customer.name}
+                    </p>
+                    <p className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                      {booking.id} · {booking.type}
+                    </p>
+                  </div>
+                  <span
+                    className="shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] capitalize"
+                    style={{ background: bookingConfig.bg, color: bookingConfig.text }}
+                  >
+                    {booking.bookingStatus}
+                  </span>
+                </div>
+                <p className="text-[12px] truncate" style={{ color: "var(--text-secondary)" }}>{booking.listing}</p>
+                <div className="flex items-center justify-between gap-3 text-[12px]">
+                  <span style={{ color: "var(--text-tertiary)" }}>{booking.travelDate}</span>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-[10px]"
+                      style={{ background: paymentConfig.bg, color: paymentConfig.text }}
+                    >
+                      {booking.paymentStatus.replace("_", " ")}
+                    </span>
+                    <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                      {formatMoney(booking.amount, booking.currency)}
+                    </span>
+                  </span>
+                </div>
+              </button>
             );
           })}
         </div>

@@ -21,8 +21,9 @@ import { UserDetailDrawer } from "./UserDetailDrawer";
 import { useCommonActions } from "../../hooks/useCommonActions";
 import { FilterModal } from "../shared/FilterModal";
 import { apiFetch } from "../api/apiClient";
+import type { ServerRole } from "../../lib/roles";
 
-type UserRole = "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST";
+type UserRole = ServerRole;
 type UserStatus = "active" | "pending" | "suspended" | "incomplete_profile";
 type FilterRole = "all" | "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST" | "vendor_applicants" | "suspended";
 

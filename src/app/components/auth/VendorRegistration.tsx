@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Compass, ArrowLeft, Upload, Building2 } from "lucide-react";
 import { useAuth, VendorRegistrationData, Category } from "../../contexts/AuthContext";
+import { useToast } from "../shared/Toast";
 
 // Vendors are Stay partners only; tours, safaris and experiences are run by the Tour Ceylon team.
 const VENDOR_CATEGORIES: Category[] = ["Stay"];
@@ -12,6 +13,7 @@ interface VendorRegistrationProps {
 
 export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationProps = {}) {
   const { register, registerVendorDocuments } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,11 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
         } catch (docErr) {
           // Document upload failure is non-fatal — registration already succeeded
           console.warn("Vendor document upload failed (non-fatal):", docErr);
+          // The application itself went through; tell the vendor the documents did not.
+          toast.warning(
+            "Application received, but your documents did not upload",
+            "Please email them to our support team so we can finish reviewing your application."
+          );
         }
       }
       navigate("/pending");

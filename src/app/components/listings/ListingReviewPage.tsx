@@ -142,6 +142,7 @@ export function ListingReviewPage() {
         setListings(mappedListings);
       } catch (err) {
         console.error(err);
+        toast.error("Could not load listings", err instanceof Error ? err.message : "Please refresh the page to try again.");
       } finally {
         setLoading(false);
       }

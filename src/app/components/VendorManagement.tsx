@@ -23,6 +23,7 @@ import { PromptModal } from "./shared/PromptModal";
 import { ConfirmModal } from "./shared/Modal";
 import { apiFetch } from "./api/apiClient";
 import { useToast } from "./shared/Toast";
+import { normalizeServerRole } from "../lib/roles";
 
 type VendorStatus = "pending" | "approved" | "rejected" | "suspended";
 
@@ -151,7 +152,7 @@ export function VendorManagement() {
 
       // Filter for vendors: users with role VENDOR or with vendor_status (and not ADMIN)
       const vendorUsers = (response.users || []).filter((user) => {
-        const role = String(user.role || "").trim().toUpperCase();
+        const role = normalizeServerRole(user.role);
         const hasVendorStatus = Boolean(user.vendor_status || user.vendorStatus);
         return role === "VENDOR" || (hasVendorStatus && role !== "ADMIN");
       });

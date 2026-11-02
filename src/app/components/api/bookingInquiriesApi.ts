@@ -271,12 +271,17 @@ export function inferBookingType(items?: CartItemSummary[], reference?: string):
  */
 export function mapPaymentStatusToUI(
   status?: string | null
-): "paid" | "unpaid" | "refunded" | "failed" {
+): "paid" | "unpaid" | "refunded" | "failed" | "pay_later" {
+  // Covers the server's Payment statuses (initiated, pending, succeeded, failed, cancelled,
+  // chargedback) and PaymentTransactionStatus (adds refunded, not_required).
   switch ((status || "").toLowerCase()) {
     case "succeeded":
       return "paid";
     case "chargedback":
+    case "refunded":
       return "refunded";
+    case "not_required":
+      return "pay_later";
     case "failed":
     case "cancelled":
       return "failed";
