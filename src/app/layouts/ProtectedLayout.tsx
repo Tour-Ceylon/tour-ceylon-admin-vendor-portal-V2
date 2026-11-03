@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { Sidebar } from "../components/Sidebar";
 import { Header } from "../components/Header";
+import { isPreviewPath } from "../lib/previewPages";
 import { Compass, AlertTriangle, ShieldAlert, LogOut, Lock } from "lucide-react";
 
 export function ProtectedLayout() {
@@ -235,6 +236,19 @@ export function ProtectedLayout() {
         <Header />
 
         <main className="flex-1 overflow-auto" style={{ background: "var(--bg-main)" }}>
+          {isPreviewPath(location.pathname) && (
+            <div
+              role="status"
+              className="flex items-center gap-2 px-4 py-2 text-[12px]"
+              style={{ background: "rgba(245,158,11,0.12)", color: "#b45309", borderBottom: "1px solid rgba(245,158,11,0.3)" }}
+            >
+              <AlertTriangle size={14} />
+              <span>
+                <strong>Preview.</strong> This page shows sample data and is not connected to live records yet. Do not rely on
+                these figures.
+              </span>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

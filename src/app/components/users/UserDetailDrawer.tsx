@@ -205,7 +205,7 @@ export function UserDetailDrawer({ user, onClose, driverUserId, vendorDocuments 
 
       {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[520px] z-50 overflow-y-auto"
+        className="fixed right-0 top-0 h-full w-full max-w-[520px] z-50 overflow-y-auto"
         style={{ background: "var(--bg-main)", borderLeft: "1px solid var(--border-light)", boxShadow: "-4px 0 32px rgba(0,0,0,0.35)", animation: "slideInRight 0.3s ease-out" }}
       >
         {/* Header */}

@@ -7,6 +7,7 @@
  */
 
 import { apiFetch } from "./apiClient";
+import type { SelectedRoomItem } from "../../types/booking";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -19,12 +20,7 @@ export type InquiryStatus =
   | "converted_to_booking"
   | "cancelled";
 
-export interface SelectedRoomItem {
-  roomId?: string;
-  roomName?: string;
-  qty?: number;
-  price?: number;
-}
+export type { SelectedRoomItem };
 
 export interface CartItemSummary {
   listingId: string;
@@ -62,6 +58,8 @@ export interface AdminBookingInquiryItem {
   // Trip
   numberOfTravelers: number;
   specialRequests?: string;
+  /** How the guest intends to pay (FLOW-1). Older inquiries only have this as text in specialRequests. */
+  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
   cartItems: CartItemSummary[];
 
   // Vendor / Creator
@@ -74,6 +72,9 @@ export interface AdminBookingInquiryItem {
   subtotal?: number;
   total?: number;
   currency?: string;
+  /** Latest online payment: initiated | pending | succeeded | failed | cancelled | chargedback. The admin API sends snake_case. */
+  paymentStatus?: string | null;
+  payment_status?: string | null;
 
   // Meta
   createdAt: string;
@@ -194,6 +195,23 @@ export async function vendorUpdateInquiryStatus(
   });
 }
 
+export interface SendPaymentLinkResult {
+  sent: boolean;
+  paymentUrl: string;
+  expiresAt: string;
+  message: string;
+}
+
+/**
+ * Email the guest a (new) secure pay link for an approved, unpaid stay.
+ * Works for admins and for the vendor that owns the stay.
+ */
+export async function sendInquiryPaymentLink(inquiryId: string): Promise<SendPaymentLinkResult> {
+  return apiFetch(`/vendor/booking-inquiries/${inquiryId}/payment-link`, {
+    method: "POST",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -241,6 +259,31 @@ export function inferBookingType(items?: CartItemSummary[], reference?: string):
     return "Experience";
   }
   return "Stay";
+}
+
+/**
+ * Map the backend's online payment status to the portal's payment status.
+ * No online payment (or one that has not completed) reads as unpaid.
+ */
+export function mapPaymentStatusToUI(
+  status?: string | null
+): "paid" | "unpaid" | "refunded" | "failed" | "pay_later" {
+  // Covers the server's Payment statuses (initiated, pending, succeeded, failed, cancelled,
+  // chargedback) and PaymentTransactionStatus (adds refunded, not_required).
+  switch ((status || "").toLowerCase()) {
+    case "succeeded":
+      return "paid";
+    case "chargedback":
+    case "refunded":
+      return "refunded";
+    case "not_required":
+      return "pay_later";
+    case "failed":
+    case "cancelled":
+      return "failed";
+    default:
+      return "unpaid";
+  }
 }
 
 /**

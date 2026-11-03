@@ -1,34 +1,31 @@
 import { useRef, useState } from "react";
-import { ImagePlus, Star, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Star, Trash2 } from "lucide-react";
+import { uploadStayImages } from "../api/stayVendorApi";
 
 export const MAX_ROOM_PHOTOS = 10;
 const MAX_EDGE_PX = 1600;
 
-/** Reads a picked file as a JPEG/PNG data URL, shrinking large photos so the save request stays small. */
-async function fileToDataUrl(file: File): Promise<string> {
-  const original = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
-    reader.readAsDataURL(file);
-  });
-
+/** Shrinks a large photo to a JPEG file before upload, so uploads stay quick. Small photos pass through unchanged. */
+async function prepareImage(file: File): Promise<File> {
   try {
+    const url = URL.createObjectURL(file);
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
       const element = new Image();
       element.onload = () => resolve(element);
       element.onerror = () => reject(new Error("decode"));
-      element.src = original;
+      element.src = url;
     });
+    URL.revokeObjectURL(url);
     const scale = Math.min(1, MAX_EDGE_PX / Math.max(image.width, image.height));
-    if (scale === 1 && file.size < 1_500_000) return original;
+    if (scale === 1 && file.size < 1_500_000) return file;
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(image.width * scale);
     canvas.height = Math.round(image.height * scale);
     canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.85);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    return blob ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
   } catch {
-    return original;
+    return file;
   }
 }
 
@@ -42,6 +39,7 @@ export function RoomPhotosField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -50,11 +48,18 @@ export function RoomPhotosField({
     if (images.length !== files.length) setError("Only image files can be added.");
     const room = MAX_ROOM_PHOTOS - value.length;
     if (images.length > room) setError(`A room can have up to ${MAX_ROOM_PHOTOS} photos.`);
+    setUploading(true);
     try {
-      const added = await Promise.all(images.slice(0, Math.max(0, room)).map(fileToDataUrl));
-      if (added.length) onChange([...value, ...added]);
+      const prepared = await Promise.all(images.slice(0, Math.max(0, room)).map(prepareImage));
+      if (prepared.length) {
+        // Uploaded now; only the returned URLs go into the form and the save request.
+        const uploaded = await uploadStayImages(prepared);
+        onChange([...value, ...uploaded.map((image) => image.url)]);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "A photo could not be read.");
+      setError(err instanceof Error && err.message ? `Photos were not added: ${err.message}` : "Photos were not added. Please try again.");
+    } finally {
+      setUploading(false);
     }
     if (inputRef.current) inputRef.current.value = "";
   }
@@ -110,6 +115,7 @@ export function RoomPhotosField({
         {value.length < MAX_ROOM_PHOTOS && (
           <button
             type="button"
+            disabled={uploading}
             onClick={() => inputRef.current?.click()}
             className="flex flex-col items-center justify-center gap-1 text-[12px]"
             style={{
@@ -121,8 +127,8 @@ export function RoomPhotosField({
               color: "var(--text-secondary)",
             }}
           >
-            <ImagePlus size={18} />
-            Add photos
+            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+            {uploading ? "Uploading…" : "Add photos"}
           </button>
         )}
       </div>

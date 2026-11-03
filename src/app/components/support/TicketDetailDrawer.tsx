@@ -112,7 +112,7 @@ export function TicketDetailDrawer({ ticket, onClose }: TicketDetailProps) {
 
   return (
     <div
-      className="fixed right-0 top-0 h-full w-[750px] flex flex-col z-50"
+      className="fixed right-0 top-0 h-full w-full max-w-[750px] flex flex-col z-50"
       style={{
         background: "var(--bg-panel)",
         borderLeft: "1px solid var(--border-light)",

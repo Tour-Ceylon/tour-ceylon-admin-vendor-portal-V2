@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import {
   Home,
@@ -22,6 +22,7 @@ import {
   fetchMyTrips,
   updateMyAvailability,
 } from "../api/driverTripApi";
+import { useToast } from "../shared/Toast";
 
 type NavItem = { to: string; icon: typeof Home; label: string; mobile?: boolean };
 
@@ -36,6 +37,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export function DriverLayout() {
+  const toast = useToast();
+  const reportedLoadError = useRef(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -75,8 +78,14 @@ export function DriverLayout() {
       ]);
       setIsOnline(avail.is_online);
       setInboxCount(assignedTrips.length);
+      reportedLoadError.current = false;
     } catch (err) {
       console.error("Failed to load driver state:", err);
+      // Only tell the driver once; this reloads every 20 seconds.
+      if (!reportedLoadError.current) {
+        reportedLoadError.current = true;
+        toast.error("Could not load your status", "Your online status and inbox count may be out of date.");
+      }
     } finally {
       setLoadingAvailability(false);
     }
@@ -95,6 +104,8 @@ export function DriverLayout() {
       setIsOnline(res.is_online);
     } catch (err) {
       console.error("Failed to toggle online status:", err);
+      // Without this the driver would think they had gone online or offline when they had not.
+      toast.error("Your status was not changed", "You are still shown as " + (isOnline ? "online" : "offline") + ". Please try again.");
     } finally {
       setTogglingOnline(false);
     }

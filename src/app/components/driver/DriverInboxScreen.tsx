@@ -22,6 +22,7 @@ import { DeclineTripModal } from "./DeclineTripModal";
 import { RequestNotes } from "../transport/shared/RequestNotes";
 import { DispatchNote } from "../transport/shared/DispatchNote";
 import { formatMoney } from "../transport/shared/transportFormat";
+import { useToast } from "../shared/Toast";
 
 function formatTime(t?: string | null) {
   if (!t) return "--";
@@ -202,6 +203,7 @@ function DispatchCard({
 }
 
 export function DriverInboxScreen() {
+  const toast = useToast();
   const { refreshDriverState } = useOutletContext<{
     refreshDriverState: () => void;
   }>();
@@ -218,6 +220,7 @@ export function DriverInboxScreen() {
       setTrips(list);
     } catch (err) {
       console.error("Failed to load inbox:", err);
+      toast.error("Could not load your inbox", "Check your connection, then use the refresh button.");
     } finally {
       setLoading(false);
       setRefreshing(false);

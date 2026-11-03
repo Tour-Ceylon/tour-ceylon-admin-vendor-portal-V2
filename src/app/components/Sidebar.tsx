@@ -1,3 +1,4 @@
+import { isPreviewPath } from "../lib/previewPages";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
@@ -77,15 +78,6 @@ const ROUTE_MAP: Record<string, string> = {
   categories: "/categories",
   reviews: "/reviews",
   finance: "/finance",
-  "vendor-bookings": "/vendor/bookings",
-  "vendor-performance": "/vendor/performance",
-  "vendor-revenue": "/vendor/revenue",
-  "vendor-reviews": "/vendor/reviews",
-  "vendor-availability": "/vendor/availability",
-  "vendor-insights": "/vendor/insights",
-  "vendor-team": "/vendor/team",
-  "vendor-notifications": "/vendor/notifications",
-  "vendor-support": "/vendor/support",
   "settings-system": "/settings/system",
   "settings-roles": "/settings/roles",
   "settings-marketplace": "/settings/marketplace",
@@ -94,7 +86,7 @@ const ROUTE_MAP: Record<string, string> = {
   "settings-security": "/settings/security",
   "settings-branding": "/settings/branding",
   "settings-finance": "/settings/finance",
-  "settings-audit": "/settings/audit",
+  "settings-audit": "/audit-logs",
   "settings-integrations": "/settings/integrations",
   payments: "/payments",
   payouts: "/payouts",
@@ -111,6 +103,9 @@ const ROUTE_MAP: Record<string, string> = {
   "audit-logs": "/audit-logs",
   analytics: "/analytics",
   workflows: "/workflows",
+  addons: "/addons",
+  "guest-reviews": "/guest-reviews",
+  "customer-notifications": "/customer-notifications",
   "api-integration": "/api-integration",
   "system-architecture": "/system-architecture",
   "qa-checklist": "/qa-checklist",
@@ -156,15 +151,6 @@ export function Sidebar() {
       if (path === "/hotel/policies") return "policies";
     }
     if (path.startsWith("/vendor/")) {
-      if (path === "/vendor/bookings") return "vendor-bookings";
-      if (path === "/vendor/performance") return "vendor-performance";
-      if (path === "/vendor/revenue") return "vendor-revenue";
-      if (path === "/vendor/reviews") return "vendor-reviews";
-      if (path === "/vendor/availability") return "vendor-availability";
-      if (path === "/vendor/insights") return "vendor-insights";
-      if (path === "/vendor/team") return "vendor-team";
-      if (path === "/vendor/notifications") return "vendor-notifications";
-      if (path === "/vendor/support") return "vendor-support";
     }
     if (path.startsWith("/settings/")) {
       if (path === "/settings/system") return "settings-system";
@@ -175,7 +161,6 @@ export function Sidebar() {
       if (path === "/settings/security") return "settings-security";
       if (path === "/settings/branding") return "settings-branding";
       if (path === "/settings/finance") return "settings-finance";
-      if (path === "/settings/audit") return "settings-audit";
       if (path === "/settings/integrations") return "settings-integrations";
     }
     if (path === "/dashboard") return "dashboard";
@@ -218,6 +203,9 @@ export function Sidebar() {
     if (path === "/activity") return "activity";
     if (path === "/audit-logs") return "audit-logs";
     if (path === "/analytics") return "analytics";
+    if (path === "/addons") return "addons";
+    if (path === "/guest-reviews") return "guest-reviews";
+    if (path === "/customer-notifications") return "customer-notifications";
     if (path === "/workflows") return "workflows";
     if (path === "/api-integration") return "api-integration";
     if (path === "/system-architecture") return "system-architecture";
@@ -320,17 +308,23 @@ export function Sidebar() {
           { id: "users", label: "All Users", icon: Users },
           { id: "vendor-approvals", label: "Vendor Approvals", icon: UserCheck },
           { id: "listing-reviews", label: "Listing Reviews", icon: Star },
+          { id: "addons", label: "Add-ons", icon: Plus },
+          { id: "guest-reviews", label: "Guest Reviews", icon: ThumbsUp },
+          { id: "customer-notifications", label: "Customer Notifications", icon: Bell },
         ],
       });
 
-      nav.push({
-        group: "Developer",
-        items: [
-          { id: "api-integration", label: "API Integration", icon: Server },
-          { id: "system-architecture", label: "System Architecture", icon: Database },
-          { id: "qa-checklist", label: "Portal QA Checklist", icon: CheckSquare },
-        ],
-      });
+      // MOCK-2: developer pages are not shown in production builds
+      if (import.meta.env.DEV) {
+        nav.push({
+          group: "Developer",
+          items: [
+            { id: "api-integration", label: "API Integration", icon: Server },
+            { id: "system-architecture", label: "System Architecture", icon: Database },
+            { id: "qa-checklist", label: "Portal QA Checklist", icon: CheckSquare },
+          ],
+        });
+      }
 
       nav.push({
         group: "System Settings",
@@ -352,26 +346,6 @@ export function Sidebar() {
     }
 
 
-    // Vendor-only: Business Center & Insights
-    if (isVendor) {
-      nav.push({
-        group: "Customer Relations",
-        items: [
-          { id: "vendor-reviews", label: "Reviews", icon: ThumbsUp },
-        ],
-      });
-
-      nav.push({
-        group: "Insights",
-        items: [
-          { id: "vendor-insights", label: "Business Insights", icon: Target },
-          { id: "vendor-team", label: "Team", icon: UsersRound },
-          { id: "vendor-performance", label: "Performance", icon: BarChart2 },
-          { id: "vendor-revenue", label: "Revenue", icon: Wallet },
-        ],
-      });
-    }
-
     // Settings (all users)
     const settingsItems = [];
 
@@ -381,8 +355,6 @@ export function Sidebar() {
 
     if (isVendor) {
       settingsItems.push({ id: "profile", label: "Profile", icon: UserCircle });
-      settingsItems.push({ id: "vendor-notifications", label: "Notifications", icon: Bell });
-      settingsItems.push({ id: "vendor-support", label: "Support", icon: HeadphonesIcon });
     }
 
     nav.push({
@@ -510,6 +482,15 @@ export function Sidebar() {
                       >
                         <Icon size={14} />
                         <span style={{ fontWeight: isActive ? 500 : 400 }}>{label}</span>
+                        {isPreviewPath(route) && (
+                          <span
+                            title="Sample data: not connected to live records yet"
+                            className="ml-1 px-1.5 py-px rounded text-[9px] uppercase tracking-wider"
+                            style={{ background: "rgba(245,158,11,0.15)", color: "#d97706", fontWeight: 700 }}
+                          >
+                            Preview
+                          </span>
+                        )}
                         {isActive && (
                           <div
                             className="ml-auto w-1.5 h-1.5 rounded-full"

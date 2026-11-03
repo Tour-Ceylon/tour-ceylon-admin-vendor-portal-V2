@@ -396,3 +396,26 @@ export async function updateStayProperty(
 
 
 
+
+
+export interface UploadedStayImage {
+  url: string;
+  cloudinaryPublicId: string;
+  width?: number | null;
+  height?: number | null;
+  bytes?: number;
+}
+
+/**
+ * DATA-5: upload photos now and keep only their URLs. The property is then saved with URLs,
+ * not with every photo packed into the request as a base64 data URL.
+ */
+export async function uploadStayImages(files: File[]): Promise<UploadedStayImage[]> {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  const response = await apiFetch<{ images: UploadedStayImage[] }>("/vendor/stays/images", {
+    method: "POST",
+    body: form,
+  });
+  return response.images;
+}

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { ListingReviewDrawer } from "./ListingReviewDrawer";
 import { apiFetch } from "../api/apiClient";
+import { useToast } from "../shared/Toast";
 
 type ListingStatus = "draft" | "submitted" | "pending_review" | "needs_changes" | "approved" | "rejected" | "archived";
 type Category = "Stay" | "Tour" | "Safari" | "Experience" | "Transfer";
@@ -98,6 +99,7 @@ export function ListingReviewPage() {
   const [loading, setLoading] = useState(true);
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const toast = useToast();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedListings, setSelectedListings] = useState<Set<string>>(new Set());
@@ -140,6 +142,7 @@ export function ListingReviewPage() {
         setListings(mappedListings);
       } catch (err) {
         console.error(err);
+        toast.error("Could not load listings", err instanceof Error ? err.message : "Please refresh the page to try again.");
       } finally {
         setLoading(false);
       }
@@ -208,8 +211,10 @@ export function ListingReviewPage() {
         body: JSON.stringify({ status: 'published' })
       });
       setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
+      toast.success("Listing approved");
     } catch(err) {
       console.error('Failed to approve', err);
+      toast.error("Approval failed", err instanceof Error ? err.message : "Could not approve the listing. Please try again.");
     }
   };
 
@@ -225,8 +230,10 @@ export function ListingReviewPage() {
         body: JSON.stringify({ status: 'rejected' })
       });
       setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l));
+      toast.success("Listing rejected");
     } catch(err) {
       console.error('Failed to reject', err);
+      toast.error("Rejection failed", err instanceof Error ? err.message : "Could not reject the listing. Please try again.");
     }
   };
 
