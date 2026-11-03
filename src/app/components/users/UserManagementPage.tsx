@@ -21,8 +21,9 @@ import { UserDetailDrawer } from "./UserDetailDrawer";
 import { useCommonActions } from "../../hooks/useCommonActions";
 import { FilterModal } from "../shared/FilterModal";
 import { apiFetch } from "../api/apiClient";
+import type { ServerRole } from "../../lib/roles";
 
-type UserRole = "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST";
+type UserRole = ServerRole;
 type UserStatus = "active" | "pending" | "suspended" | "incomplete_profile";
 type FilterRole = "all" | "VENDOR" | "ADMIN" | "DRIVER" | "TOURIST" | "vendor_applicants" | "suspended";
 
@@ -388,7 +389,17 @@ export function UserManagementPage() {
         )}
 
         <button
-          onClick={() => handleExport("Users", filteredUsers)}
+          onClick={() => handleExport("Users", filteredUsers, [
+            { header: "ID", value: (u) => u.id },
+            { header: "Name", value: (u) => u.name },
+            { header: "Email", value: (u) => u.email },
+            { header: "Phone", value: (u) => u.phone },
+            { header: "Country", value: (u) => u.country },
+            { header: "Role", value: (u) => u.role },
+            { header: "Status", value: (u) => u.status },
+            { header: "Company", value: (u) => u.company },
+            { header: "Joined", value: (u) => u.joinedDate },
+          ])}
           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12px] transition-all"
           style={{ background: "var(--active-overlay)", color: "var(--accent-navy-light)", border: "1px solid var(--border-accent)" }}
         >

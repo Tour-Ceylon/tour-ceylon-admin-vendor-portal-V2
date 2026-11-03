@@ -173,7 +173,7 @@ function RefundDetailModal({ refund, onClose }: { refund: RefundDispute; onClose
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
       <div
-        className="w-[650px] rounded-2xl overflow-hidden"
+        className="w-full max-w-[650px] rounded-2xl overflow-hidden"
         style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}
       >
         {/* Header */}

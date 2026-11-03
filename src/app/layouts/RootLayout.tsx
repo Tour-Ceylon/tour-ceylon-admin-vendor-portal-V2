@@ -1,7 +1,6 @@
 import { Outlet } from "react-router";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { AuthProvider } from "../contexts/AuthContext";
-import { ToastProvider } from "../components/common/ToastNotification";
 import { ClerkProvider } from "@clerk/clerk-react";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -24,9 +23,8 @@ export function RootLayout() {
         }}
       >
         <AuthProvider>
-          <ToastProvider>
-            <Outlet />
-          </ToastProvider>
+          {/* UI-13: one toast system. Its provider is mounted once, in App.tsx. */}
+          <Outlet />
         </AuthProvider>
       </ClerkProvider>
     </ThemeProvider>

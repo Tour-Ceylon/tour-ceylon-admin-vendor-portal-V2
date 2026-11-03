@@ -49,7 +49,7 @@ export function PayoutDetailDrawer({ payout, onClose }: PayoutDetailDrawerProps)
 
       {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[600px] z-50 overflow-y-auto"
+        className="fixed right-0 top-0 h-full w-full max-w-[600px] z-50 overflow-y-auto"
         style={{
           background: "var(--bg-main)",
           borderLeft: "1px solid var(--border-light)",

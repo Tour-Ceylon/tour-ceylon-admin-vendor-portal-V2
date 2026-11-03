@@ -108,7 +108,7 @@ function ReservationDrawer({
 
   return (
     <div
-      className="fixed right-0 top-0 h-full w-[400px] z-50 overflow-y-auto"
+      className="fixed right-0 top-0 h-full w-full max-w-[400px] z-50 overflow-y-auto"
       style={{ background: "var(--bg-panel)", borderLeft: "1px solid var(--border-light)", boxShadow: "-8px 0 32px rgba(0,0,0,0.35)" }}
     >
       <div className="px-5 py-4 flex items-start justify-between sticky top-0" style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border-light)" }}>

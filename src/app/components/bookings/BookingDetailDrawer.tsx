@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   X,
   User,
@@ -14,7 +14,6 @@ import {
   Car,
   CheckCircle,
   XCircle,
-  RefreshCw,
   MessageSquare,
   FileText,
   AlertTriangle,
@@ -28,6 +27,11 @@ import {
   Check,
 } from "lucide-react";
 import { DriverAssignmentSection } from "../transport/DriverAssignmentSection";
+import { formatMoney } from "../../lib/money";
+import type { BookingRow } from "../../types/booking";
+import { AssignmentSection } from "./AssignmentSection";
+import { getInternalNotes, getPlatformFeePercent, saveInternalNotes } from "../api/adminOpsApi";
+import { useToast } from "../shared/Toast";
 
 interface Customer {
   name: string;
@@ -35,60 +39,9 @@ interface Customer {
   phone: string;
 }
 
-export interface SelectedRoomItem {
-  roomId?: string;
-  roomName?: string;
-  qty?: number;
-  price?: number;
-}
 
-export interface CartItem {
-  listingId?: string;
-  title: string;
-  variantName?: string;
-  travelDate?: string;
-  travelDateEnd?: string;
-  travelDateRaw?: string;
-  travelCount?: number;
-  price: number;
-  baseCurrency?: string;
-  selectedRooms?: SelectedRoomItem[];
-  /** Set when the stay vendor (or an admin) moved the check-in / check-out dates */
-  dateChange?: {
-    original_check_in?: string;
-    original_check_out?: string;
-    changed_by?: string;
-    changed_by_role?: string;
-    changed_at?: string;
-    note?: string | null;
-  };
-}
 
-interface Booking {
-  id: string;
-  _inquiryId?: string;
-  _inquiryStatus?: string;
-  customer: Customer;
-  type: string;
-  listing: string;
-  vendor: string;
-  vendorEmail?: string;
-  vendorRole?: string;
-  travelDate: string;
-  checkIn?: string;
-  checkOut?: string;
-  amount: number;
-  bookingStatus: string;
-  paymentStatus: string;
-  createdAt: string;
-  rawCreatedAt?: string;
-  passengers?: number;
-  duration?: string;
-  specialRequests?: string;
-  riskFlags?: string[];
-  nationality?: string;
-  cartItems?: CartItem[];
-}
+type Booking = BookingRow;
 
 interface BookingDetailDrawerProps {
   booking: Booking;
@@ -101,6 +54,65 @@ interface BookingDetailDrawerProps {
   onSendPaymentLink?: () => void;
 }
 
+
+type InquiryActionTone = "primary" | "neutral" | "danger";
+
+interface InquiryAction {
+  status: string;
+  label: string;
+  tone: InquiryActionTone;
+  hint: string;
+  confirm?: string;
+}
+
+const ACTION_STYLES: Record<InquiryActionTone, string> = {
+  primary: "bg-emerald-600 text-white hover:bg-emerald-700",
+  neutral: "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200",
+  danger: "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-semibold",
+};
+
+const INQUIRY_STATUS_LABELS: Record<string, string> = {
+  pending_contact: "Pending contact",
+  contacted: "Contacted",
+  quoted: "Quoted / Accepted",
+  converted_to_booking: "Converted to booking",
+  cancelled: "Cancelled",
+};
+
+/**
+ * The moves an inquiry can make from each status. Mirrors ALLOWED_INQUIRY_TRANSITIONS on the
+ * server, which is the real gatekeeper; this only decides which buttons to show.
+ */
+function getInquiryActions(rawStatus: string | undefined, isStay: boolean): InquiryAction[] {
+  const contacted: InquiryAction = {
+    status: "contacted", label: "Mark contacted", tone: "neutral",
+    hint: "You have been in touch with the guest",
+  };
+  const quoted: InquiryAction = {
+    status: "quoted", tone: "primary",
+    label: isStay ? "Accept & send payment link" : "Accept & Confirm",
+    hint: "Approve the request and notify the guest",
+  };
+  const converted: InquiryAction = {
+    status: "converted_to_booking", label: "Convert to booking", tone: "primary",
+    hint: "Creates the booking and reserves availability",
+    confirm: "Convert this request into a confirmed booking? This reserves availability.",
+  };
+  const cancel = (label: string): InquiryAction => ({
+    status: "cancelled", label, tone: "danger",
+    hint: "Releases any held rooms or capacity and notifies the guest",
+    confirm: "Cancel this request? Held rooms or capacity are released and the guest is notified. This cannot be undone.",
+  });
+
+  switch (rawStatus) {
+    case "pending_contact": return [contacted, quoted, converted, cancel("Decline / Cancel")];
+    case "contacted": return [quoted, converted, cancel("Decline / Cancel")];
+    case "quoted": return [converted, cancel("Decline / Cancel")];
+    case "converted_to_booking": return [cancel("Cancel booking")];
+    default: return [];
+  }
+}
+
 export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdating, onSendPaymentLink }: BookingDetailDrawerProps) {
   const isTransport = booking.type === "Transfer";
   const isStay = booking.type === "Stay";
@@ -110,6 +122,9 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
     isStay &&
     !isPaidOnline &&
     (booking._inquiryStatus === "quoted" || booking._inquiryStatus === "converted_to_booking");
+
+  const statusActions = getInquiryActions(booking._inquiryStatus, isStay);
+  const inquiryStatusLabel = INQUIRY_STATUS_LABELS[booking._inquiryStatus ?? ""] ?? booking.bookingStatus;
 
   const transportDetails = useMemo(() => {
     const raw = booking as any;
@@ -130,45 +145,92 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
     };
   }, [booking]);
 
-  // Internal Notes State & LocalStorage Persistence
-  const storageKey = `booking_note_${booking.id}`;
+  // UI-11: internal notes are stored on the server, so every staff member sees the same note.
+  const toast = useToast();
+  const inquiryId = booking._inquiryId;
+  const legacyKey = `booking_note_${booking.id}`;
   const [noteText, setNoteText] = useState<string>("");
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
   const [noteSavedMessage, setNoteSavedMessage] = useState<string | null>(null);
+  const [legacyNote, setLegacyNote] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      setNoteText(saved);
-    } else {
-      setNoteText("");
-    }
     setNoteSavedMessage(null);
-  }, [booking.id, storageKey]);
-
-  const handleSaveNote = () => {
-    localStorage.setItem(storageKey, noteText);
-    setNoteSavedMessage("✓ Internal note saved successfully!");
-    setTimeout(() => {
-      setNoteSavedMessage(null);
-    }, 3000);
-  };
-
-  // Payment Preference Extraction
-  const reqLower = (booking.specialRequests || "").toLowerCase();
-  const isCardPayment = isPaidOnline || reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay_now") || reqLower.includes("pay now");
-  const isPayAtProperty = !isPaidOnline && (reqLower.includes("pay at property") || (!isCardPayment && booking.paymentStatus === "pay_at_property"));
-  
-  // Refund Action State
-  const [refundMessage, setRefundMessage] = useState<string | null>(null);
-
-  const handleProcessRefund = () => {
-    if (isPayAtProperty) {
-      setRefundMessage("No refund applicable for 'Pay at Property' (Unpaid) bookings.");
-    } else {
-      setRefundMessage("Refund request submitted to payment gateway.");
+    setLegacyNote(false);
+    if (!inquiryId) {
+      setNoteText("");
+      return;
     }
-    setTimeout(() => setRefundMessage(null), 4000);
+    let cancelled = false;
+    setNotesLoading(true);
+    getInternalNotes(inquiryId)
+      .then((result) => {
+        if (cancelled) return;
+        // Notes used to live in this browser only. If the server has none, offer the old one for saving.
+        const old = localStorage.getItem(legacyKey);
+        if (!result.notes && old) {
+          setNoteText(old);
+          setLegacyNote(true);
+        } else {
+          setNoteText(result.notes);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error("Could not load the internal note", err instanceof Error ? err.message : "Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setNotesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inquiryId, legacyKey]);
+
+  const handleSaveNote = async () => {
+    if (!inquiryId) return;
+    setNoteSaving(true);
+    try {
+      const saved = await saveInternalNotes(inquiryId, noteText);
+      setNoteText(saved.notes);
+      localStorage.removeItem(legacyKey);
+      setLegacyNote(false);
+      setNoteSavedMessage("✓ Note saved");
+      setTimeout(() => setNoteSavedMessage(null), 3000);
+    } catch (err) {
+      toast.error("The note was not saved", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setNoteSaving(false);
+    }
   };
+
+  // UI-11: the platform fee comes from admin settings. It used to be a hardcoded 15%.
+  const [feePercent, setFeePercent] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getPlatformFeePercent()
+      .then((value) => {
+        if (!cancelled && Number.isFinite(value)) setFeePercent(value);
+      })
+      .catch(() => {
+        /* only admins can read settings; for anyone else the fee row says "not available" */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Payment preference: the paymentMethod field; older inquiries only have it as text in specialRequests.
+  const reqLower = (booking.specialRequests || "").toLowerCase();
+  const method =
+    booking.paymentMethod ??
+    (reqLower.includes("bank transfer") ? "bank_transfer"
+      : reqLower.includes("pay at property") ? "pay_at_property"
+      : reqLower.includes("card") || reqLower.includes("online") || reqLower.includes("pay now") ? "online"
+      : null);
+  const isBankTransfer = !isPaidOnline && method === "bank_transfer";
+  const isCardPayment = isPaidOnline || method === "online";
+  const isPayAtProperty = !isPaidOnline && method === "pay_at_property";
 
   // Dynamic Timeline Generation based on actual creation date & inquiry status
   const getDynamicTimeline = () => {
@@ -269,7 +331,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
 
       {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[680px] z-50 overflow-y-auto"
+        className="fixed right-0 top-0 h-full w-full max-w-[680px] z-50 overflow-y-auto"
         style={{
           background: "var(--bg-main)",
           borderLeft: "1px solid var(--border-light)",
@@ -308,49 +370,54 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Action Header for Status Update */}
+          {/* Action Header for Status Update (FEAT-1: full inquiry lifecycle, same rules as the server) */}
           {onStatusUpdate && (
             <div
-              className="rounded-xl p-4 flex items-center justify-between"
+              className="rounded-xl p-4"
               style={{
                 background: "var(--bg-panel)",
                 border: "1px solid var(--border-light)",
                 boxShadow: "var(--shadow-md)",
               }}
             >
-              <div>
-                <p className="text-[11px] uppercase font-bold text-slate-500 tracking-wider mb-1">
-                  Manage Status
-                </p>
-                <span className="text-[13px] font-semibold text-slate-700 capitalize">
-                  Current: {booking.bookingStatus}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  disabled={isUpdating}
-                  onClick={() => onStatusUpdate("quoted")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition"
-                >
-                  {isStay ? "Accept & send payment link" : "Accept & Confirm"}
-                </button>
-                {canSendPaymentLink && onSendPaymentLink && (
-                  <button
-                    disabled={isUpdating}
-                    onClick={onSendPaymentLink}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 disabled:opacity-50 transition"
-                    title="Email the guest a new secure link to pay for this stay"
-                  >
-                    Send payment link
-                  </button>
-                )}
-                <button
-                  disabled={isUpdating}
-                  onClick={() => onStatusUpdate("cancelled")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition"
-                >
-                  Decline / Cancel
-                </button>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-[11px] uppercase font-bold text-slate-500 tracking-wider mb-1">
+                    Manage Status
+                  </p>
+                  <span className="text-[13px] font-semibold text-slate-700 capitalize">
+                    Current: {inquiryStatusLabel}
+                  </span>
+                </div>
+                <div className="flex gap-2 flex-wrap justify-end">
+                  {statusActions.map((action) => (
+                    <button
+                      key={action.status}
+                      disabled={isUpdating}
+                      onClick={() => {
+                        if (action.confirm && !window.confirm(action.confirm)) return;
+                        onStatusUpdate(action.status);
+                      }}
+                      title={action.hint}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 transition ${ACTION_STYLES[action.tone]}`}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                  {canSendPaymentLink && onSendPaymentLink && (
+                    <button
+                      disabled={isUpdating}
+                      onClick={onSendPaymentLink}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 disabled:opacity-50 transition"
+                      title="Email the guest a new secure link to pay for this stay"
+                    >
+                      Send payment link
+                    </button>
+                  )}
+                  {statusActions.length === 0 && (
+                    <span className="text-xs text-slate-500">This request is closed. No further changes are possible.</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -521,7 +588,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                             </span>
                             {item.title}
                           </div>
-                          <span className="font-extrabold text-slate-900 text-sm">${item.price}</span>
+                          <span className="font-extrabold text-slate-900 text-sm">{formatMoney(item.price, item.baseCurrency || booking.currency)}</span>
                         </div>
                         <p className="text-slate-500 text-[11px]">
                           Travel Date: {cleanDate}
@@ -536,7 +603,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                                   <span className="font-bold text-slate-800">{sr.roomName || "Room"}</span>
                                 </div>
                                 {sr.price !== undefined && sr.price > 0 && (
-                                  <span className="text-slate-600 font-semibold text-[11px]">${sr.price}/night</span>
+                                  <span className="text-slate-600 font-semibold text-[11px]">{formatMoney(sr.price, item.baseCurrency || booking.currency)}/night</span>
                                 )}
                               </div>
                             ))}
@@ -694,6 +761,11 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             </div>
           )}
 
+          {/* FEAT-2: guide / driver for tours, safaris and experiences (transfers have their own dispatch) */}
+          {booking._inquiryId && ["Tour", "Safari", "Experience"].includes(booking.type) && (
+            <AssignmentSection inquiryId={booking._inquiryId} inquiryStatus={booking._inquiryStatus} />
+          )}
+
           {/* Payment Details */}
           <div
             className="rounded-xl p-5"
@@ -713,7 +785,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Booking Total Amount
                 </span>
                 <span className="text-[16px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
-                  ${booking.amount}
+                  {formatMoney(booking.amount, booking.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -725,7 +797,7 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                     ? "bg-blue-50 text-blue-700 border-blue-200"
                     : "bg-emerald-50 text-emerald-700 border-emerald-200"
                 }`}>
-                  {isPaidOnline ? "💳 Paid online (PayHere)" : isCardPayment ? "💳 Credit / Debit Card (Online Payment)" : "🏨 Pay at Property (Check-in)"}
+                  {isPaidOnline ? "💳 Paid online (PayHere)" : isCardPayment ? "💳 Credit / Debit Card (Online Payment)" : isBankTransfer ? "🏦 Bank transfer" : isPayAtProperty ? "🏨 Pay at Property (Check-in)" : "Not specified"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -740,15 +812,15 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                       : { background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b" }
                   }
                 >
-                  {isPayAtProperty ? "Unpaid (Pay upon arrival)" : booking.paymentStatus.replace("_", " ")}
+                  {isPayAtProperty ? "Unpaid (Pay upon arrival)" : isBankTransfer && booking.paymentStatus !== "paid" ? "Awaiting bank transfer" : booking.paymentStatus.replace("_", " ")}
                 </span>
               </div>
               <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--border-light)" }}>
                 <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                  Platform Fee (15%)
+                  {feePercent === null ? "Platform Fee" : `Platform Fee (${feePercent}%)`}
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-                  ${(booking.amount * 0.15).toFixed(2)}
+                  {feePercent === null ? "Not available" : formatMoney((booking.amount * feePercent) / 100, booking.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -756,30 +828,12 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
                   Vendor Payout
                 </span>
                 <span className="text-[13px]" style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
-                  ${(booking.amount * 0.85).toFixed(2)}
+                  {feePercent === null ? "Not available" : formatMoney(booking.amount - (booking.amount * feePercent) / 100, booking.currency)}
                 </span>
               </div>
             </div>
 
-            {refundMessage && (
-              <p className="mt-3 text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
-                {refundMessage}
-              </p>
-            )}
-
-            <button
-              onClick={handleProcessRefund}
-              className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[12px] transition-all hover:bg-slate-100 active:scale-[0.99]"
-              style={{
-                background: "var(--input-background)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-light)",
-                fontWeight: 500,
-              }}
-            >
-              <RefreshCw size={14} />
-              Process Refund
-            </button>
+            {/* Refund button removed (UI-7): no refund endpoint exists yet, so it only faked success. */}
           </div>
 
           {/* Live Activity Timeline */}
@@ -847,7 +901,8 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Add internal notes about this booking..."
+              disabled={!inquiryId || notesLoading}
+              placeholder={inquiryId ? "Add internal notes about this booking..." : "Notes are not available for this record"}
               className="w-full px-3 py-2.5 rounded-lg text-[12px] resize-none outline-none focus:ring-2 focus:ring-blue-500/20 transition"
               style={{
                 background: "var(--input-background)",
@@ -859,10 +914,16 @@ export function BookingDetailDrawer({ booking, onClose, onStatusUpdate, isUpdati
             <div className="flex items-center justify-between mt-3">
               <button
                 onClick={handleSaveNote}
-                className="text-[11px] px-4 py-2 rounded-lg transition-all font-bold bg-slate-900 text-white hover:bg-slate-800 active:scale-95 flex items-center gap-1.5"
+                disabled={!inquiryId || noteSaving || notesLoading}
+                className="text-[11px] px-4 py-2 rounded-lg transition-all font-bold bg-slate-900 text-white hover:bg-slate-800 active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
-                <Check size={13} /> Save Note
+                <Check size={13} /> {noteSaving ? "Saving…" : "Save Note"}
               </button>
+              {legacyNote && (
+                <span className="text-xs font-semibold text-amber-600">
+                  A note saved only in this browser was found. Press Save to keep it on the server.
+                </span>
+              )}
               {noteSavedMessage && (
                 <span className="text-xs font-semibold text-emerald-600">
                   {noteSavedMessage}

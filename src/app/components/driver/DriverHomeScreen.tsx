@@ -24,6 +24,7 @@ import {
 } from "../api/driverTripApi";
 import { formatMoney } from "../transport/shared/transportFormat";
 import { ProfileCompletionNudge } from "./ProfileCompletionNudge";
+import { useToast } from "../shared/Toast";
 
 function formatTime(t?: string) {
   if (!t) return "--";
@@ -57,6 +58,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 export function DriverHomeScreen() {
+  const toast = useToast();
   const { isOnline, inboxCount, refreshDriverState } = useOutletContext<{
     isOnline: boolean;
     inboxCount: number;
@@ -79,6 +81,7 @@ export function DriverHomeScreen() {
         setEarnings(earn);
       } catch (err) {
         console.error("Failed to load driver home data:", err);
+        toast.error("Could not load your trips", "Check your connection and reopen this screen to try again.");
       } finally {
         setLoading(false);
       }

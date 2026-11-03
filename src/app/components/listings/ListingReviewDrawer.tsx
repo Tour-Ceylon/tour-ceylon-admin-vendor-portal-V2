@@ -188,7 +188,7 @@ export function ListingReviewDrawer({
 
       {/* Drawer */}
       <div
-        className="fixed right-0 top-0 h-full w-[900px] z-50 overflow-y-auto"
+        className="fixed right-0 top-0 h-full w-full max-w-[900px] z-50 overflow-y-auto"
         style={{
           background: "var(--bg-main)",
           borderLeft: "1px solid var(--border-light)",
@@ -879,7 +879,7 @@ export function ListingReviewDrawer({
             onClick={() => setShowApproveConfirm(false)}
           />
           <div
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[450px] rounded-xl p-6"
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[450px] max-w-[calc(100vw-2rem)] rounded-xl p-6"
             style={{
               background: "var(--bg-panel)",
               border: "1px solid var(--border-light)",
@@ -936,7 +936,7 @@ export function ListingReviewDrawer({
             onClick={() => setShowRejectModal(false)}
           />
           <div
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[450px] rounded-xl p-6"
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[450px] max-w-[calc(100vw-2rem)] rounded-xl p-6"
             style={{
               background: "var(--bg-panel)",
               border: "1px solid var(--border-light)",

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useToast } from "../components/shared/Toast";
+import { downloadCsv, type CsvColumn } from "../lib/csv";
 
 /**
  * Common action hooks for consistent behavior across the portal
@@ -10,16 +11,18 @@ export function useCommonActions() {
   const [isLoading, setIsLoading] = useState(false);
 
   // Export action
-  const handleExport = async (type: string, data?: any) => {
-    setIsLoading(true);
+  const handleExport = <T,>(type: string, rows: T[], columns: CsvColumn<T>[]) => {
+    if (!rows.length) {
+      toast.warning("Nothing to export", `There are no ${type.toLowerCase()} matching the current filters.`);
+      return;
+    }
     try {
-      // Simulate export delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      toast.success("Export Successful", `${type} data has been exported to CSV`);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(`${type.toLowerCase()}-${stamp}.csv`, rows, columns);
+      toast.success("Export Successful", `${rows.length} ${type.toLowerCase()} exported to CSV`);
     } catch (error) {
+      console.error("CSV export failed", error);
       toast.error("Export Failed", "Unable to export data. Please try again.");
-    } finally {
-      setIsLoading(false);
     }
   };
 

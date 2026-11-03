@@ -26,16 +26,7 @@ function clearTokenCache() {
 
 // Enhanced token retrieval that works with both global Clerk and React SDK
 async function getCachedClerkToken(): Promise<string | undefined> {
-  // Method 1: Try React SDK approach through window.__clerk_publishable_key
-  if (typeof window !== "undefined" && (window as any).__clerk_db_jwt) {
-    try {
-      return (window as any).__clerk_db_jwt;
-    } catch (err) {
-      console.debug("Method 1 failed:", err);
-    }
-  }
-
-  // Method 2: Try global Clerk instance
+  // Use the Clerk session token only (never the dev-browser JWT)
   if (typeof window !== "undefined" && (window as any).Clerk) {
     try {
       const clerk = (window as any).Clerk;
@@ -69,21 +60,6 @@ async function getCachedClerkToken(): Promise<string | undefined> {
       return token;
     } catch (err) {
       console.debug("Method 2 failed:", err);
-    }
-  }
-
-  // Method 3: Try accessing through React context (fallback)
-  if (typeof window !== "undefined") {
-    try {
-      // Look for Clerk instance in React DevTools or context
-      const reactRoot = (window as any).document?.querySelector('#root')?._reactInternalFiber || 
-                       (window as any).document?.querySelector('#root')?._reactInternals;
-      if (reactRoot) {
-        // This is a fallback - in practice, token should be passed explicitly
-        console.debug("React root found, but token should be passed explicitly to apiClient");
-      }
-    } catch (err) {
-      console.debug("Method 3 failed:", err);
     }
   }
 

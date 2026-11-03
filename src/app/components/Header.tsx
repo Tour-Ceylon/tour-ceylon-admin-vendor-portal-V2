@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, ChevronRight, Bell, HelpCircle, ArrowLeft, Sun, Moon, Command, Eye, EyeOff } from "lucide-react";
+import { Search, ChevronRight, HelpCircle, ArrowLeft, Sun, Moon, Command, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
 import { MobileNav } from "./MobileNav";
 import { CommandPalette } from "./shared/CommandPalette";
@@ -113,7 +113,7 @@ export function Header() {
       <div className="flex-1" />
 
       {/* View as Vendor toggle — dev helper, admin only */}
-      {user?.role === "admin" && (
+      {import.meta.env.DEV && user?.role === "admin" && (
         <button
           id="view-as-vendor-toggle"
           onClick={() => {
@@ -205,25 +205,7 @@ export function Header() {
         {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
       </button>
 
-      {/* Notification bell */}
-      <button
-        className="w-8 h-8 rounded-lg flex items-center justify-center relative transition-all"
-        style={{ color: "var(--text-tertiary)", border: "1px solid var(--border-light)" }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-          (e.currentTarget as HTMLElement).style.background = "var(--hover-overlay)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.color = "var(--text-tertiary)";
-          (e.currentTarget as HTMLElement).style.background = "transparent";
-        }}
-      >
-        <Bell size={14} />
-        <span
-          className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
-          style={{ background: "var(--accent-navy)", boxShadow: "0 0 4px var(--accent-navy)" }}
-        />
-      </button>
+      {/* Notification bell removed (UI-10): no notifications backend yet (see NOTIF-1 / FEAT-3) */}
 
       {/* Help - Hidden on mobile */}
       <button

@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import { useStayHotel, StayHotelPropertyGate } from "./StayHotelContext";
-import { updateStayProperty } from "../api/stayVendorApi";
+import { updateStayProperty, uploadStayImages } from "../api/stayVendorApi";
 import { customerListingUrl } from "../../lib/customerSite";
 
 // Categorized Amenities
@@ -101,15 +101,6 @@ const PAYMENT_METHODS_LIST = [
   "Digital Wallet / QR",
 ];
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function PropertySettingsContent() {
   const { selectedProperty, refreshProperties } = useStayHotel();
 
@@ -121,6 +112,7 @@ function PropertySettingsContent() {
   const [description, setDescription] = useState("");
 
   // Media state
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [coverPhoto, setCoverPhoto] = useState<string>("");
   const [galleryPhotos, setGalleryPhotos] = useState<string[]>([]);
 
@@ -243,8 +235,12 @@ function PropertySettingsContent() {
   const handleCoverDrop = useCallback(async (acceptedFiles: File[]) => {
     const [file] = acceptedFiles;
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setCoverPhoto(dataUrl);
+    try {
+      const [uploaded] = await uploadStayImages([file]);
+      if (uploaded) setCoverPhoto(uploaded.url);
+    } catch (err) {
+      setPhotoError(err instanceof Error && err.message ? `Cover photo was not added: ${err.message}` : "Cover photo was not added. Please try again.");
+    }
   }, []);
 
   const coverDropzone = useDropzone({
@@ -256,8 +252,12 @@ function PropertySettingsContent() {
   // Dropzone for Gallery Images
   const handleGalleryDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
-    const dataUrls = await Promise.all(acceptedFiles.map(readFileAsDataUrl));
-    setGalleryPhotos((prev) => [...prev, ...dataUrls]);
+    try {
+      const uploaded = await uploadStayImages(acceptedFiles);
+      setGalleryPhotos((prev) => [...prev, ...uploaded.map((image) => image.url)]);
+    } catch (err) {
+      setPhotoError(err instanceof Error && err.message ? `Photos were not added: ${err.message}` : "Photos were not added. Please try again.");
+    }
   }, []);
 
   const galleryDropzone = useDropzone({
@@ -624,6 +624,11 @@ function PropertySettingsContent() {
                 </span>
               </div>
             </div>
+          {photoError && (
+            <p role="alert" className="mt-3 text-[12px]" style={{ color: "#ef4444" }}>
+              {photoError}
+            </p>
+          )}
           </div>
         </div>
       </div>

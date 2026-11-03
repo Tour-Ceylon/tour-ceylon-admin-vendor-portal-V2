@@ -1,10 +1,29 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Compass, Car, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export function PendingApprovalScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const [checking, setChecking] = useState(false);
+
+  // ERR-3: this page used to promise an email and SMS and then never looked again. It now asks the
+  // server every 30 seconds, and leaves for the portal (or the rejected screen) once a decision is made.
+  useEffect(() => {
+    const id = window.setInterval(() => void refreshProfile(), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (user && user.vendorStatus && user.vendorStatus !== "pending") navigate("/dashboard", { replace: true });
+  }, [user?.vendorStatus]);
+
+  const checkNow = async () => {
+    setChecking(true);
+    await refreshProfile();
+    setChecking(false);
+  };
 
   const isDriver = user?.role === "driver";
 
@@ -187,12 +206,12 @@ export function PendingApprovalScreen() {
                 ? [
                     "Our verification team will inspect your Driving License, NIC, and Vehicle CR documents",
                     "We will verify your police clearance and insurance validity within 1-2 business days",
-                    "You will receive an email and SMS alert as soon as your driver account is approved",
+                    "This page checks for a decision every 30 seconds. Leave it open, or sign in again later",
                     "Once approved, you will begin receiving transfer trip allocations and booking requests",
                   ]
                 : [
                     "Our team will review your application within 2-3 business days",
-                    "You'll receive an email notification once the review is complete",
+                    "This page checks for a decision every 30 seconds. Leave it open, or sign in again later",
                     "Upon approval, you'll gain access to your vendor dashboard",
                     "You can start creating and managing your listings immediately",
                   ]
@@ -223,17 +242,24 @@ export function PendingApprovalScreen() {
               Sign Out
             </button>
             <button
-              className="flex-1 py-2.5 rounded-lg text-[13px] transition-all"
+              onClick={checkNow}
+              disabled={checking}
+              className="px-4 py-2.5 rounded-lg text-[13px] transition-all disabled:opacity-60"
+              style={{ color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}
+            >
+              {checking ? "Checking…" : "Check status now"}
+            </button>
+            <a
+              href="mailto:support@travelreadytours.com?subject=Application%20status"
+              className="flex-1 py-2.5 rounded-lg text-[13px] text-center transition-all"
               style={{
                 background: "var(--input-background)",
                 color: "var(--text-secondary)",
                 border: "1px solid var(--border-light)",
-                cursor: "not-allowed",
               }}
-              disabled
             >
               Contact Support
-            </button>
+            </a>
           </div>
         </div>
       </div>

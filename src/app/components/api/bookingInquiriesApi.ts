@@ -7,6 +7,7 @@
  */
 
 import { apiFetch } from "./apiClient";
+import type { SelectedRoomItem } from "../../types/booking";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -19,12 +20,7 @@ export type InquiryStatus =
   | "converted_to_booking"
   | "cancelled";
 
-export interface SelectedRoomItem {
-  roomId?: string;
-  roomName?: string;
-  qty?: number;
-  price?: number;
-}
+export type { SelectedRoomItem };
 
 export interface CartItemSummary {
   listingId: string;
@@ -62,6 +58,8 @@ export interface AdminBookingInquiryItem {
   // Trip
   numberOfTravelers: number;
   specialRequests?: string;
+  /** How the guest intends to pay (FLOW-1). Older inquiries only have this as text in specialRequests. */
+  paymentMethod?: "pay_at_property" | "bank_transfer" | "online" | null;
   cartItems: CartItemSummary[];
 
   // Vendor / Creator
@@ -269,12 +267,17 @@ export function inferBookingType(items?: CartItemSummary[], reference?: string):
  */
 export function mapPaymentStatusToUI(
   status?: string | null
-): "paid" | "unpaid" | "refunded" | "failed" {
+): "paid" | "unpaid" | "refunded" | "failed" | "pay_later" {
+  // Covers the server's Payment statuses (initiated, pending, succeeded, failed, cancelled,
+  // chargedback) and PaymentTransactionStatus (adds refunded, not_required).
   switch ((status || "").toLowerCase()) {
     case "succeeded":
       return "paid";
     case "chargedback":
+    case "refunded":
       return "refunded";
+    case "not_required":
+      return "pay_later";
     case "failed":
     case "cancelled":
       return "failed";

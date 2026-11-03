@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
+import { useAuth as useClerkAuth, useSignUp } from "@clerk/clerk-react";
 import { useNavigate } from "react-router";
 import { Compass, ArrowLeft, Upload, Building2 } from "lucide-react";
 import { useAuth, VendorRegistrationData, Category } from "../../contexts/AuthContext";
+import { useToast } from "../shared/Toast";
 
 // Vendors are Stay partners only; tours, safaris and experiences are run by the Tour Ceylon team.
 const VENDOR_CATEGORIES: Category[] = ["Stay"];
@@ -11,7 +13,12 @@ interface VendorRegistrationProps {
 }
 
 export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationProps = {}) {
-  const { register, registerVendorDocuments } = useAuth();
+  const { applyAsVendor, registerVendorDocuments, resyncProfile } = useAuth();
+  const { isSignedIn } = useClerkAuth();
+  const { isLoaded: signUpLoaded, signUp, setActive } = useSignUp();
+  const [step, setStep] = useState<"form" | "verify">("form");
+  const [code, setCode] = useState("");
+  const toast = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,30 +35,147 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     categories: VENDOR_CATEGORIES,
   });
 
+  /**
+   * SEC-5: the password goes to Clerk from this browser and never through our server.
+   * 1. create the Clerk account  2. verify the email with a code  3. send the business profile
+   * (no password) to the server as that signed-in user.
+   */
+  const finishApplication = async () => {
+    const result = await applyAsVendor(formData);
+    // Upload business documents if any were selected
+    if (businessDocs.length > 0 && result?.id) {
+      try {
+        await registerVendorDocuments(result.id, businessDocs);
+      } catch (docErr) {
+        // Document upload failure is non-fatal: the application already went through.
+        console.warn("Vendor document upload failed (non-fatal):", docErr);
+        toast.warning(
+          "Application received, but your documents did not upload",
+          "Please email them to our support team so we can finish reviewing your application."
+        );
+      }
+    }
+    resyncProfile(); // reload the user now that the application exists
+    navigate("/pending");
+  };
+
+  const clerkMessage = (err: any, fallback: string) =>
+    err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || err?.message || fallback;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      const result = await register(formData);
-      // Upload business documents if any were selected
-      if (businessDocs.length > 0 && result?.id) {
-        try {
-          await registerVendorDocuments(result.id, businessDocs);
-        } catch (docErr) {
-          // Document upload failure is non-fatal — registration already succeeded
-          console.warn("Vendor document upload failed (non-fatal):", docErr);
-        }
+      if (isSignedIn) {
+        // Already has an account (for example a customer account being upgraded): just send the profile.
+        await finishApplication();
+        return;
       }
-      navigate("/pending");
+      if (!signUpLoaded || !signUp) throw new Error("Sign-up is still loading. Please try again in a moment.");
+      const [firstName, ...rest] = formData.vendorName.trim().split(/\s+/);
+      await signUp.create({
+        emailAddress: formData.email.trim(),
+        password: formData.password || "",
+        firstName,
+        lastName: rest.join(" ") || undefined,
+      });
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setStep("verify");
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Registration failed. Please try again.");
+      setError(clerkMessage(err, "Registration failed. Please try again."));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signUpLoaded || !signUp || !setActive) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const attempt = await signUp.attemptEmailAddressVerification({ code: code.trim() });
+      if (attempt.status !== "complete") {
+        throw new Error(
+          attempt.missingFields?.length
+            ? `Your account needs one more detail: ${attempt.missingFields.join(", ")}. Please contact support.`
+            : "That code was not accepted. Check it and try again."
+        );
+      }
+      await setActive({ session: attempt.createdSessionId });
+      await finishApplication();
+    } catch (err: any) {
+      console.error(err);
+      setError(clerkMessage(err, "We could not verify that code. Please try again."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!signUp) return;
+    setError(null);
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      toast.success("Code sent", `We sent a new code to ${formData.email}.`);
+    } catch (err: any) {
+      setError(clerkMessage(err, "We could not send a new code. Please try again."));
+    }
+  };
+
+  if (step === "verify") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "var(--bg-main)" }}>
+        <form
+          onSubmit={handleVerify}
+          className="w-full max-w-md rounded-xl p-8 space-y-5"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--border-light)", boxShadow: "var(--shadow-lg)" }}
+        >
+          <div className="text-center">
+            <h1 className="text-[20px]" style={{ color: "var(--text-primary)", fontWeight: 700 }}>Check your email</h1>
+            <p className="text-[13px] mt-2" style={{ color: "var(--text-tertiary)" }}>
+              We sent a verification code to <strong>{formData.email}</strong>. Enter it to finish creating your account
+              and send your application.
+            </p>
+          </div>
+          {error && (
+            <div role="alert" className="p-3 rounded-lg text-[13px]" style={{ background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#ef4444" }}>
+              {error}
+            </div>
+          )}
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="Verification code"
+            required
+            className="w-full px-3 py-3 rounded-lg text-[16px] text-center tracking-[0.3em] outline-none"
+            style={{ background: "var(--input-background)", border: "1px solid var(--border-light)", color: "var(--text-primary)" }}
+          />
+          <button
+            type="submit"
+            disabled={loading || !code.trim()}
+            className="w-full py-3 rounded-lg text-[14px] disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))", color: "white", fontWeight: 600 }}
+          >
+            {loading ? "Verifying…" : "Verify and send application"}
+          </button>
+          <div className="flex justify-between text-[12px]">
+            <button type="button" onClick={() => { setStep("form"); setError(null); }} style={{ color: "var(--text-secondary)" }}>
+              Use a different email
+            </button>
+            <button type="button" onClick={resendCode} style={{ color: "var(--accent-navy-light)" }}>
+              Send a new code
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -349,6 +473,8 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
                 {loading ? "Submitting..." : "Submit Application"}
               </button>
             </div>
+            {/* Clerk renders its bot check here when the instance has it switched on */}
+            <div id="clerk-captcha" />
           </form>
         </div>
       </div>
