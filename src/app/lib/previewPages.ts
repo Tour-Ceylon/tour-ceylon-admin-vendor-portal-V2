@@ -6,7 +6,6 @@
  * delete its entry here and the badge and banner disappear.
  */
 const PREVIEW_EXACT = [
-  "/dashboard",
   "/admins",
   "/media",
   "/pricing",
