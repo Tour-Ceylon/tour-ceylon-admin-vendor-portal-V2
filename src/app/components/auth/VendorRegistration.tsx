@@ -18,8 +18,6 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
   const { isLoaded: signUpLoaded, signUp, setActive } = useSignUp();
   const [step, setStep] = useState<"form" | "verify">("form");
   const [code, setCode] = useState("");
-  const [username, setUsername] = useState("");
-  const [userEditedUsername, setUserEditedUsername] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -39,8 +37,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
 
   const generateUsername = (rawEmail: string, suffix = false) => {
     const prefix = (rawEmail.split("@")[0] || "").toLowerCase();
-    // Convert dots, hyphens, and non-alphanumeric characters into underscores for a clean, meaningful username
-    // e.g. trt-stay-vendor@proton.me -> trt_stay_vendor, john.smith@gmail.com -> john_smith
+    // Convert dots, hyphens, and non-alphanumeric into clean underscores: trt-stay-vendor -> trt_stay_vendor
     let clean = prefix.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
     if (clean.length < 4) clean = `user_${clean}`;
     if (suffix) {
@@ -90,7 +87,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       if (!signUpLoaded || !signUp) throw new Error("Sign-up is still loading. Please try again in a moment.");
       const [firstName, ...rest] = formData.vendorName.trim().split(/\s+/);
       const email = formData.email.trim();
-      const chosenUsername = (username || generateUsername(email)).trim();
+      const generatedUsername = generateUsername(email);
 
       const basePayload = {
         emailAddress: email,
@@ -102,7 +99,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       try {
         await signUp.create({
           ...basePayload,
-          username: chosenUsername,
+          username: generatedUsername,
         });
       } catch (createErr: any) {
         const isUsernameTaken = createErr?.errors?.some(
@@ -111,11 +108,9 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
             String(item?.message || "").toLowerCase().includes("username")
         );
         if (isUsernameTaken) {
-          const fallbackUser = generateUsername(email, true);
-          setUsername(fallbackUser);
           await signUp.create({
             ...basePayload,
-            username: fallbackUser,
+            username: generateUsername(email, true),
           });
         } else {
           throw createErr;
@@ -141,7 +136,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       let attempt = await signUp.attemptEmailAddressVerification({ code: code.trim() });
       if (attempt.status !== "complete" && attempt.missingFields?.includes("username")) {
         try {
-          const finalUser = (username || generateUsername(formData.email.trim())).trim();
+          const finalUser = generateUsername(formData.email.trim());
           attempt = await signUp.update({ username: finalUser });
         } catch {
           const fallbackUser = generateUsername(formData.email.trim(), true);
@@ -323,42 +318,9 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => {
-                      const newEmail = e.target.value;
-                      setFormData({ ...formData, email: newEmail });
-                      if (!userEditedUsername) {
-                        setUsername(generateUsername(newEmail));
-                      }
-                    }}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="contact@example.com"
                     required
-                    className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none"
-                    style={{
-                      background: "var(--input-background)",
-                      border: "1px solid var(--border-light)",
-                      color: "var(--text-primary)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
-                      Portal Username *
-                    </label>
-                    <span className="text-[10px]" style={{ color: "var(--accent-navy-light)" }}>
-                      Auto-generated from email
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => {
-                      setUserEditedUsername(true);
-                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30));
-                    }}
-                    placeholder="e.g. trt_vendor"
-                    required
-                    minLength={4}
                     className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none"
                     style={{
                       background: "var(--input-background)",
