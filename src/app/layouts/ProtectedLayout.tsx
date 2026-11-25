@@ -78,6 +78,54 @@ export function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
+  // 3. Block customer/tourist accounts from the management portal
+  if (effectiveUser?.role === "customer" || user?.role === "customer") {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ background: "var(--bg-main)" }}
+      >
+        <div
+          className="w-full max-w-md rounded-xl p-6 text-center"
+          style={{
+            background: "var(--bg-panel)",
+            border: "1px solid var(--border-light)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+            <ShieldAlert className="text-red-500" size={24} />
+          </div>
+          <h2 className="text-[18px] mb-2" style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+            Access Denied
+          </h2>
+          <p className="text-[13px] mb-6" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Customer accounts are not authorized to access the management portal. If you are a vendor or driver partner, please apply below or sign in with your partner account.
+          </p>
+          <div className="flex flex-col gap-3">
+            <a
+              href="/register"
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[13px] font-medium text-white"
+              style={{
+                background: "linear-gradient(135deg, var(--accent-navy-dark), var(--accent-navy))",
+                border: "1px solid var(--border-accent)",
+              }}
+            >
+              Partner Registration
+            </a>
+            <button
+              onClick={logout}
+              className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[13px] transition-all text-gray-300 hover:text-white"
+            >
+              <LogOut size={14} />
+              <span>Sign Out & Switch Account</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // 3a. Block deactivated accounts (any role)
   if (user.isActive === false) {
     return (

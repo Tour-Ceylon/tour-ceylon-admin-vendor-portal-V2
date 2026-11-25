@@ -52,22 +52,27 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
    * (no password) to the server as that signed-in user.
    */
   const finishApplication = async () => {
-    const result = await applyAsVendor(formData);
-    // Upload business documents if any were selected
-    if (businessDocs.length > 0 && result?.id) {
-      try {
-        await registerVendorDocuments(result.id, businessDocs);
-      } catch (docErr) {
-        // Document upload failure is non-fatal: the application already went through.
-        console.warn("Vendor document upload failed (non-fatal):", docErr);
-        toast.warning(
-          "Application received, but your documents did not upload",
-          "Please email them to our support team so we can finish reviewing your application."
-        );
+    try {
+      const result = await applyAsVendor(formData);
+      // Upload business documents if any were selected
+      if (businessDocs.length > 0 && result?.id) {
+        try {
+          await registerVendorDocuments(result.id, businessDocs);
+        } catch (docErr) {
+          // Document upload failure is non-fatal: the application already went through.
+          console.warn("Vendor document upload failed (non-fatal):", docErr);
+          toast.warning(
+            "Application received, but your documents did not upload",
+            "Please email them to our support team so we can finish reviewing your application."
+          );
+        }
       }
+      resyncProfile(); // reload the user now that the application exists
+      navigate("/pending");
+    } catch (err: any) {
+      console.error("Failed to finish application:", err);
+      setError(clerkMessage(err, "Failed to submit vendor application. Please try again."));
     }
-    resyncProfile(); // reload the user now that the application exists
-    navigate("/pending");
   };
 
   const clerkMessage = (err: any, fallback: string) =>
