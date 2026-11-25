@@ -67,7 +67,7 @@ interface AuthContextType {
   /** Same as register, but does not depend on this provider having re-rendered after a fresh sign-in. */
   applyAsVendor: (data: VendorRegistrationData) => Promise<{ id: string } | undefined>;
   /** Re-run the full profile load, with the loader (used right after the account or application changes). */
-  resyncProfile: () => void;
+  resyncProfile: () => Promise<void> | void;
   /** Send driver signup as multipart FormData (files included). */
   registerDriver: (formData: FormData) => Promise<void>;
   /** Upload vendor business documents after registration. */
@@ -175,11 +175,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 2. Resolve the role through the one shared mapping (ADMIN/VENDOR/DRIVER/TOURIST -> admin/vendor/driver/customer)
         const role: UserRole = toPortalRole(backendUser.role);
 
-        // Customers (TOURIST) cannot enter the admin/vendor/driver portal
-        if (role === "customer") {
-          console.warn("Customer account denied access to management portal. Backend role:", backendUser.role, "| User ID:", userId);
-          throw new Error("Customer accounts are not authorized to access the management portal.");
-        }
+        // For customer accounts, role is normalized as "customer".
+        // Route protection in ProtectedLayout ensures they cannot access admin/vendor
+        // dashboards, while allowing registration and pending-approval pages to function.
 
         const clerkMetadata = clerkUser.publicMetadata || {};
 
@@ -216,7 +214,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           vehiclePlateNumber: backendUser.driver_profile?.vehicle_plate_number,
         };
 
-        if (isCurrent()) setUser(normalizedUser);
+        if (isCurrent()) {
+          setUser(normalizedUser);
+          setError(null);
+        }
       } catch (err: any) {
         console.error("Backend auth profile synchronization failed:", err);
         if (isCurrent()) {
@@ -238,12 +239,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const backendUser = await apiFetch("/users/me");
       if (!backendUser) return;
       const rawStatus = backendUser.vendorStatus || backendUser.vendor_status;
+      const role: UserRole = toPortalRole(backendUser.role);
       setUser((prev) =>
         prev
           ? {
               ...prev,
+              role,
               vendorStatus: (rawStatus as VendorStatus) || prev.vendorStatus,
               isActive: backendUser.is_active !== false,
+              company: backendUser.company_name || backendUser.company || prev.company,
               approvedCategories:
                 backendUser.approvedCategories || backendUser.approved_categories || prev.approvedCategories,
             }
@@ -276,7 +280,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify(profile),
     });
-    return { id: responseUser?.id as string };
+    const pendingUser: User = {
+      id: responseUser?.id || userId || `vendor_${Date.now()}`,
+      clerkUserId: userId || responseUser?.clerk_user_id || "",
+      email: responseUser?.email || data.email,
+      name: responseUser?.full_name || responseUser?.name || data.vendorName,
+      role: "vendor",
+      isActive: true,
+      vendorStatus: "pending",
+      approvedCategories: data.categories,
+      company: data.businessName,
+    };
+    setUser(pendingUser);
+    setError(null);
+    return { id: (responseUser?.id || pendingUser.id) as string };
   };
 
   const register = async (data: VendorRegistrationData) => {
