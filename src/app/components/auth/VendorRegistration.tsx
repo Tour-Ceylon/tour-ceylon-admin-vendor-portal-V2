@@ -18,6 +18,8 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
   const { isLoaded: signUpLoaded, signUp, setActive } = useSignUp();
   const [step, setStep] = useState<"form" | "verify">("form");
   const [code, setCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [userEditedUsername, setUserEditedUsername] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -34,6 +36,15 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     businessDescription: "",
     categories: VENDOR_CATEGORIES,
   });
+
+  const generateUsername = (rawEmail: string, suffix = false) => {
+    let clean = (rawEmail.split("@")[0] || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (clean.length < 4) clean = `vendor_${clean}`;
+    if (suffix) {
+      return `${clean.slice(0, 24)}_${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    return clean.slice(0, 30);
+  };
 
   /**
    * SEC-5: the password goes to Clerk from this browser and never through our server.
@@ -62,15 +73,6 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
   const clerkMessage = (err: any, fallback: string) =>
     err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || err?.message || fallback;
 
-  const buildUsername = (email: string, withSuffix = false) => {
-    let base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "");
-    if (base.length < 4) base = `vendor_${base}`;
-    if (withSuffix) {
-      return `${base.slice(0, 24)}_${Math.floor(1000 + Math.random() * 9000)}`;
-    }
-    return base.slice(0, 30);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -85,6 +87,8 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       if (!signUpLoaded || !signUp) throw new Error("Sign-up is still loading. Please try again in a moment.");
       const [firstName, ...rest] = formData.vendorName.trim().split(/\s+/);
       const email = formData.email.trim();
+      const chosenUsername = (username || generateUsername(email)).trim();
+
       const basePayload = {
         emailAddress: email,
         password: formData.password || "",
@@ -95,7 +99,7 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       try {
         await signUp.create({
           ...basePayload,
-          username: buildUsername(email),
+          username: chosenUsername,
         });
       } catch (createErr: any) {
         const isUsernameTaken = createErr?.errors?.some(
@@ -104,9 +108,11 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
             String(item?.message || "").toLowerCase().includes("username")
         );
         if (isUsernameTaken) {
+          const fallbackUser = generateUsername(email, true);
+          setUsername(fallbackUser);
           await signUp.create({
             ...basePayload,
-            username: buildUsername(email, true),
+            username: fallbackUser,
           });
         } else {
           throw createErr;
@@ -131,7 +137,13 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     try {
       let attempt = await signUp.attemptEmailAddressVerification({ code: code.trim() });
       if (attempt.status !== "complete" && attempt.missingFields?.includes("username")) {
-        attempt = await signUp.update({ username: buildUsername(formData.email.trim(), true) });
+        try {
+          const finalUser = (username || generateUsername(formData.email.trim())).trim();
+          attempt = await signUp.update({ username: finalUser });
+        } catch {
+          const fallbackUser = generateUsername(formData.email.trim(), true);
+          attempt = await signUp.update({ username: fallbackUser });
+        }
       }
       if (attempt.status !== "complete") {
         throw new Error(
@@ -308,9 +320,42 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => {
+                      const newEmail = e.target.value;
+                      setFormData({ ...formData, email: newEmail });
+                      if (!userEditedUsername) {
+                        setUsername(generateUsername(newEmail));
+                      }
+                    }}
                     placeholder="contact@example.com"
                     required
+                    className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none"
+                    style={{
+                      background: "var(--input-background)",
+                      border: "1px solid var(--border-light)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[12px]" style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+                      Portal Username *
+                    </label>
+                    <span className="text-[10px]" style={{ color: "var(--accent-navy-light)" }}>
+                      Auto-generated from email
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => {
+                      setUserEditedUsername(true);
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30));
+                    }}
+                    placeholder="e.g. trt_vendor"
+                    required
+                    minLength={4}
                     className="w-full px-3 py-2.5 rounded-lg text-[13px] outline-none"
                     style={{
                       background: "var(--input-background)",
