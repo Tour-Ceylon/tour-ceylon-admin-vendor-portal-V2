@@ -38,8 +38,11 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
   });
 
   const generateUsername = (rawEmail: string, suffix = false) => {
-    let clean = (rawEmail.split("@")[0] || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
-    if (clean.length < 4) clean = `vendor_${clean}`;
+    const prefix = (rawEmail.split("@")[0] || "").toLowerCase();
+    // Convert dots, hyphens, and non-alphanumeric characters into underscores for a clean, meaningful username
+    // e.g. trt-stay-vendor@proton.me -> trt_stay_vendor, john.smith@gmail.com -> john_smith
+    let clean = prefix.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (clean.length < 4) clean = `user_${clean}`;
     if (suffix) {
       return `${clean.slice(0, 24)}_${Math.floor(1000 + Math.random() * 9000)}`;
     }
