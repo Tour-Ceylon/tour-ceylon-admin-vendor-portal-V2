@@ -62,6 +62,15 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
   const clerkMessage = (err: any, fallback: string) =>
     err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || err?.message || fallback;
 
+  const buildUsername = (email: string, withSuffix = false) => {
+    let base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (base.length < 4) base = `vendor_${base}`;
+    if (withSuffix) {
+      return `${base.slice(0, 24)}_${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    return base.slice(0, 30);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -75,12 +84,35 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
       }
       if (!signUpLoaded || !signUp) throw new Error("Sign-up is still loading. Please try again in a moment.");
       const [firstName, ...rest] = formData.vendorName.trim().split(/\s+/);
-      await signUp.create({
-        emailAddress: formData.email.trim(),
+      const email = formData.email.trim();
+      const basePayload = {
+        emailAddress: email,
         password: formData.password || "",
         firstName,
         lastName: rest.join(" ") || undefined,
-      });
+      };
+
+      try {
+        await signUp.create({
+          ...basePayload,
+          username: buildUsername(email),
+        });
+      } catch (createErr: any) {
+        const isUsernameTaken = createErr?.errors?.some(
+          (item: any) =>
+            item?.meta?.paramName === "username" ||
+            String(item?.message || "").toLowerCase().includes("username")
+        );
+        if (isUsernameTaken) {
+          await signUp.create({
+            ...basePayload,
+            username: buildUsername(email, true),
+          });
+        } else {
+          throw createErr;
+        }
+      }
+
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setStep("verify");
     } catch (err: any) {
@@ -97,7 +129,10 @@ export function VendorRegistration({ onBackToRoleSelect }: VendorRegistrationPro
     setLoading(true);
     setError(null);
     try {
-      const attempt = await signUp.attemptEmailAddressVerification({ code: code.trim() });
+      let attempt = await signUp.attemptEmailAddressVerification({ code: code.trim() });
+      if (attempt.status !== "complete" && attempt.missingFields?.includes("username")) {
+        attempt = await signUp.update({ username: buildUsername(formData.email.trim(), true) });
+      }
       if (attempt.status !== "complete") {
         throw new Error(
           attempt.missingFields?.length
